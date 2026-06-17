@@ -1,0 +1,15 @@
+.env
+.env.*
+!.env.example
+*.db
+.git
+.gitignore
+tests/
+.pytest_cache/
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+dist/
+*.egg-info/
+docker-compose.yml

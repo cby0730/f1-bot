@@ -1,0 +1,12 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      F1BOT_SQLITE_PATH: /data/f1bot.db
+    volumes:
+      - sqlite_data:/data
+
+volumes:
+  sqlite_data:

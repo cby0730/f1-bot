@@ -1,0 +1,30 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+
+# Virtual environments
+.venv
+
+# Secrets — never commit
+.env
+
+# Runtime data
+*.db
+*.db-shm
+*.db-wal
+
+# Test / tooling
+.pytest_cache/
+.ruff_cache/
+
+# Agent logs / temporary directories
+.agents/
+
+# Code coverage report outputs
+.coverage
+coverage.json
+htmlcov/
