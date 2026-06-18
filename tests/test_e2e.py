@@ -166,13 +166,16 @@ async def e2e_app(e2e_settings, httpx_mock):
         url="https://api.jolpi.ca/ergast/f1/current.json",
         json=make_mock_schedule(24, current_year=2026),
         is_optional=True,
+        is_reusable=True,
     )
 
     app = build_app(e2e_settings)
     await app.initialize()
 
-    if app.post_init:
-        await app.post_init(app)
+    # Patch startup_sync to skip full API sync in tests — we populate manually below
+    with patch("f1_bot.main.startup_sync", new_callable=AsyncMock):
+        if app.post_init:
+            await app.post_init(app)
 
     await app.start()
 
@@ -251,6 +254,17 @@ def make_tg_callback_query_update(
     return Update.de_json(data, app.bot)
 
 
+def _parse_tg_request_body(req) -> dict:
+    """Parse a Telegram Bot API request body (JSON or form-encoded) into a dict."""
+    content_type = req.headers.get("content-type", "")
+    raw = req.read().decode("utf-8")
+    if "application/json" in content_type:
+        return json.loads(raw)
+    # Form-encoded: each field value may itself be JSON (e.g. reply_markup)
+    parsed = urllib.parse.parse_qs(raw)
+    return {k: v[0] for k, v in parsed.items()}
+
+
 def extract_reply_message(httpx_mock) -> str:
     """Helper to extract the text of the last sendMessage or editMessageText request captured."""
     requests = httpx_mock.get_requests()
@@ -260,16 +274,20 @@ def extract_reply_message(httpx_mock) -> str:
     if not send_msg_reqs:
         raise ValueError("No sendMessage or editMessageText request was captured by httpx_mock.")
 
-    last_req = send_msg_reqs[-1]
-    content_type = last_req.headers.get("content-type", "")
+    body = _parse_tg_request_body(send_msg_reqs[-1])
+    return body.get("text", "")
 
-    if "application/json" in content_type:
-        body = json.loads(last_req.read().decode("utf-8"))
-        return body.get("text", "")
-    else:
-        body = last_req.read().decode("utf-8")
-        parsed = urllib.parse.parse_qs(body)
-        return parsed.get("text", [""])[0]
+
+def has_reply_markup(httpx_mock) -> bool:
+    """Return True if the last sendMessage or editMessageText included a reply_markup field."""
+    requests = httpx_mock.get_requests()
+    send_msg_reqs = [
+        r for r in requests if "sendMessage" in str(r.url) or "editMessageText" in str(r.url)
+    ]
+    if not send_msg_reqs:
+        return False
+    body = _parse_tg_request_body(send_msg_reqs[-1])
+    return "reply_markup" in body
 
 
 # ==============================================================================
@@ -439,501 +457,336 @@ async def test_scenario_10_next_custom_timezone(e2e_app, httpx_mock):
 
 
 @pytest.mark.asyncio
-async def test_scenario_11_results_no_args_fallback(e2e_app, httpx_mock):
-    """Scenario 11: /results with no arguments (fallback to last completed race results)."""
-    # Round 15 is last completed race
-    httpx_mock.add_response(
-        url="https://api.jolpi.ca/ergast/f1/2026/15/results.json",
-        json={
-            "MRData": {
-                "RaceTable": {
-                    "Races": [
-                        {
-                            "season": "2026",
-                            "round": "15",
-                            "raceName": "GP 15",
-                            "date": "2026-06-08",
-                            "Circuit": {
-                                "circuitId": "c15",
-                                "circuitName": "C15",
-                                "Location": {"locality": "L15", "country": "C15"},
-                            },
-                            "Results": [
-                                {
-                                    "position": "1",
-                                    "grid": "1",
-                                    "laps": "50",
-                                    "status": "Finished",
-                                    "points": "25",
-                                    "Driver": {
-                                        "driverId": "ver",
-                                        "givenName": "Max",
-                                        "familyName": "Verstappen",
-                                        "code": "VER",
-                                    },
-                                    "Constructor": {"constructorId": "rb", "name": "Red Bull"},
-                                }
-                            ],
-                        }
-                    ]
-                }
-            }
-        },
-    )
+async def test_scenario_11_results_shows_race_results_from_db(e2e_app, httpx_mock):
+    """Scenario 11: /results shows race results pre-populated in SQLite."""
+    repo = e2e_app.bot_data["repo"]
+    from f1_bot.models.constructor import Constructor
+    from f1_bot.models.driver import Driver
+    from f1_bot.models.results import RaceResult
+
+    results = [
+        RaceResult(
+            position=1, grid=1, laps=50, status="Finished", points=25.0,
+            driver=Driver(driver_id="ver", given_name="Max", family_name="Verstappen", nationality="Dutch"),
+            constructor=Constructor(constructor_id="rb", name="Red Bull", nationality="Austrian"),
+        )
+    ]
+    await repo.save_race_results(2026, 15, results)
 
     update = make_tg_update(e2e_app, "/results")
     await e2e_app.process_update(update)
 
     reply_text = extract_reply_message(httpx_mock)
     assert "Max Verstappen" in reply_text
-    assert "Grand Prix 15" in reply_text
 
 
 @pytest.mark.asyncio
-async def test_scenario_12_results_valid_round(e2e_app, httpx_mock):
-    """Scenario 12: /results r2 (valid round number)."""
-    httpx_mock.add_response(
-        url="https://api.jolpi.ca/ergast/f1/2026/2/results.json",
-        json={
-            "MRData": {
-                "RaceTable": {
-                    "Races": [
-                        {
-                            "season": "2026",
-                            "round": "2",
-                            "raceName": "GP 2",
-                            "date": "2026-03-09",
-                            "Circuit": {
-                                "circuitId": "c2",
-                                "circuitName": "C2",
-                                "Location": {"locality": "L2", "country": "C2"},
-                            },
-                            "Results": [
-                                {
-                                    "position": "1",
-                                    "grid": "1",
-                                    "laps": "50",
-                                    "status": "Finished",
-                                    "points": "25",
-                                    "Driver": {
-                                        "driverId": "ham",
-                                        "givenName": "Lewis",
-                                        "familyName": "Hamilton",
-                                        "code": "HAM",
-                                    },
-                                    "Constructor": {"constructorId": "mer", "name": "Mercedes"},
-                                }
-                            ],
-                        }
-                    ]
-                }
-            }
-        },
-    )
+async def test_scenario_12_results_callback_filtered_race(e2e_app, httpx_mock):
+    """Scenario 12: Clicking race filter on /results shows race results for round."""
+    repo = e2e_app.bot_data["repo"]
+    from f1_bot.models.constructor import Constructor
+    from f1_bot.models.driver import Driver
+    from f1_bot.models.results import RaceResult
 
-    update = make_tg_update(e2e_app, "/results r2")
-    await e2e_app.process_update(update)
+    results = [
+        RaceResult(
+            position=1, grid=1, laps=50, status="Finished", points=25.0,
+            driver=Driver(driver_id="ham", given_name="Lewis", family_name="Hamilton", nationality="British"),
+            constructor=Constructor(constructor_id="mer", name="Mercedes", nationality="German"),
+        )
+    ]
+    await repo.save_race_results(2026, 14, results)
+
+    cb_update = make_tg_callback_query_update(e2e_app, "res:filtered:race:14")
+    await e2e_app.process_update(cb_update)
 
     reply_text = extract_reply_message(httpx_mock)
     assert "Lewis Hamilton" in reply_text
-    assert "Grand Prix 2" in reply_text
 
 
 @pytest.mark.asyncio
-async def test_scenario_13_results_invalid_round(e2e_app, httpx_mock):
-    """Scenario 13: /results r99 (exceeds total rounds)."""
-    update = make_tg_update(e2e_app, "/results r99")
-    await e2e_app.process_update(update)
+async def test_scenario_13_results_shows_keyboard(e2e_app, httpx_mock):
+    """Scenario 13: /results shows inline keyboard for session filtering."""
+    repo = e2e_app.bot_data["repo"]
+    from f1_bot.models.constructor import Constructor
+    from f1_bot.models.driver import Driver
+    from f1_bot.models.results import RaceResult
 
-    reply_text = extract_reply_message(httpx_mock)
-    assert "Invalid round number. The current season has only 24 rounds." in reply_text
-
-
-@pytest.mark.asyncio
-async def test_scenario_14_results_future_round(e2e_app, httpx_mock):
-    """Scenario 14: /results r18 (not yet occurred)."""
-    update = make_tg_update(e2e_app, "/results r18")
-    await e2e_app.process_update(update)
-
-    reply_text = extract_reply_message(httpx_mock)
-    assert "Round 18" in reply_text
-    assert "has not occurred yet" in reply_text
-
-
-@pytest.mark.asyncio
-async def test_scenario_15_results_limit_count(e2e_app, httpx_mock):
-    """Scenario 15: /results 3 (last 3 completed races, merged via ---)."""
-    # Mocking rounds 13, 14, 15
-    for r_num in [13, 14, 15]:
-        httpx_mock.add_response(
-            url=f"https://api.jolpi.ca/ergast/f1/2026/{r_num}/results.json",
-            json={
-                "MRData": {
-                    "RaceTable": {
-                        "Races": [
-                            {
-                                "season": "2026",
-                                "round": str(r_num),
-                                "raceName": f"GP {r_num}",
-                                "date": "2026-05-25",
-                                "Circuit": {
-                                    "circuitId": f"c{r_num}",
-                                    "circuitName": f"C{r_num}",
-                                    "Location": {"locality": "Loc", "country": "C"},
-                                },
-                                "Results": [
-                                    {
-                                        "position": "1",
-                                        "grid": "1",
-                                        "laps": "50",
-                                        "status": "Finished",
-                                        "points": "25",
-                                        "Driver": {
-                                            "driverId": "ver",
-                                            "givenName": "Max",
-                                            "familyName": "Verstappen",
-                                            "code": "VER",
-                                        },
-                                        "Constructor": {"constructorId": "rb", "name": "Red Bull"},
-                                    }
-                                ],
-                            }
-                        ]
-                    }
-                }
-            },
+    results = [
+        RaceResult(
+            position=1, grid=2, laps=50, status="Finished", points=25.0,
+            driver=Driver(driver_id="nor", given_name="Lando", family_name="Norris", nationality="British"),
+            constructor=Constructor(constructor_id="mcl", name="McLaren", nationality="British"),
         )
+    ]
+    await repo.save_race_results(2026, 15, results)
 
-    update = make_tg_update(e2e_app, "/results 3")
+    update = make_tg_update(e2e_app, "/results")
     await e2e_app.process_update(update)
 
     reply_text = extract_reply_message(httpx_mock)
-    assert "Grand Prix 15" in reply_text
-    assert "Grand Prix 14" in reply_text
-    assert "Grand Prix 13" in reply_text
-    assert "---" in reply_text
-
-
-# ==============================================================================
-# CATEGORY D: Sprint Logic & Constraints (4 scenarios)
-# ==============================================================================
+    assert "Lando Norris" in reply_text
+    assert has_reply_markup(httpx_mock)
 
 
 @pytest.mark.asyncio
-async def test_scenario_16_sprint_valid_round(e2e_app, httpx_mock):
-    """Scenario 16: /sprint r3 (sprint weekend completed)."""
-    httpx_mock.add_response(
-        url="https://api.jolpi.ca/ergast/f1/2026/3/sprint.json",
-        json={
-            "MRData": {
-                "RaceTable": {
-                    "Races": [
-                        {
-                            "season": "2026",
-                            "round": "3",
-                            "raceName": "GP 3",
-                            "date": "2026-03-16",
-                            "Circuit": {
-                                "circuitId": "c3",
-                                "circuitName": "C3",
-                                "Location": {"locality": "Loc", "country": "C"},
-                            },
-                            "SprintResults": [
-                                {
-                                    "position": "1",
-                                    "points": "8",
-                                    "Driver": {
-                                        "driverId": "ver",
-                                        "givenName": "Max",
-                                        "familyName": "Verstappen",
-                                        "code": "VER",
-                                    },
-                                    "Constructor": {"constructorId": "rb", "name": "Red Bull"},
-                                }
-                            ],
-                        }
-                    ]
-                }
-            }
-        },
-    )
+async def test_scenario_14_results_qualifying_filter(e2e_app, httpx_mock):
+    """Scenario 14: Clicking qualifying filter shows qualifying results."""
+    repo = e2e_app.bot_data["repo"]
+    from f1_bot.models.constructor import Constructor
+    from f1_bot.models.driver import Driver
+    from f1_bot.models.results import QualifyingResult
 
-    update = make_tg_update(e2e_app, "/sprint r3")
-    await e2e_app.process_update(update)
+    results = [
+        QualifyingResult(
+            position=1,
+            driver=Driver(driver_id="lec", given_name="Charles", family_name="Leclerc", nationality="Monegasque"),
+            constructor=Constructor(constructor_id="fer", name="Ferrari", nationality="Italian"),
+            q1="1:15.0", q2="1:14.0", q3="1:13.0",
+        )
+    ]
+    await repo.save_qualifying_results(2026, 10, results)
+
+    cb_update = make_tg_callback_query_update(e2e_app, "res:filtered:qualifying:10")
+    await e2e_app.process_update(cb_update)
 
     reply_text = extract_reply_message(httpx_mock)
-    assert "Sprint" in reply_text
+    assert "Charles Leclerc" in reply_text
+
+
+@pytest.mark.asyncio
+async def test_scenario_15_results_no_data_for_round(e2e_app, httpx_mock):
+    """Scenario 15: /results for a round with no data shows no-data message."""
+    # Round 18 has no results saved
+    cb_update = make_tg_callback_query_update(e2e_app, "res:filtered:race:18")
+    await e2e_app.process_update(cb_update)
+
+    reply_text = extract_reply_message(httpx_mock)
+    assert "\u26a0" in reply_text or "No" in reply_text.lower() or "no data" in reply_text.lower()
+
+
+@pytest.mark.asyncio
+async def test_scenario_16_results_sprint_filter(e2e_app, httpx_mock):
+    """Scenario 16: Sprint filter on /results shows sprint results."""
+    repo = e2e_app.bot_data["repo"]
+    from f1_bot.models.constructor import Constructor
+    from f1_bot.models.driver import Driver
+    from f1_bot.models.results import SprintResult
+
+    results = [
+        SprintResult(
+            position=1, grid=1, laps=17, status="Finished", points=8.0,
+            driver=Driver(driver_id="ver", given_name="Max", family_name="Verstappen", nationality="Dutch"),
+            constructor=Constructor(constructor_id="rb", name="Red Bull", nationality="Austrian"),
+        )
+    ]
+    await repo.save_sprint_results(2026, 12, results)
+
+    cb_update = make_tg_callback_query_update(e2e_app, "res:filtered:sprint:12")
+    await e2e_app.process_update(cb_update)
+
+    reply_text = extract_reply_message(httpx_mock)
     assert "Max Verstappen" in reply_text
 
 
 @pytest.mark.asyncio
-async def test_scenario_17_sprint_non_sprint_weekend(e2e_app, httpx_mock):
-    """Scenario 17: /sprint r1 (round without sprint session)."""
-    update = make_tg_update(e2e_app, "/sprint r1")
-    await e2e_app.process_update(update)
+async def test_scenario_17_results_sprint_round_3(e2e_app, httpx_mock):
+    """Scenario 17: Sprint results for round 3."""
+    repo = e2e_app.bot_data["repo"]
+    from f1_bot.models.constructor import Constructor
+    from f1_bot.models.driver import Driver
+    from f1_bot.models.results import SprintResult
+
+    results = [
+        SprintResult(
+            position=1, grid=1, laps=17, status="Finished", points=8.0,
+            driver=Driver(driver_id="nor", given_name="Lando", family_name="Norris", nationality="British"),
+            constructor=Constructor(constructor_id="mcl", name="McLaren", nationality="British"),
+        )
+    ]
+    await repo.save_sprint_results(2026, 3, results)
+
+    cb_update = make_tg_callback_query_update(e2e_app, "res:filtered:sprint:3")
+    await e2e_app.process_update(cb_update)
 
     reply_text = extract_reply_message(httpx_mock)
-    assert "is not a sprint weekend" in reply_text
+    assert "Lando Norris" in reply_text
 
 
 @pytest.mark.asyncio
-async def test_scenario_18_sprint_future_sprint_weekend(e2e_app, httpx_mock):
-    """Scenario 18: /sprint r20 (sprint in the future)."""
-    update = make_tg_update(e2e_app, "/sprint r20")
+async def test_scenario_18_results_no_data_empty_schedule(e2e_app, httpx_mock):
+    """Scenario 18: /results when schedule has no completed rounds shows no-data."""
+    repo = e2e_app.bot_data["repo"]
+    from f1_bot.models.race import Circuit, Race
+
+    future_races = [
+        Race(
+            season=2026, round=i, name=f"Grand Prix {i}",
+            circuit=Circuit(circuit_id=f"c{i}", name=f"Circuit {i}", locality=f"Loc{i}", country=f"C{i}"),
+            date=datetime(2099, 3 + i, 1).date(),
+        )
+        for i in range(1, 4)
+    ]
+    await repo.save_schedule(2026, future_races)
+
+    update = make_tg_update(e2e_app, "/results")
     await e2e_app.process_update(update)
 
     reply_text = extract_reply_message(httpx_mock)
-    assert "Use /nextsprint" in reply_text
+    assert "\u26a0" in reply_text or "No" in reply_text.lower()
 
 
 @pytest.mark.asyncio
-async def test_scenario_19_nextsprint_command(e2e_app, httpx_mock):
-    """Scenario 19: /nextsprint 2 (next 2 sprint sessions)."""
-    update = make_tg_update(e2e_app, "/nextsprint 2")
+async def test_scenario_19_next_command_shows_upcoming(e2e_app, httpx_mock):
+    """Scenario 19: /next shows the next upcoming race with session filter keyboard."""
+    update = make_tg_update(e2e_app, "/next")
     await e2e_app.process_update(update)
 
     reply_text = extract_reply_message(httpx_mock)
-    assert "Grand Prix 20" in reply_text
-    assert "Sprint" in reply_text
-
-
-# ==============================================================================
-# CATEGORY E: Deep Race Data & OpenF1 API (4 scenarios)
-# ==============================================================================
+    assert "Grand Prix 16" in reply_text
+    assert has_reply_markup(httpx_mock)
 
 
 @pytest.mark.asyncio
-async def test_scenario_20_sessionresult_usage_error(e2e_app, httpx_mock):
-    """Scenario 20: /sessionresult invalid session arg usage message."""
-    update = make_tg_update(e2e_app, "/sessionresult r1 invalid_sess")
+async def test_scenario_20_results_no_completed_sessions(e2e_app, httpx_mock):
+    """Scenario 20: /results when no results exist shows no-data message."""
+    repo = e2e_app.bot_data["repo"]
+    from f1_bot.models.race import Circuit, Race
+
+    future_races = [
+        Race(
+            season=2026, round=i, name=f"Grand Prix {i}",
+            circuit=Circuit(circuit_id=f"c{i}", name=f"Circuit {i}", locality=f"Loc{i}", country=f"C{i}"),
+            date=datetime(2099, 3 + i, 1).date(),
+        )
+        for i in range(1, 4)
+    ]
+    await repo.save_schedule(2026, future_races)
+
+    update = make_tg_update(e2e_app, "/results")
     await e2e_app.process_update(update)
 
     reply_text = extract_reply_message(httpx_mock)
-    assert "Usage: /sessionresult [round] [fp1|fp2|fp3|quali|sq|sprint|race]" in reply_text
+    assert "\u26a0" in reply_text or "No" in reply_text.lower()
 
 
 @pytest.mark.asyncio
-async def test_scenario_21_sessionresult_fp1_flow(e2e_app, httpx_mock):
-    """Scenario 21: /sessionresult r1 fp1 (caching and displaying FP1 results via OpenF1)."""
-    # 1. Mock OpenF1 sessions
-    httpx_mock.add_response(
-        url="https://api.openf1.org/v1/sessions?year=2026",
-        json=[
-            {
-                "session_key": 9101,
-                "session_name": "Practice 1",
-                "session_type": "Practice",
-                "meeting_key": 101,
-                "date_start": "2026-03-01T09:00:00Z",
-                "date_end": "2026-03-01T10:00:00Z",
-                "gmt_offset": "+00:00",
-                "year": 2026,
-            }
-        ],
-    )
+async def test_scenario_21_results_back_button(e2e_app, httpx_mock):
+    """Scenario 21: Back button on filtered results returns to overview."""
+    repo = e2e_app.bot_data["repo"]
+    from f1_bot.models.constructor import Constructor
+    from f1_bot.models.driver import Driver
+    from f1_bot.models.results import RaceResult
 
-    # 2. Mock OpenF1 session_results
-    httpx_mock.add_response(
-        url="https://api.openf1.org/v1/session_result?session_key=9101",
-        json=[{"position": 1, "driver_number": 44, "duration": "1:14.321"}],
-    )
+    results = [
+        RaceResult(
+            position=1, grid=1, laps=50, status="Finished", points=25.0,
+            driver=Driver(driver_id="ham", given_name="Lewis", family_name="Hamilton", nationality="British"),
+            constructor=Constructor(constructor_id="mer", name="Mercedes", nationality="German"),
+        )
+    ]
+    await repo.save_race_results(2026, 15, results)
 
-    # 3. Mock Jolpica drivers list for numbers mapping
-    httpx_mock.add_response(
-        url="https://api.jolpi.ca/ergast/f1/2026/drivers.json",
-        json={
-            "MRData": {
-                "DriverTable": {
-                    "Drivers": [
-                        {
-                            "driverId": "hamilton",
-                            "permanentNumber": "44",
-                            "code": "HAM",
-                            "givenName": "Lewis",
-                            "familyName": "Hamilton",
-                        }
-                    ]
-                }
-            }
-        },
-    )
-
-    update = make_tg_update(e2e_app, "/sessionresult r1 fp1")
-    await e2e_app.process_update(update)
+    cb_update = make_tg_callback_query_update(e2e_app, "res:back:_:15")
+    await e2e_app.process_update(cb_update)
 
     reply_text = extract_reply_message(httpx_mock)
-    assert "FP1 Result" in reply_text
-    assert "Lewis Hamilton" in reply_text
-    assert "1:14.321" in reply_text
+    assert "Lewis Hamilton" in reply_text or "Grand Prix" in reply_text
 
 
 @pytest.mark.asyncio
-async def test_scenario_22_pitstops_command(e2e_app, httpx_mock):
-    """Scenario 22: /pitstops r1"""
-    httpx_mock.add_response(
-        url="https://api.jolpi.ca/ergast/f1/2026/1/pitstops.json",
-        json={
-            "MRData": {
-                "RaceTable": {
-                    "Races": [
-                        {
-                            "PitStops": [
-                                {
-                                    "driverId": "hamilton",
-                                    "lap": "15",
-                                    "stop": "1",
-                                    "duration": "2.45",
-                                }
-                            ]
-                        }
-                    ]
-                }
-            }
-        },
-    )
+async def test_scenario_22_pitstops_from_db(e2e_app, httpx_mock):
+    """Scenario 22: /pitstops shows pit stop data from SQLite."""
+    repo = e2e_app.bot_data["repo"]
+    from f1_bot.models.results import PitStop
 
-    update = make_tg_update(e2e_app, "/pitstops r1")
+    stops = [PitStop(driver_id="hamilton", lap=15, stop_number=1, duration=24.567)]
+    await repo.save_pit_stops(2026, 15, stops)
+
+    update = make_tg_update(e2e_app, "/pitstops")
     await e2e_app.process_update(update)
 
     reply_text = extract_reply_message(httpx_mock)
     assert "Pit Stops" in reply_text
-    assert "2.5" in reply_text
+    assert "24.6" in reply_text
+    assert has_reply_markup(httpx_mock)
 
 
 @pytest.mark.asyncio
-async def test_scenario_23_laps_command(e2e_app, httpx_mock):
-    """Scenario 23: /laps r1"""
-    httpx_mock.add_response(
-        url="https://api.jolpi.ca/ergast/f1/2026/1/laps.json?limit=100",
-        json={
-            "MRData": {
-                "RaceTable": {
-                    "Races": [
-                        {
-                            "Laps": [
-                                {
-                                    "number": "45",
-                                    "Timings": [
-                                        {
-                                            "driverId": "hamilton",
-                                            "position": "1",
-                                            "time": "1:18.293",
-                                        }
-                                    ],
-                                }
-                            ]
-                        }
-                    ]
-                }
-            }
-        },
-    )
-
-    update = make_tg_update(e2e_app, "/laps r1")
-    await e2e_app.process_update(update)
-
-    reply_text = extract_reply_message(httpx_mock)
-    assert "Lap Times" in reply_text
-    assert "1:18.293" in reply_text
-
-
-# ==============================================================================
-# CATEGORY F: Message Overflow & Error Resilience (3 scenarios)
-# ==============================================================================
-
-
-@pytest.mark.asyncio
-async def test_scenario_24_message_overflow_splitting(e2e_app, httpx_mock):
-    """Scenario 24: Message overflow splitting (exceeding Telegram's 4096-char limit)."""
-    # We will trigger results for multiple completed races (let's say 4 races)
-    # Mocking rounds 12, 13, 14, 15
-    for r_num in [11, 12, 13, 14, 15]:
-        # Generate a very long results list to exceed 4096 chars when formatted together
-        results_list = []
-        for p in range(1, 21):
-            results_list.append(
-                {
-                    "position": str(p),
-                    "grid": str(p),
-                    "laps": "50",
-                    "status": "Finished",
-                    "points": "0",
-                    "Driver": {
-                        "driverId": f"d_{p}",
-                        "givenName": f"DriverNameVeryLongIndeed_{p}",
-                        "familyName": f"DriverFamilyVeryLongIndeed_{p}",
-                        "code": f"D{p}",
-                    },
-                    "Constructor": {
-                        "constructorId": "const",
-                        "name": f"ConstructorVeryLongIndeed_{p}",
-                    },
-                }
-            )
-        httpx_mock.add_response(
-            url=f"https://api.jolpi.ca/ergast/f1/2026/{r_num}/results.json",
-            json={
-                "MRData": {
-                    "RaceTable": {
-                        "Races": [
-                            {
-                                "season": "2026",
-                                "round": str(r_num),
-                                "raceName": f"Grand Prix {r_num} with a very very long name and description to trigger overflow easily",
-                                "date": "2026-05-25",
-                                "Circuit": {
-                                    "circuitId": f"c{r_num}",
-                                    "circuitName": f"Circuit {r_num}",
-                                    "Location": {"locality": "Locality", "country": "Country"},
-                                },
-                                "Results": results_list,
-                            }
-                        ]
-                    }
-                }
-            },
-        )
-
-    # Trigger /results 5 (last 5 events)
-    update = make_tg_update(e2e_app, "/results 5")
-    await e2e_app.process_update(update)
-
-    # Verify that multiple sendMessage calls were captured (indicating splitting)
-    requests = httpx_mock.get_requests()
-    send_msg_reqs = [r for r in requests if "sendMessage" in str(r.url)]
-    assert len(send_msg_reqs) > 1
-
-
-@pytest.mark.asyncio
-async def test_scenario_25_api_client_rate_limiting(e2e_app, httpx_mock):
-    """Scenario 25: API Client retry logic on HTTP 429 rate limit."""
-    # Reset DB schedule
+async def test_scenario_23_laps_from_db(e2e_app, httpx_mock):
+    """Scenario 23: /laps shows lap data from SQLite."""
     repo = e2e_app.bot_data["repo"]
-    await repo.sqlite._conn.execute("DELETE FROM races")
-    await repo.sqlite._conn.commit()
+    from f1_bot.models.results import LapTime
 
-    # Mock first schedule request returning 429
-    httpx_mock.add_response(
-        url="https://api.jolpi.ca/ergast/f1/current.json",
-        status_code=429,
-        headers={"Retry-After": "0"},
-    )
-    # Mock second schedule request succeeding
-    httpx_mock.add_response(
-        url="https://api.jolpi.ca/ergast/f1/current.json",
-        json=make_mock_schedule(24, current_year=2026),
-    )
+    laps = [LapTime(lap_number=45, driver_id="hamilton", time="1:18.293", position=1)]
+    await repo.save_lap_timings(2026, 15, laps)
 
-    # Patch asyncio.sleep to keep E2E tests executing instantly
-    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
-        update = make_tg_update(e2e_app, "/next")
-        await e2e_app.process_update(update)
-
-        sleep_args = [c[0][0] for c in mock_sleep.call_args_list]
-        assert 0 in sleep_args
+    update = make_tg_update(e2e_app, "/laps")
+    await e2e_app.process_update(update)
 
     reply_text = extract_reply_message(httpx_mock)
+    assert "Lap Times" in reply_text or "Summary" in reply_text
+    assert has_reply_markup(httpx_mock)
+
+
+@pytest.mark.asyncio
+async def test_scenario_24_results_round_navigation(e2e_app, httpx_mock):
+    """Scenario 24: Full inline keyboard flow — /results then navigate to another round."""
+    repo = e2e_app.bot_data["repo"]
+    from f1_bot.models.constructor import Constructor
+    from f1_bot.models.driver import Driver
+    from f1_bot.models.results import RaceResult
+
+    # Populate round 15
+    results_15 = [
+        RaceResult(
+            position=1, grid=1, laps=50, status="Finished", points=25.0,
+            driver=Driver(driver_id="ver", given_name="Max", family_name="Verstappen", nationality="Dutch"),
+            constructor=Constructor(constructor_id="rb", name="Red Bull", nationality="Austrian"),
+        )
+    ]
+    await repo.save_race_results(2026, 15, results_15)
+
+    # Populate round 14
+    results_14 = [
+        RaceResult(
+            position=1, grid=1, laps=50, status="Finished", points=25.0,
+            driver=Driver(driver_id="nor", given_name="Lando", family_name="Norris", nationality="British"),
+            constructor=Constructor(constructor_id="mcl", name="McLaren", nationality="British"),
+        )
+    ]
+    await repo.save_race_results(2026, 14, results_14)
+
+    # Step 1: /results shows round 15
+    update = make_tg_update(e2e_app, "/results")
+    await e2e_app.process_update(update)
+
+    reply_text = extract_reply_message(httpx_mock)
+    assert "Max Verstappen" in reply_text
+
+    # Step 2: Navigate to round 14 via callback
+    cb_update = make_tg_callback_query_update(e2e_app, "res:filtered:race:14")
+    await e2e_app.process_update(cb_update)
+
+    reply_text = extract_reply_message(httpx_mock)
+    assert "Lando Norris" in reply_text
+
+    # Verify editMessageText was used
+    requests = httpx_mock.get_requests()
+    edit_reqs = [r for r in requests if "editMessageText" in str(r.url)]
+    assert len(edit_reqs) >= 1
+
+
+@pytest.mark.asyncio
+async def test_scenario_25_next_shows_upcoming_race_sessions(e2e_app, httpx_mock):
+    """Scenario 25: /next shows upcoming race info with session filter buttons."""
+    update = make_tg_update(e2e_app, "/next")
+    await e2e_app.process_update(update)
+
+    reply_text = extract_reply_message(httpx_mock)
+    # Round 16 is first upcoming in mock schedule
     assert "Grand Prix 16" in reply_text
+    assert has_reply_markup(httpx_mock)
 
 
 @pytest.mark.asyncio

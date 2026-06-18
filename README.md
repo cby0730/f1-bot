@@ -6,37 +6,40 @@ A public Telegram bot for Formula 1 information — race schedules, standings, r
 
 | Command | Description |
 |---|---|
-| `/next [N]` | Next N races + countdown + sessions in your timezone |
-| `/nextsession [N]` | Next N sessions: practice, qualifying, sprint, or race |
-| `/nextpractice [N]` | Next N practice sessions |
-| `/nextqualifying [N]` | Next N qualifying or sprint qualifying sessions |
-| `/nextsprint [N]` | Next N sprint-related sessions |
+| `/next` | Next race weekend overview; tap session buttons (Practice / Qualifying / Sprint / Race) for details |
 | `/schedule` | Full season calendar |
 | `/countdown` | Time until next race |
 | `/standings` | WDC and WCC standings |
-| `/results [N or rN]` | Race results (N for last N, rN for specific round) |
-| `/qualifying [N or rN]` | Qualifying results |
-| `/sprint [N or rN]` | Sprint results |
-| `/sessionresult [N or rN] [session]` | Timed session results |
-| `/pitstops [N or rN]` | Pit stop data |
-| `/laps [N or rN]` | Fastest laps |
+| `/results` | Race results overview; tap session buttons to view Qualifying / Sprint / Race / FP results |
+| `/pitstops` | Pit stop data — ◀ ▶ button navigation |
+| `/laps` | Fastest laps — round navigation + By-Lap / By-Driver view toggle |
 | `/driver <name>` | Driver profile and standings |
 | `/circuit <name>` | Circuit info |
 | `/timezone` | Set your timezone for local race times |
 
+### Two-state interaction pattern
+
+`/next` and `/results` use a unified two-state UX:
+
+- **State A (overview):** Shows a summary for the current round with session filter buttons (e.g., Practice / Qualifying / Sprint / Race).
+- **State B (filtered):** Tap a session button to drill into that session type. Shows ◀ ▶ round navigation and a Back button to return to the overview.
+
 ## Architecture
 
-Cache-first: background jobs fetch from [Jolpica-F1](https://api.jolpi.ca) and [OpenF1](https://openf1.org) → store in SQLite. Telegram handlers only read from the local SQLite cache.
+Cache-first: a full data sync runs on startup, then background jobs poll on a 1-hour cycle. Telegram handlers are **SQL-only** — they never call external APIs directly.
 
 ```
-Jolpica + OpenF1 APIs
-        ↓  (background scheduler)
-      SQLite (persistent)
-        ↓  (handlers read)
-Telegram users
+Startup / Scheduler → Jolpica + OpenF1 APIs → SQLite
+                                                 ↓
+                          Telegram users → handlers → Repository → SQLite (read)
 ```
 
-Off-weekend polling is every 1–6 hours.
+### Key design decisions
+
+- **SQL-only handlers:** All handler reads go through `Repository` → SQLite. No API calls from handlers.
+- **Startup sync:** `startup_sync()` in `_post_init` fetches schedule, standings, results, pit stops, laps, and session data before the bot starts accepting commands.
+- **Unified polling:** All scheduler jobs share a 1-hour interval (`_POLL_INTERVAL` in `scheduler/manager.py`).
+- **OpenF1 for laps:** Lap timing data (including sector times) comes from OpenF1, not Jolpica.
 
 ## Running with Docker (recommended)
 
@@ -111,5 +114,5 @@ The bot uses ~100 MB RAM in steady state.
 
 ## Data sources
 
-- [Jolpica-F1 API](https://api.jolpi.ca/ergast/f1/) — schedule, standings, results (free, no auth, 500 req/hr)
-- [OpenF1 API](https://openf1.org) — live timing, weather, race control (free, no auth, 30 req/min)
+- [Jolpica-F1 API](https://api.jolpi.ca/ergast/f1/) — schedule, standings, results, pit stops (free, no auth, 500 req/hr)
+- [OpenF1 API](https://openf1.org) — session results, lap timings with sector times (free, no auth, 30 req/min)

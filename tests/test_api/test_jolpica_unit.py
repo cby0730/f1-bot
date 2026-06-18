@@ -319,13 +319,14 @@ async def test_get_pit_stops_numeric_duration_parsed(httpx_mock):
     assert stops[0].duration == 24.567
 
 
-# --- get_fastest_laps ---
+# --- get_lap_timings ---
 
 
-async def test_get_fastest_laps_multiple_timings_per_lap(httpx_mock):
+async def test_get_lap_timings_multiple_timings_per_lap(httpx_mock):
     httpx_mock.add_response(
         json={
             "MRData": {
+                "total": "2",
                 "RaceTable": {
                     "Races": [
                         {
@@ -344,21 +345,21 @@ async def test_get_fastest_laps_multiple_timings_per_lap(httpx_mock):
                             ]
                         }
                     ]
-                }
+                },
             }
         }
     )
     client = _client()
-    laps = await client.get_fastest_laps()
+    laps = await client.get_lap_timings()
     await client.close()
     assert len(laps) == 2
     assert laps[0].driver_id == "hamilton"
     assert laps[1].driver_id == "verstappen"
 
 
-async def test_get_fastest_laps_empty_races_returns_empty(httpx_mock):
-    httpx_mock.add_response(json={"MRData": {"RaceTable": {"Races": []}}})
+async def test_get_lap_timings_empty_races_returns_empty(httpx_mock):
+    httpx_mock.add_response(json={"MRData": {"total": "0", "RaceTable": {"Races": []}}})
     client = _client()
-    laps = await client.get_fastest_laps()
+    laps = await client.get_lap_timings()
     await client.close()
     assert laps == []

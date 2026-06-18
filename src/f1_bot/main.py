@@ -5,6 +5,7 @@ from f1_bot.api.jolpica import JolpicaClient
 from f1_bot.api.openf1 import OpenF1Client
 from f1_bot.config import Settings
 from f1_bot.handlers import register_all_handlers
+from f1_bot.scheduler.jobs import startup_sync
 from f1_bot.scheduler.manager import register_jobs
 from f1_bot.storage.repository import Repository
 from f1_bot.storage.sqlite_store import SQLiteStore
@@ -21,27 +22,26 @@ async def _post_init(app: Application) -> None:
 
     log.info("startup", sqlite_path=settings.sqlite_path)
 
+    # Full-season sync before accepting Telegram updates
+    jolpica = app.bot_data["jolpica"]
+    openf1 = app.bot_data["openf1"]
+    repo = app.bot_data["repo"]
+    await startup_sync(jolpica, openf1, repo)
+
     try:
         from telegram import BotCommand
 
         commands = [
             BotCommand("start", "Welcome message and command overview"),
             BotCommand("help", "Show command list"),
-            BotCommand("next", "Next N races + countdown + session times"),
-            BotCommand("nextsession", "Next N F1 sessions"),
-            BotCommand("nextpractice", "Next N practice sessions"),
-            BotCommand("nextqualifying", "Next N qualifying/sprint qual sessions"),
-            BotCommand("nextsprint", "Next N sprint-related sessions"),
+            BotCommand("next", "Next race — session filter buttons"),
             BotCommand("schedule", "Full season race calendar"),
             BotCommand("countdown", "Time remaining until the next race"),
             BotCommand("timezone", "Set your timezone"),
             BotCommand("standings", "WDC + WCC standings"),
-            BotCommand("results", "Race result(s) (last N, or rN)"),
-            BotCommand("qualifying", "Qualifying result(s)"),
-            BotCommand("sprint", "Sprint result(s)"),
-            BotCommand("sessionresult", "Result(s) for FP, qualifying, sprint, or race"),
-            BotCommand("pitstops", "Pit stop data"),
-            BotCommand("laps", "Lap time sample"),
+            BotCommand("results", "Results — session filter + round navigation"),
+            BotCommand("pitstops", "Pit stop data with round navigation"),
+            BotCommand("laps", "Lap times with sector data"),
             BotCommand("driver", "Driver profile"),
             BotCommand("circuit", "Circuit info"),
         ]

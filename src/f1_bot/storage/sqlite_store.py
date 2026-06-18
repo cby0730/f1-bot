@@ -68,6 +68,37 @@ CREATE TABLE IF NOT EXISTS user_preferences (
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS lap_timings (
+    season INTEGER NOT NULL,
+    round INTEGER NOT NULL,
+    data_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (season, round)
+);
+
+CREATE TABLE IF NOT EXISTS pit_stops (
+    season INTEGER NOT NULL,
+    round INTEGER NOT NULL,
+    data_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    PRIMARY KEY (season, round)
+);
+
+CREATE TABLE IF NOT EXISTS schedule_audit_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    season INTEGER NOT NULL,
+    round INTEGER NOT NULL,
+    field TEXT NOT NULL,
+    old_value TEXT,
+    new_value TEXT,
+    changed_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS sync_metadata (
+    entity TEXT PRIMARY KEY,
+    last_synced_at TEXT NOT NULL
+);
 """
 
 
@@ -93,8 +124,9 @@ class SQLiteStore:
 
     async def save_races(self, season: int, races_json: list[dict]) -> None:
         now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        await self._conn.execute("DELETE FROM races WHERE season=?", (season,))
         async with self._conn.executemany(
-            """INSERT OR REPLACE INTO races
+            """INSERT INTO races
                (season, round, name, circuit_id, circuit_name, locality, country,
                 race_date, race_time, gmt_offset, data_json, updated_at)
                VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -217,3 +249,111 @@ class SQLiteStore:
             (pref.telegram_id, pref.timezone, now, now),
         )
         await self._conn.commit()
+
+    # --- Lap Timings ---
+
+    async def save_lap_timings(self, season: int, round_num: int, data: list[dict]) -> None:
+        now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        await self._conn.execute(
+            "INSERT OR REPLACE INTO lap_timings VALUES (?,?,?,?)",
+            (season, round_num, json.dumps(data), now),
+        )
+        await self._conn.commit()
+
+    async def get_lap_timings(self, season: int, round_num: int) -> list[dict] | None:
+        async with self._conn.execute(
+            "SELECT data_json FROM lap_timings WHERE season=? AND round=?",
+            (season, round_num),
+        ) as cur:
+            row = await cur.fetchone()
+        return json.loads(row["data_json"]) if row else None
+
+    # --- Pit Stops ---
+
+    async def save_pit_stops(self, season: int, round_num: int, data: list[dict]) -> None:
+        now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        await self._conn.execute(
+            "INSERT OR REPLACE INTO pit_stops VALUES (?,?,?,?)",
+            (season, round_num, json.dumps(data), now),
+        )
+        await self._conn.commit()
+
+    async def get_pit_stops(self, season: int, round_num: int) -> list[dict] | None:
+        async with self._conn.execute(
+            "SELECT data_json FROM pit_stops WHERE season=? AND round=?",
+            (season, round_num),
+        ) as cur:
+            row = await cur.fetchone()
+        return json.loads(row["data_json"]) if row else None
+
+    # --- Schedule Audit Log ---
+
+    async def log_schedule_change(
+        self, season: int, round_num: int, field: str, old_value: str | None, new_value: str | None
+    ) -> None:
+        now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        await self._conn.execute(
+            "INSERT INTO schedule_audit_log (season, round, field, old_value, new_value, changed_at) VALUES (?,?,?,?,?,?)",
+            (season, round_num, field, old_value, new_value, now),
+        )
+        await self._conn.commit()
+
+    # --- Sync Metadata ---
+
+    async def get_sync_metadata(self, entity: str) -> str | None:
+        async with self._conn.execute(
+            "SELECT last_synced_at FROM sync_metadata WHERE entity=?", (entity,)
+        ) as cur:
+            row = await cur.fetchone()
+        return row["last_synced_at"] if row else None
+
+    async def set_sync_metadata(self, entity: str) -> None:
+        now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        await self._conn.execute(
+            "INSERT OR REPLACE INTO sync_metadata (entity, last_synced_at) VALUES (?,?)",
+            (entity, now),
+        )
+        await self._conn.commit()
+
+    # --- Drivers / Circuits ---
+
+    async def save_drivers(self, drivers_json: list[dict]) -> None:
+        now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        for d in drivers_json:
+            await self._conn.execute(
+                "INSERT OR REPLACE INTO drivers (driver_id, data_json, updated_at) VALUES (?,?,?)",
+                (d["driver_id"], json.dumps(d), now),
+            )
+        await self._conn.commit()
+
+    async def get_drivers(self) -> list[dict]:
+        async with self._conn.execute("SELECT data_json FROM drivers") as cur:
+            rows = await cur.fetchall()
+        return [json.loads(r["data_json"]) for r in rows]
+
+    async def save_circuits(self, circuits_json: list[dict]) -> None:
+        now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        for c in circuits_json:
+            await self._conn.execute(
+                "INSERT OR REPLACE INTO circuits (circuit_id, data_json, updated_at) VALUES (?,?,?)",
+                (c["circuit_id"], json.dumps(c), now),
+            )
+        await self._conn.commit()
+
+    async def get_all_result_types(self, season: int, round_num: int) -> list[str]:
+        """Return all result types stored for a given season/round."""
+        async with self._conn.execute(
+            "SELECT type FROM results WHERE season=? AND round=?",
+            (season, round_num),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [r["type"] for r in rows]
+
+    async def get_last_result_round(self, season: int) -> int | None:
+        """Return the highest round number that has any result data."""
+        async with self._conn.execute(
+            "SELECT MAX(round) as r FROM results WHERE season=?",
+            (season,),
+        ) as cur:
+            row = await cur.fetchone()
+        return row["r"] if row and row["r"] is not None else None

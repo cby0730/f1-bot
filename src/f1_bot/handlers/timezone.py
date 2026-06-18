@@ -73,6 +73,12 @@ async def timezone_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     elif query.data.startswith(_CB_SET):
         tz_name = query.data[len(_CB_SET) :]
+        if not is_valid_timezone(tz_name):
+            await query.edit_message_text(
+                f"❌ Unknown timezone: `{_esc(tz_name)}`\n\nPlease try /timezone again.",
+                parse_mode=ParseMode.MARKDOWN,
+            )
+            return
         await _save_tz(repo, update.effective_user.id, tz_name, update, via_callback=query)
 
 

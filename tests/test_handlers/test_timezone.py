@@ -123,3 +123,23 @@ async def test_timezone_callback_set_saves_timezone():
     assert saved.telegram_id == 456
     text = query.edit_message_text.call_args.args[0]
     assert "Europe/London" in text
+
+
+async def test_timezone_callback_rejects_invalid_timezone():
+    """Crafted callback data with an invalid tz must not save anything."""
+    repo = MagicMock()
+    repo.upsert_user_preference = AsyncMock()
+    query = MagicMock()
+    query.answer = AsyncMock()
+    query.edit_message_text = AsyncMock()
+    query.data = "tz:set:Mars/Olympus"
+    update = MagicMock()
+    update.callback_query = query
+    update.effective_user.id = 789
+    ctx = _context(repo)
+
+    await timezone_callback(update, ctx)
+
+    repo.upsert_user_preference.assert_not_called()
+    text = query.edit_message_text.call_args.args[0]
+    assert "❌" in text or "Unknown" in text

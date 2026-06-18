@@ -1,8 +1,10 @@
 import datetime
 
+import structlog
 from telegram import Update
 from telegram.constants import ParseMode
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.error import BadRequest
+from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
 from f1_bot.formatting.messages import (
     format_countdown_msg,
@@ -11,95 +13,168 @@ from f1_bot.formatting.messages import (
     format_schedule,
     no_data_message,
 )
-from f1_bot.handlers.errors import CommandValidationError
+from f1_bot.handlers.pagination import (
+    load_schedule_and_bounds,
+    next_filtered_keyboard,
+    next_overview_keyboard,
+)
 from f1_bot.utils.sessions import find_next_sessions
 
-
-def validate_and_parse_schedule_args(command: str, args: list[str], bounds: dict) -> int:
-    if not args:
-        return 1
-    if len(args) > 1 or not args[0].isdigit():
-        raise CommandValidationError(
-            f"⚠️ Invalid argument format. Usage: `/{command} [limit (1-5)]`"
-        )
-    limit = int(args[0])
-    if limit < 1 or limit > 5:
-        raise CommandValidationError(
-            f"⚠️ Limit must be between 1 and 5. Usage: `/{command} [limit (1-5)]`"
-        )
-    if command == "nextsprint":
-        upcoming_sprints = len(bounds["sprint_rounds"]) - len(bounds["completed_sprint_rounds"])
-        max_limit = upcoming_sprints
-    else:
-        max_limit = bounds["upcoming_rounds"]
-
-    capped_limit = min(limit, max_limit) if max_limit > 0 else 1
-    return capped_limit
+log = structlog.get_logger(__name__)
 
 
-async def _get_context(context: ContextTypes.DEFAULT_TYPE):
-    repo = context.bot_data["repo"]
-    season = datetime.date.today().year
-    return repo, season
+def _upcoming_rounds(races: list, group: str = "all") -> list[int]:
+    """Return sorted list of round numbers that have at least one upcoming session in the group."""
+    now = datetime.datetime.now(tz=datetime.UTC)
+    entries = find_next_sessions(races, group, limit=len(races), now=now)
+    seen: list[int] = []
+    for entry in entries:
+        if entry.race.round not in seen:
+            seen.append(entry.race.round)
+    return seen
+
+
+# ---------------------------------------------------------------------------
+# /next — State A: overview (session filter keyboard)
+# ---------------------------------------------------------------------------
 
 
 async def next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    repo, season = await _get_context(context)
-    user_tz = await repo.get_user_timezone(update.effective_user.id)
-
-    races = await repo.get_schedule(season)
-    if not races:
-        jolpica = context.bot_data["jolpica"]
-        try:
-            races = await jolpica.get_current_schedule()
-            if races:
-                await repo.save_schedule(season, races)
-        except Exception:
-            pass
-
-    if not races:
+    """Entry point: show next race weekend overview with session filter buttons."""
+    try:
+        races, bounds, season = await load_schedule_and_bounds(context)
+    except RuntimeError:
         await update.effective_message.reply_text(no_data_message("upcoming race"))
         return
 
-    try:
-        from f1_bot.handlers.results import _get_bounds
+    repo = context.bot_data["repo"]
+    user_tz = await repo.get_user_timezone(update.effective_user.id)
 
-        bounds = await _get_bounds(repo, season, races)
-        limit = validate_and_parse_schedule_args("next", context.args or [], bounds)
-    except CommandValidationError as e:
-        await update.effective_message.reply_text(str(e), parse_mode=ParseMode.MARKDOWN)
-        return
-
-    import datetime as dt_module
-
-    today = dt_module.date.today()
+    today = datetime.date.today()
     upcoming = [r for r in races if r.date >= today]
     if not upcoming:
         await update.effective_message.reply_text(no_data_message("upcoming race"))
         return
 
-    selected = upcoming[:limit]
-    messages = [format_next_race(race, user_tz) for race in selected]
+    race = upcoming[0]
+    await update.effective_message.reply_text(
+        format_next_race(race, user_tz),
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=next_overview_keyboard(race.round),
+    )
 
-    from f1_bot.handlers.results import send_merged_messages
 
-    await send_merged_messages(update, messages)
+# ---------------------------------------------------------------------------
+# /next callback — routes overview, filtered, and back
+# ---------------------------------------------------------------------------
+
+
+async def _next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle all next: callbacks.
+
+    Formats:
+      next:filtered:{filter}:{round}  → State B: show next session of type
+      next:back:_:{round}             → State A: overview for round
+    """
+    query = update.callback_query
+    await query.answer()
+
+    parts = query.data.split(":")
+    if len(parts) < 4:
+        return
+
+    mode = parts[1]
+    session_filter = parts[2]
+    rnd = int(parts[3])
+
+    try:
+        races, bounds, season = await load_schedule_and_bounds(context)
+    except RuntimeError:
+        await query.answer(text="Schedule unavailable", show_alert=True)
+        return
+
+    repo = context.bot_data["repo"]
+    user_tz = await repo.get_user_timezone(update.effective_user.id)
+
+    if mode == "back":
+        # Return to State A (overview) for the same round
+        race = next((r for r in races if r.round == rnd), None)
+        today = datetime.date.today()
+        if race is None or race.date < today:
+            upcoming = [r for r in races if r.date >= today]
+            if not upcoming:
+                await query.answer(text="No upcoming races", show_alert=True)
+                return
+            race = upcoming[0]
+
+        try:
+            await query.edit_message_text(
+                format_next_race(race, user_tz),
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=next_overview_keyboard(race.round),
+            )
+        except BadRequest:
+            pass
+        return
+
+    if mode == "filtered":
+        # State B: show next upcoming session of this filter type
+        upcoming_rounds = _upcoming_rounds(races, session_filter)
+        if not upcoming_rounds:
+            await query.answer(text=f"No upcoming {session_filter} sessions", show_alert=True)
+            return
+
+        # If requested round no longer has sessions, snap to first
+        if rnd not in upcoming_rounds:
+            rnd = upcoming_rounds[0]
+
+        now = datetime.datetime.now(tz=datetime.UTC)
+        entries = find_next_sessions(races, session_filter, limit=len(races), now=now)
+        entry = next((e for e in entries if e.race.round == rnd), None)
+        if entry is None:
+            rnd = upcoming_rounds[0]
+            entry = next((e for e in entries if e.race.round == rnd), None)
+
+        if entry is None:
+            await query.answer(text=f"No upcoming {session_filter} sessions", show_alert=True)
+            return
+
+        try:
+            await query.edit_message_text(
+                format_next_session(entry, user_tz),
+                parse_mode=ParseMode.MARKDOWN,
+                reply_markup=next_filtered_keyboard(rnd, upcoming_rounds, session_filter),
+            )
+        except BadRequest:
+            pass
+        except Exception as e:
+            log.warning("next_filtered_callback_failed", error=str(e))
+            await query.answer(text="Failed to load data", show_alert=True)
+        return
+
+
+# ---------------------------------------------------------------------------
+# /schedule and /countdown (unchanged — single-view)
+# ---------------------------------------------------------------------------
 
 
 async def schedule_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    repo, season = await _get_context(context)
-    user_tz = await repo.get_user_timezone(update.effective_user.id)
-    races = await repo.get_schedule(season)
-    if not races:
+    try:
+        races, bounds, season = await load_schedule_and_bounds(context)
+    except RuntimeError:
         await update.effective_message.reply_text(no_data_message("schedule"))
         return
+
+    repo = context.bot_data["repo"]
+    user_tz = await repo.get_user_timezone(update.effective_user.id)
     await update.effective_message.reply_text(
         format_schedule(races, user_tz), parse_mode=ParseMode.MARKDOWN
     )
 
 
 async def countdown_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    repo, season = await _get_context(context)
+    repo = context.bot_data["repo"]
+    season = datetime.date.today().year
     user_tz = await repo.get_user_timezone(update.effective_user.id)
     race = await repo.get_next_race(season)
     if not race:
@@ -110,72 +185,24 @@ async def countdown_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     )
 
 
-async def _next_session_handler(
-    update: Update,
-    context: ContextTypes.DEFAULT_TYPE,
-    group: str,
-    label: str,
-    command: str,
-) -> None:
-    repo, season = await _get_context(context)
-    user_tz = await repo.get_user_timezone(update.effective_user.id)
-
-    races = await repo.get_schedule(season)
-    if not races:
-        jolpica = context.bot_data["jolpica"]
-        try:
-            races = await jolpica.get_current_schedule()
-            if races:
-                await repo.save_schedule(season, races)
-        except Exception:
-            pass
-
-    if not races:
-        await update.effective_message.reply_text(no_data_message(f"upcoming {label} session"))
-        return
-
-    try:
-        from f1_bot.handlers.results import _get_bounds
-
-        bounds = await _get_bounds(repo, season, races)
-        limit = validate_and_parse_schedule_args(command, context.args or [], bounds)
-    except CommandValidationError as e:
-        await update.effective_message.reply_text(str(e), parse_mode=ParseMode.MARKDOWN)
-        return
-
-    entries = find_next_sessions(races, group, limit=limit)
-    if not entries:
-        await update.effective_message.reply_text(no_data_message(f"upcoming {label} session"))
-        return
-
-    messages = [format_next_session(entry, user_tz) for entry in entries]
-
-    from f1_bot.handlers.results import send_merged_messages
-
-    await send_merged_messages(update, messages)
+# ---------------------------------------------------------------------------
+# Legacy callback handler for stale old-format inline keyboards
+# ---------------------------------------------------------------------------
 
 
-async def next_session_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _next_session_handler(update, context, "all", "F1", "nextsession")
-
-
-async def next_practice_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _next_session_handler(update, context, "practice", "practice", "nextpractice")
-
-
-async def next_qualifying_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _next_session_handler(update, context, "qualifying", "qualifying", "nextqualifying")
-
-
-async def next_sprint_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await _next_session_handler(update, context, "sprint", "sprint", "nextsprint")
+async def _legacy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    """Handle old nsess:/nprac:/nqual:/nspr: callbacks from stale messages."""
+    query = update.callback_query
+    await query.answer(text="This button is outdated. Use /next again.", show_alert=True)
 
 
 def register(app: Application) -> None:
     app.add_handler(CommandHandler("next", next_handler))
-    app.add_handler(CommandHandler("nextsession", next_session_handler))
-    app.add_handler(CommandHandler("nextpractice", next_practice_handler))
-    app.add_handler(CommandHandler("nextqualifying", next_qualifying_handler))
-    app.add_handler(CommandHandler("nextsprint", next_sprint_handler))
     app.add_handler(CommandHandler("schedule", schedule_handler))
     app.add_handler(CommandHandler("countdown", countdown_handler))
+    app.add_handler(CallbackQueryHandler(_next_callback, pattern=r"^next:"))
+    # Legacy handlers for stale inline keyboards
+    app.add_handler(CallbackQueryHandler(_legacy_callback, pattern=r"^nsess:"))
+    app.add_handler(CallbackQueryHandler(_legacy_callback, pattern=r"^nprac:"))
+    app.add_handler(CallbackQueryHandler(_legacy_callback, pattern=r"^nqual:"))
+    app.add_handler(CallbackQueryHandler(_legacy_callback, pattern=r"^nspr:"))

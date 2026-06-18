@@ -1,5 +1,5 @@
 """
-Full-stack smoke test: Jolpica API → fetch job → SQLiteStore → Repository.
+Full-stack smoke test: Jolpica API → sync function → SQLiteStore → Repository.
 
 Uses real HTTP calls to api.jolpi.ca and real SQLite (tmp_path).
 This exercises the actual persistence and schema logic.
@@ -16,19 +16,12 @@ import pytest
 import pytest_asyncio
 
 from f1_bot.api.jolpica import JolpicaClient
-from f1_bot.scheduler.jobs import fetch_driver_standings, fetch_last_results, fetch_schedule
+from f1_bot.scheduler.jobs import sync_results_window, sync_schedule, sync_standings
 from f1_bot.storage.repository import Repository
 from f1_bot.storage.sqlite_store import SQLiteStore
 from f1_bot.utils.rate_limiter import RateLimiter
 
 pytestmark = pytest.mark.integration
-
-
-class _FakeContext:
-    """Minimal stub that mimics python-telegram-bot's bot_data dict access."""
-
-    def __init__(self, bot_data: dict) -> None:
-        self.bot_data = bot_data
 
 
 @pytest_asyncio.fixture
@@ -41,32 +34,32 @@ async def stack(tmp_path):
         rate_limiter=RateLimiter(per_second=2.0),
     )
     repo = Repository(sqlite)
-    ctx = _FakeContext({"jolpica": jolpica, "repo": repo})
 
-    yield repo, ctx
+    yield repo, jolpica
 
     await jolpica.close()
     await sqlite.close()
 
 
 async def test_schedule_flows_through_stack(stack):
-    """fetch_schedule job writes to SQLite; Repository.get_schedule reads it back."""
-    repo, ctx = stack
+    """sync_schedule writes to SQLite; Repository.get_schedule reads it back."""
+    repo, jolpica = stack
     season = datetime.date.today().year
 
-    await fetch_schedule(ctx)
+    races = await sync_schedule(jolpica, repo)
 
-    races = await repo.get_schedule(season)
     assert len(races) > 0, "Expected at least one race in current season"
-    assert all(r.season == season for r in races)
-    assert all(r.name for r in races)
+    stored_races = await repo.get_schedule(season)
+    assert len(stored_races) > 0
+    assert all(r.season == season for r in stored_races)
+    assert all(r.name for r in stored_races)
 
 
 async def test_next_race_is_upcoming_or_none(stack):
     """After schedule is loaded, get_next_race returns a future date or None."""
-    repo, ctx = stack
+    repo, jolpica = stack
     season = datetime.date.today().year
-    await fetch_schedule(ctx)
+    await sync_schedule(jolpica, repo)
 
     next_race = await repo.get_next_race(season)
     if next_race is not None:
@@ -74,11 +67,13 @@ async def test_next_race_is_upcoming_or_none(stack):
 
 
 async def test_driver_standings_flow_through_stack(stack):
-    """fetch_driver_standings job writes standings; Repository reads them back."""
-    repo, ctx = stack
+    """sync_standings writes standings; Repository reads them back."""
+    repo, jolpica = stack
     season = datetime.date.today().year
 
-    await fetch_driver_standings(ctx)
+    # Need schedule first for round_after
+    await sync_schedule(jolpica, repo)
+    await sync_standings(jolpica, repo)
 
     standings = await repo.get_driver_standings(season)
     assert len(standings) > 0, "Expected driver standings for current season"
@@ -88,14 +83,12 @@ async def test_driver_standings_flow_through_stack(stack):
 
 
 async def test_race_results_flow_through_stack(stack):
-    """fetch_last_results job writes results; Repository reads them back."""
-    repo, ctx = stack
+    """sync_results_window writes results; Repository reads them back."""
+    repo, jolpica = stack
     season = datetime.date.today().year
 
-    # Need schedule first to know how many rounds to search
-    await fetch_schedule(ctx)
-    races = await repo.get_schedule(season)
-    await fetch_last_results(ctx)
+    races = await sync_schedule(jolpica, repo)
+    await sync_results_window(jolpica, repo, races, full=True)
 
     found = None
     for round_num in range(len(races), 0, -1):

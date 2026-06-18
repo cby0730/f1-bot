@@ -1,5 +1,7 @@
 """Tests for BaseAPIClient — rate limiting, error handling, 429 retry."""
 
+from unittest.mock import AsyncMock
+
 import httpx
 import pytest
 from pytest_httpx import HTTPXMock
@@ -70,4 +72,15 @@ async def test_429_double_raises_api_rate_limit_error(httpx_mock: HTTPXMock):
     client = _make_client()
     with pytest.raises(APIRateLimitError):
         await client.get("/test")
+    await client.close()
+
+
+async def test_429_retry_does_not_double_acquire_rate_limiter(httpx_mock: HTTPXMock):
+    """On a 429→200 sequence, rate limiter acquire() must be called exactly once."""
+    httpx_mock.add_response(status_code=429, headers={"Retry-After": "0"})
+    httpx_mock.add_response(json={"ok": True})
+    client = _make_client()
+    client._rate_limiter.acquire = AsyncMock()
+    await client.get("/test")
+    assert client._rate_limiter.acquire.await_count == 1
     await client.close()

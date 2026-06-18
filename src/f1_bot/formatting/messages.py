@@ -214,18 +214,144 @@ def format_pitstops(race: Race | None, stops: list[PitStop], round_num: int) -> 
 
 # ---------- Laps ----------
 
+_LAPS_PAGE_SIZE = 20
 
-def format_laps(race: Race | None, laps: list[LapTime], round_num: int) -> str:
-    title = _esc(race.name) if race else f"Round {round_num}"
-    lines = [f"⏱ *{title} — Lap Times (sample)*\n"]
-    # Show first 20 lap entries — full lap data can be huge
-    for lap in laps[:20]:
-        time_str = lap.time or "—"
-        pos = f"P{lap.position}" if lap.position else "—"
-        lines.append(f"Lap {lap.lap_number:>2}  {pos:>4}  {_esc(lap.driver_id):<20} {time_str}")
-    if len(laps) > 20:
-        lines.append(f"\n_…and {len(laps) - 20} more laps_")
+
+def _parse_lap_time_ms(time_str: str | None) -> int | None:
+    """Convert 'M:SS.mmm' to milliseconds for comparison."""
+    if not time_str:
+        return None
+    try:
+        parts = time_str.split(":")
+        if len(parts) == 2:
+            mins = int(parts[0])
+            secs = float(parts[1])
+            return int((mins * 60 + secs) * 1000)
+        return int(float(time_str) * 1000)
+    except (ValueError, IndexError):
+        return None
+
+
+def format_laps_summary(race: Race | None, laps: list[LapTime]) -> str:
+    """Per-driver best lap time and average — the default laps view."""
+    title = _esc(race.name) if race else "Race"
+    lines = [f"⏱ *{title} — Lap Times Summary*\n"]
+
+    by_driver: dict[str, list[LapTime]] = {}
+    for lap in laps:
+        by_driver.setdefault(lap.driver_id, []).append(lap)
+
+    rows = []
+    for driver_id, driver_laps in sorted(by_driver.items()):
+        times_ms = [_parse_lap_time_ms(lap.time) for lap in driver_laps]
+        valid = [t for t in times_ms if t is not None]
+        if not valid:
+            continue
+        best_ms = min(valid)
+        avg_ms = sum(valid) // len(valid)
+
+        def ms_to_str(ms: int) -> str:
+            m, rem = divmod(ms, 60000)
+            s = rem / 1000
+            return f"{m}:{s:06.3f}"
+
+        rows.append((driver_id, ms_to_str(best_ms), ms_to_str(avg_ms), len(driver_laps)))
+
+    rows.sort(key=lambda r: _parse_lap_time_ms(r[1]) or 999999)
+    for driver_id, best, avg, count in rows:
+        lines.append(
+            f"🏎 *{_esc(driver_id)}*: Best `{best}` | Avg `{avg}` | {count} laps"
+        )
     return "\n".join(lines)
+
+
+def _fmt_sector(val: float | None) -> str:
+    """Format a sector time as compact seconds with 1 decimal."""
+    if val is None:
+        return "  — "
+    return f"{val:5.1f}"
+
+
+def _fmt_lap_duration(val: float | None, time_str: str | None) -> str:
+    """Format lap duration: prefer string form, fall back to float."""
+    if time_str:
+        return time_str
+    if val is not None:
+        m, s = divmod(val, 60)
+        return f"{int(m)}:{s:06.3f}"
+    return "—"
+
+
+def format_laps_by_lap(
+    race: Race | None, laps: list[LapTime], lap_number: int, total_laps: int
+) -> str:
+    """All drivers' times for a single lap number, with sector times."""
+    title = _esc(race.name) if race else "Race"
+    lines = [f"⏱ *{title} — Lap {lap_number}/{total_laps}*\n"]
+
+    lap_entries = [lap for lap in laps if lap.lap_number == lap_number]
+    lap_entries.sort(key=lambda x: x.position or 999)
+
+    has_sectors = any(e.duration_sector_1 is not None for e in lap_entries)
+    if has_sectors:
+        lines.append("`     Driver  S1   │ S2   │ S3   │ Lap     `")
+        for entry in lap_entries:
+            pos = f"P{entry.position}" if entry.position else " —"
+            s1 = _fmt_sector(entry.duration_sector_1)
+            s2 = _fmt_sector(entry.duration_sector_2)
+            s3 = _fmt_sector(entry.duration_sector_3)
+            lap_t = _fmt_lap_duration(entry.lap_duration, entry.time)
+            lines.append(f"`{pos:>3} {entry.driver_id:<4} {s1}│{s2}│{s3}│{lap_t}`")
+    else:
+        for entry in lap_entries:
+            pos = f"P{entry.position}" if entry.position else "—"
+            time_str = entry.time or "—"
+            lines.append(f"`{pos:>4}`  {_esc(entry.driver_id):<6} `{time_str}`")
+
+    if not lap_entries:
+        lines.append("_No data for this lap_")
+    return "\n".join(lines)
+
+
+def format_laps_by_driver(
+    race: Race | None, laps: list[LapTime], driver_id: str, page: int
+) -> str:
+    """One driver's lap times, paginated, with sector times."""
+    title = _esc(race.name) if race else "Race"
+    driver_laps = sorted(
+        [lap for lap in laps if lap.driver_id == driver_id], key=lambda x: x.lap_number
+    )
+    total = len(driver_laps)
+    start = page * _LAPS_PAGE_SIZE
+    end = start + _LAPS_PAGE_SIZE
+    page_laps = driver_laps[start:end]
+
+    lines = [f"⏱ *{title} — {_esc(driver_id)} Lap Times*\n"]
+
+    has_sectors = any(e.duration_sector_1 is not None for e in page_laps)
+    if has_sectors:
+        lines.append("`Lap   S1   │ S2   │ S3   │ Lap     `")
+        for lap in page_laps:
+            s1 = _fmt_sector(lap.duration_sector_1)
+            s2 = _fmt_sector(lap.duration_sector_2)
+            s3 = _fmt_sector(lap.duration_sector_3)
+            lap_t = _fmt_lap_duration(lap.lap_duration, lap.time)
+            lines.append(f"`L{lap.lap_number:>2}  {s1}│{s2}│{s3}│{lap_t}`")
+    else:
+        for lap in page_laps:
+            time_str = lap.time or "—"
+            lines.append(f"Lap {lap.lap_number:>3}: `{time_str}`")
+
+    if total > _LAPS_PAGE_SIZE:
+        pages = (total + _LAPS_PAGE_SIZE - 1) // _LAPS_PAGE_SIZE
+        lines.append(f"\n_Page {page + 1}/{pages} — {total} laps total_")
+    return "\n".join(lines)
+
+
+def format_laps_driver_picker(race: Race | None) -> str:
+    """Header text for the driver selection page."""
+    title = _esc(race.name) if race else "Race"
+    return f"⏱ *{title} — Select a Driver*\n\nTap a driver code to view their lap times:"
 
 
 # ---------- Driver / Circuit ----------

@@ -1,20 +1,25 @@
 """Unit tests for the bot startup and command registration."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from f1_bot.main import _post_init
 
 
 async def test_post_init_sets_commands():
-    """Verify that _post_init initializes DB and registers bot commands correctly."""
+    """Verify that _post_init initializes DB, runs startup sync, and registers bot commands."""
     app = MagicMock()
     app.bot_data = {
         "settings": MagicMock(),
         "sqlite": AsyncMock(),
+        "jolpica": AsyncMock(),
+        "openf1": AsyncMock(),
+        "repo": AsyncMock(),
     }
     app.bot = AsyncMock()
 
-    await _post_init(app)
+    with patch("f1_bot.main.startup_sync", new_callable=AsyncMock) as mock_sync:
+        await _post_init(app)
+        mock_sync.assert_awaited_once()
 
     # Verify SQLite DB initialization is called
     app.bot_data["sqlite"].init.assert_awaited_once()
@@ -26,7 +31,7 @@ async def test_post_init_sets_commands():
     args, _ = app.bot.set_my_commands.call_args
     commands = args[0]
 
-    assert len(commands) == 19
+    assert len(commands) == 12
 
     # Assert specific commands exist in the list
     cmd_names = {c.command for c in commands}
@@ -34,18 +39,11 @@ async def test_post_init_sets_commands():
         "start",
         "help",
         "next",
-        "nextsession",
-        "nextpractice",
-        "nextqualifying",
-        "nextsprint",
         "schedule",
         "countdown",
         "timezone",
         "standings",
         "results",
-        "qualifying",
-        "sprint",
-        "sessionresult",
         "pitstops",
         "laps",
         "driver",

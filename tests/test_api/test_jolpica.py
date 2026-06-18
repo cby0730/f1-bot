@@ -121,8 +121,8 @@ async def test_pit_stop_duration_is_float_or_none(client):
 # --- Lap times (2024 R1, limited) ---
 
 
-async def test_get_fastest_laps_2024_r1(client):
-    laps = await client.get_fastest_laps("2024", "1")
+async def test_get_lap_timings_2024_r1(client):
+    laps = await client.get_lap_timings("2024", "1")
     assert len(laps) > 0
     lap = laps[0]
     assert isinstance(lap, LapTime)

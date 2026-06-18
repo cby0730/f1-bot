@@ -251,25 +251,38 @@ class JolpicaClient(BaseAPIClient):
             )
         return stops
 
-    async def get_fastest_laps(
+    async def get_lap_timings(
         self, season: str = "current", round_num: str = "last"
     ) -> list[LapTime]:
-        data = await self.get(f"/{season}/{round_num}/laps.json", params={"limit": 100})
-        races_raw = data["MRData"]["RaceTable"]["Races"]
-        if not races_raw:
-            return []
-        laps = []
-        for lap_raw in races_raw[0].get("Laps", []):
-            for timing in lap_raw.get("Timings", []):
-                laps.append(
-                    LapTime(
-                        lap_number=int(lap_raw["number"]),
-                        driver_id=timing["driverId"],
-                        position=int(timing.get("position", 0)) or None,
-                        time=timing.get("time"),
+        # Jolpica hard-caps at 100 entries per request regardless of limit parameter.
+        # A typical race has ~1346 entries (20 drivers × ~67 laps), requiring ~14 pages.
+        all_laps: list[LapTime] = []
+        offset = 0
+        while True:
+            data = await self.get(
+                f"/{season}/{round_num}/laps.json",
+                params={"limit": 100, "offset": offset},
+            )
+            total = int(data["MRData"]["total"])
+            races_raw = data["MRData"]["RaceTable"]["Races"]
+            if not races_raw:
+                break
+            for lap_raw in races_raw[0].get("Laps", []):
+                for timing in lap_raw.get("Timings", []):
+                    all_laps.append(
+                        LapTime(
+                            lap_number=int(lap_raw["number"]),
+                            driver_id=timing["driverId"],
+                            position=int(timing.get("position", 0)) or None,
+                            time=timing.get("time"),
+                        )
                     )
-                )
-        return laps
+            offset += 100
+            if offset >= total:
+                break
+        if total > 5000:
+            log.warning("lap_timings_unexpectedly_large", season=season, round=round_num, total=total)
+        return all_laps
 
     async def get_drivers(self, season: str = "current") -> list[Driver]:
         data = await self.get(f"/{season}/drivers.json")

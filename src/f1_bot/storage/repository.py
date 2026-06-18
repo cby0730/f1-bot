@@ -157,6 +157,24 @@ class Repository:
         data = [r.model_dump(mode="json") if hasattr(r, "model_dump") else r for r in results]
         await self.sqlite.save_results(season, round_num, f"session:{session_key}", data)
 
+    # --- Lap Timings ---
+
+    async def get_lap_timings(self, season: int, round_num: int) -> list[dict] | None:
+        return await self.sqlite.get_lap_timings(season, round_num)
+
+    async def save_lap_timings(self, season: int, round_num: int, timings: list) -> None:
+        data = [t.model_dump(mode="json") if hasattr(t, "model_dump") else t for t in timings]
+        await self.sqlite.save_lap_timings(season, round_num, data)
+
+    # --- Pit Stops ---
+
+    async def get_pit_stops(self, season: int, round_num: int) -> list[dict] | None:
+        return await self.sqlite.get_pit_stops(season, round_num)
+
+    async def save_pit_stops(self, season: int, round_num: int, stops: list) -> None:
+        data = [s.model_dump(mode="json") if hasattr(s, "model_dump") else s for s in stops]
+        await self.sqlite.save_pit_stops(season, round_num, data)
+
     # --- User Preferences ---
 
     async def get_user_preference(self, telegram_id: int) -> UserPreference | None:
@@ -168,3 +186,50 @@ class Repository:
     async def get_user_timezone(self, telegram_id: int) -> str:
         pref = await self.get_user_preference(telegram_id)
         return pref.timezone if pref else "UTC"
+
+    # --- Drivers / Circuits ---
+
+    async def save_drivers(self, season: int, drivers: list) -> None:
+        data = [d.model_dump(mode="json") if hasattr(d, "model_dump") else d for d in drivers]
+        await self.sqlite.save_drivers(data)
+
+    async def get_drivers_map(self, season: int) -> dict:
+        """Return {permanent_number(int): Driver} map from cached drivers."""
+        from f1_bot.models.driver import Driver
+
+        rows = await self.sqlite.get_drivers()
+        result = {}
+        for r in rows:
+            d = Driver.model_validate(r)
+            if d.permanent_number and d.permanent_number.isdigit():
+                result[int(d.permanent_number)] = d
+        return result
+
+    async def save_circuits(self, season: int, circuits: list) -> None:
+        data = [c.model_dump(mode="json") if hasattr(c, "model_dump") else c for c in circuits]
+        await self.sqlite.save_circuits(data)
+
+    # --- Sync Metadata ---
+
+    async def get_sync_metadata(self, entity: str) -> str | None:
+        return await self.sqlite.get_sync_metadata(entity)
+
+    async def set_sync_metadata(self, entity: str) -> None:
+        await self.sqlite.set_sync_metadata(entity)
+
+    # --- Schedule Audit ---
+
+    async def log_schedule_change(
+        self, season: int, round_num: int, field: str, old_value: str | None, new_value: str | None
+    ) -> None:
+        await self.sqlite.log_schedule_change(season, round_num, field, old_value, new_value)
+
+    # --- Results queries for unified /results ---
+
+    async def get_all_result_types(self, season: int, round_num: int) -> list[str]:
+        """Return all result types stored for a given season/round."""
+        return await self.sqlite.get_all_result_types(season, round_num)
+
+    async def get_last_result_round(self, season: int) -> int | None:
+        """Return the highest round with any result data."""
+        return await self.sqlite.get_last_result_round(season)

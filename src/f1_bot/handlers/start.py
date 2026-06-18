@@ -10,11 +10,7 @@ _HELP_TEXT = """
 /help — Show this command list
 
 *Schedule*
-/next [N] — Next N races (default 1) + countdown + session times
-/nextsession [N] — Next N F1 sessions (default 1): practice, qualifying, sprint, or race
-/nextpractice [N] — Next N practice sessions (default 1)
-/nextqualifying [N] — Next N qualifying or sprint qualifying sessions (default 1)
-/nextsprint [N] — Next N sprint-related sessions (default 1)
+/next — Next race overview + session filter buttons (FP1–Race)
 /schedule — Full season race calendar
 /countdown — Time remaining until the next race
 /timezone — Set your timezone (e.g. /timezone Asia/Taipei)
@@ -23,12 +19,9 @@ _HELP_TEXT = """
 /standings — WDC + WCC standings
 
 *Results*
-/results [N or rN] — Race result(s) (N for last N, rN for specific round)
-/qualifying [N or rN] — Qualifying result(s)
-/sprint [N or rN] — Sprint result(s)
-/sessionresult [N or rN] [session] — Result(s) for FP, qualifying, sprint, or race
-/pitstops [N or rN] — Pit stop data
-/laps [N or rN] — Lap time sample
+/results — Results overview + session filter (FP1–Race, round navigation)
+/pitstops — Pit stop data (use ◀ ▶ buttons to navigate rounds)
+/laps — Lap times with sector data (By-Lap / By-Driver view)
 
 *Info*
 /driver [name] — Driver profile

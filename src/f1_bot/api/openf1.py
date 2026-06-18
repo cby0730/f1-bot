@@ -123,7 +123,10 @@ class OpenF1Client(BaseAPIClient):
                 duration_sector_1=lap.get("duration_sector_1"),
                 duration_sector_2=lap.get("duration_sector_2"),
                 duration_sector_3=lap.get("duration_sector_3"),
+                i1_speed=lap.get("i1_speed"),
+                i2_speed=lap.get("i2_speed"),
                 speed_trap=lap.get("st_speed"),
+                lap_duration=lap.get("lap_duration"),
             )
             for lap in data
         ]

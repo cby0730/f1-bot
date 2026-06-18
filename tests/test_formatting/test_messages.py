@@ -6,7 +6,10 @@ from f1_bot.formatting.messages import (
     _esc,
     format_constructor_standings,
     format_driver_standings,
-    format_laps,
+    format_laps_by_driver,
+    format_laps_by_lap,
+    format_laps_driver_picker,
+    format_laps_summary,
     format_next_race,
     format_pitstops,
     format_qualifying_results,
@@ -259,34 +262,91 @@ def test_format_pitstops_no_race_uses_round_number():
     assert "Round 7" in text
 
 
-# --- format_laps ---
+# --- format_laps_summary ---
 
 
-def test_format_laps_shows_driver_and_time():
-    laps = [LapTime(lap_number=1, driver_id="HAM", time="1:32.456", position=1)]
-    text = format_laps(_race(), laps, 5)
+def test_format_laps_summary_shows_drivers():
+    laps = [
+        LapTime(lap_number=1, driver_id="HAM", time="1:32.456", position=1),
+        LapTime(lap_number=2, driver_id="HAM", time="1:31.999", position=1),
+        LapTime(lap_number=1, driver_id="VER", time="1:32.789", position=2),
+    ]
+    text = format_laps_summary(_race(), laps)
     assert "HAM" in text
-    assert "1:32.456" in text
+    assert "VER" in text
+    assert "Best" in text
+    assert "Avg" in text
 
 
-def test_format_laps_shows_position():
-    laps = [LapTime(lap_number=3, driver_id="VER", time="1:31.999", position=2)]
-    text = format_laps(_race(), laps, 5)
-    assert "P2" in text
-
-
-def test_format_laps_truncates_after_20():
-    laps = [LapTime(lap_number=i, driver_id="HAM", time="1:30.000") for i in range(1, 26)]
-    text = format_laps(_race(), laps, 5)
-    assert "5 more laps" in text
-    # lap 21+ should not appear as full rows
-    assert text.count("HAM") == 20
-
-
-def test_format_laps_no_race_uses_round_number():
+def test_format_laps_summary_no_race():
     laps = [LapTime(lap_number=1, driver_id="LEC", time="1:33.111")]
-    text = format_laps(None, laps, 9)
-    assert "Round 9" in text
+    text = format_laps_summary(None, laps)
+    assert "LEC" in text
+
+
+# --- format_laps_by_lap ---
+
+
+def test_format_laps_by_lap_shows_all_drivers_for_lap():
+    laps = [
+        LapTime(lap_number=3, driver_id="VER", time="1:31.999", position=1),
+        LapTime(lap_number=3, driver_id="HAM", time="1:32.456", position=2),
+        LapTime(lap_number=4, driver_id="VER", time="1:31.800", position=1),
+    ]
+    text = format_laps_by_lap(_race(), laps, 3, 10)
+    assert "VER" in text
+    assert "HAM" in text
+    # Lap 4 drivers should not appear
+    assert "1:31.800" not in text
+
+
+def test_format_laps_by_lap_shows_position():
+    laps = [LapTime(lap_number=1, driver_id="NOR", time="1:30.000", position=3)]
+    text = format_laps_by_lap(_race(), laps, 1, 52)
+    assert "P3" in text
+
+
+def test_format_laps_by_lap_empty_lap():
+    laps = [LapTime(lap_number=1, driver_id="HAM", time="1:32.000", position=1)]
+    text = format_laps_by_lap(_race(), laps, 99, 52)
+    assert "No data" in text
+
+
+# --- format_laps_by_driver ---
+
+
+def test_format_laps_by_driver_shows_driver_laps():
+    laps = [
+        LapTime(lap_number=i, driver_id="VER", time=f"1:3{i}.000") for i in range(1, 6)
+    ]
+    text = format_laps_by_driver(_race(), laps, "VER", page=0)
+    assert "VER" in text
+    for i in range(1, 6):
+        # format_laps_by_driver uses {:>3} padding: single-digit laps get 2 leading spaces
+        assert f"Lap {i:>3}" in text
+
+
+def test_format_laps_by_driver_paginates():
+    laps = [
+        LapTime(lap_number=i, driver_id="HAM", time="1:30.000") for i in range(1, 25)
+    ]
+    text_p0 = format_laps_by_driver(_race(), laps, "HAM", page=0)
+    text_p1 = format_laps_by_driver(_race(), laps, "HAM", page=1)
+    # Page 0: laps 1-20; page 1: laps 21-24
+    assert "Lap  1" in text_p0 or "Lap 1" in text_p0
+    assert "Lap 21" in text_p1 or "21" in text_p1
+    assert "Page 1/2" in text_p0
+    assert "Page 2/2" in text_p1
+
+
+# --- format_laps_driver_picker ---
+
+
+def test_format_laps_driver_picker_header():
+    text = format_laps_driver_picker(_race())
+    assert "Select" in text
+    assert "Driver" in text
+    assert "Monaco Grand Prix" in text
 
 
 # --- _esc ---

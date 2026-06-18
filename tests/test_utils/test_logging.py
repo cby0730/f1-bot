@@ -1,6 +1,6 @@
 import logging
-import sys
 from unittest import mock
+
 import pytest
 import structlog
 

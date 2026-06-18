@@ -46,7 +46,8 @@ class BaseAPIClient:
     async def get(
         self, path: str, params: dict | None = None, *, _retried: bool = False
     ) -> dict | list:
-        await self._rate_limiter.acquire()
+        if not _retried:
+            await self._rate_limiter.acquire()
         try:
             response = await self._client.get(path, params=params)
         except httpx.TimeoutException as e:

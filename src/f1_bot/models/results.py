@@ -58,7 +58,11 @@ class LapTime(BaseModel):
     duration_sector_1: float | None = None
     duration_sector_2: float | None = None
     duration_sector_3: float | None = None
+    # OpenF1 speed traps (km/h)
+    i1_speed: float | None = None
+    i2_speed: float | None = None
     speed_trap: float | None = None
+    lap_duration: float | None = None  # total lap time in seconds from OpenF1
 
 
 class PitStop(BaseModel):

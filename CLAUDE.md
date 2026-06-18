@@ -1,40 +1,73 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 # F1 Bot — Project Instructions
 
 ## Running the project
 
 ```bash
 uv run -m f1_bot                          # start the bot (requires .env)
-uv run pytest -m "not integration"        # unit tests only (~0.35s)
+uv run pytest -m "not integration"        # unit tests only (~5s)
 uv run pytest -m integration -v           # integration tests (real HTTP)
-uv run pytest tests/test_smoke.py -v      # full-stack smoke test (4 tests)
+uv run pytest tests/test_smoke.py -v      # full-stack smoke test
+uv run pytest tests/test_handlers/test_race_data.py -v  # single test file
 uv run ruff check src/ tests/             # lint
 ```
 
 ## Architecture
 
-Cache-first: background jobs (APScheduler via python-telegram-bot JobQueue) fetch
-from Jolpica → store in SQLite. Telegram handlers read from the local SQLite cache;
-on cache misses, they fetch on-demand from Jolpica / OpenF1 and save to SQLite.
+**SQL-only handlers:** background scheduler (JobQueue / APScheduler) fetches from Jolpica + OpenF1 → stores in SQLite. Telegram handlers read exclusively from SQLite via `Repository`. No API calls from handlers.
 
 ```
-Telegram users → handlers → Repository → SQLite
-                   ↓                     ↑
-             JolpicaClient /        Scheduler → jobs → JolpicaClient
-             OpenF1Client
+Startup / Scheduler → JolpicaClient + OpenF1Client → SQLite
+                                                        ↓
+              Telegram users → handlers → Repository → SQLite (read-only)
 ```
+
+- **Startup sync:** `startup_sync()` runs in `_post_init` before the bot accepts commands. Fetches schedule, standings, results, pit stops, laps, session data.
+- **Polling cycle:** All scheduler jobs share `_POLL_INTERVAL` (1 hour) in `scheduler/manager.py`.
+- **Two-state UX:** `/next` and `/results` use a unified two-state interaction: State A (overview with session filter buttons) → State B (filtered with round navigation + Back).
+
+## Commands (12 total)
+
+| Command | Handler file |
+|---|---|
+| `/start`, `/help` | `handlers/start.py` |
+| `/next` | `handlers/schedule.py` — unified entry for next session (replaces `/nextsession`, `/nextpractice`, `/nextqualifying`, `/nextsprint`) |
+| `/schedule`, `/countdown` | `handlers/schedule.py` |
+| `/results` | `handlers/results.py` — unified entry for all results (replaces `/qualifying`, `/sprint`, `/sessionresult`) |
+| `/pitstops`, `/laps` | `handlers/race_data.py` |
+| `/standings` | `handlers/standings.py` |
+| `/driver`, `/circuit` | `handlers/extras.py` |
+| `/timezone` | `handlers/timezone.py` |
+
+## Callback data formats
+
+| Pattern | Meaning |
+|---|---|
+| `next:filtered:{filter}:{round}` | `/next` State B — filter ∈ {practice, qualifying, sprint, race} |
+| `next:back:_:{round}` | `/next` return to State A |
+| `res:filtered:{session_key}:{round}` | `/results` State B — session_key ∈ {race, qualifying, sprint, fp1, fp2, fp3, sq, spr} |
+| `res:back:_:{round}` | `/results` return to State A |
+| `pit:{round}` | Pit stops round navigation |
+| `lap:{round}:{view}` | Laps round/view navigation |
 
 ## Key files
 
 | File | Role |
 |---|---|
+| `src/f1_bot/main.py` | Application builder; `_post_init` sets up clients, repo, runs `startup_sync`, registers commands |
 | `src/f1_bot/config.py` | Pydantic Settings; env vars: `TELEGRAM_BOT_TOKEN`, `F1BOT_*` |
 | `src/f1_bot/storage/sqlite_store.py` | Persistent store; init with `await store.init()` (not `initialize()`) |
-| `src/f1_bot/storage/repository.py` | Unified read: pure SQLite store |
-| `src/f1_bot/scheduler/jobs.py` | Individual fetch functions; each takes a `context` with `bot_data["jolpica"]` and `bot_data["repo"]` |
+| `src/f1_bot/storage/repository.py` | Unified read layer over SQLite; `get_schedule_bounds()` is the source of truth for completed/upcoming rounds |
+| `src/f1_bot/scheduler/jobs.py` | `startup_sync()` + individual `sync_*` callbacks; each takes `(jolpica, repo)` or `(openf1, repo)` |
+| `src/f1_bot/scheduler/manager.py` | Registers all jobs via `run_repeating`; owns `_POLL_INTERVAL` |
+| `src/f1_bot/handlers/pagination.py` | Shared keyboard builders: `next_overview_keyboard`, `next_filtered_keyboard`, `results_overview_keyboard`, `results_filtered_keyboard`, `round_keyboard`, `schedule_keyboard` |
 | `src/f1_bot/utils/rate_limiter.py` | Token bucket; constructor: `RateLimiter(per_second=..., per_period=..., period=...)` |
 | `src/f1_bot/utils/fuzzy_match.py` | `match_driver()` / `match_circuit()` using difflib; scores all fields, takes max |
+| `src/f1_bot/utils/sessions.py` | `find_next_sessions()` / `find_recent_completed_session()` — session-level timeline logic |
 | `tests/conftest.py` | `sqlite_store`, `repo` fixtures (tmp SQLite) |
-| `tests/test_smoke.py` | Full-stack integration test; exercises actual persistence and schema logic |
 
 ## Known gotchas
 
@@ -47,6 +80,13 @@ single argument only.
 
 **Docker image:** Use `python:3.13-slim`, not `python:3.13-alpine`. Alpine's musl libc
 breaks `httpx` C extensions.
+
+**Pydantic v2 frozen models in tests:** Use `object.__setattr__(model, "field", value)` to
+set fields on frozen Pydantic models during test setup (e.g., attaching a `sprint` session to a `Race`).
+
+**startup_sync in tests:** Patch `f1_bot.main.startup_sync` with `AsyncMock` in E2E/main tests to avoid real HTTP calls.
+
+**Legacy callback handlers:** `schedule.py` and `results.py` register legacy callback patterns (e.g., `nsess:`, `qual:`) that respond with "please use /next" — these handle stale inline keyboards from before the refactoring.
 
 ## Test markers
 
@@ -62,3 +102,4 @@ breaks `httpx` C extensions.
 
 OpenF1 `gmt_offset` field is the source of truth for local track time.
 Jolpica race winner points may exceed 25 (fastest lap bonus = +1).
+Lap timing data (with sector times) comes from OpenF1, not Jolpica.
