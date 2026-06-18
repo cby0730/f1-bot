@@ -1,6 +1,6 @@
 # F1 Bot
 
-A public Telegram bot for Formula 1 information — race schedules, standings, results, and more.
+A Telegram bot for Formula 1 information — race schedules, standings, results, pit stops, and lap timing data.
 
 ## Features
 
@@ -11,11 +11,12 @@ A public Telegram bot for Formula 1 information — race schedules, standings, r
 | `/countdown` | Time until next race |
 | `/standings` | WDC and WCC standings |
 | `/results` | Race results overview; tap session buttons to view Qualifying / Sprint / Race / FP results |
-| `/pitstops` | Pit stop data — ◀ ▶ button navigation |
+| `/pitstops` | Pit stop data with ◀ ▶ round navigation |
 | `/laps` | Fastest laps — round navigation + By-Lap / By-Driver view toggle |
-| `/driver <name>` | Driver profile and standings |
-| `/circuit <name>` | Circuit info |
+| `/driver <name>` | Driver profile and standings (fuzzy name matching) |
+| `/circuit <name>` | Circuit info (fuzzy name matching) |
 | `/timezone` | Set your timezone for local race times |
+| `/start`, `/help` | Welcome message and command list |
 
 ### Two-state interaction pattern
 
@@ -40,6 +41,20 @@ Startup / Scheduler → Jolpica + OpenF1 APIs → SQLite
 - **Startup sync:** `startup_sync()` in `_post_init` fetches schedule, standings, results, pit stops, laps, and session data before the bot starts accepting commands.
 - **Unified polling:** All scheduler jobs share a 1-hour interval (`_POLL_INTERVAL` in `scheduler/manager.py`).
 - **OpenF1 for laps:** Lap timing data (including sector times) comes from OpenF1, not Jolpica.
+- **Fuzzy matching:** `/driver` and `/circuit` commands use difflib-based fuzzy matching across all name fields.
+
+### Project structure
+
+```
+src/f1_bot/
+├── api/            # HTTP clients (Jolpica, OpenF1) with rate limiting
+├── formatting/     # Message formatting, emoji helpers, timezone display
+├── handlers/       # Telegram command & callback handlers (read-only from SQLite)
+├── models/         # Pydantic v2 models (frozen)
+├── scheduler/      # Background sync jobs and job manager
+├── storage/        # SQLite store + Repository read layer
+└── utils/          # Rate limiter, fuzzy match, session helpers, logging
+```
 
 ## Running with Docker (recommended)
 
@@ -66,7 +81,7 @@ To update: `git pull && docker compose up -d --build`
 
 ## Running locally (development)
 
-**Prerequisites:** Python 3.13+, [uv](https://docs.astral.sh/uv/) running locally.
+**Prerequisites:** Python 3.13+, [uv](https://docs.astral.sh/uv/).
 
 ```bash
 # Install dependencies
@@ -83,11 +98,17 @@ uv run -m f1_bot
 ## Running tests
 
 ```bash
-# Unit tests only (no network required)
-uv run pytest -v -m "not integration"
+# Unit tests only (~288 tests, no network required)
+uv run pytest -m "not integration"
 
-# All tests including real API calls (requires internet)
-uv run pytest -v
+# Integration tests (real API calls, requires internet)
+uv run pytest -m integration -v
+
+# Single test file
+uv run pytest tests/test_handlers/test_race_data.py -v
+
+# Lint
+uv run ruff check src/ tests/
 ```
 
 ## Getting a Telegram bot token
@@ -96,23 +117,37 @@ uv run pytest -v
 2. Send `/newbot` and follow the prompts
 3. Copy the token into your `.env` as `TELEGRAM_BOT_TOKEN`
 
-## Deployment
-
-Any Linux VPS with Docker works. Free options:
-- [Oracle Cloud Free Tier](https://www.oracle.com/cloud/free/) — 1 GB RAM ARM instance, always free
-- [Hetzner](https://www.hetzner.com/cloud) — €4/month CAX11 ARM
-
-The bot uses ~100 MB RAM in steady state.
-
 ## Environment variables
 
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `TELEGRAM_BOT_TOKEN` | Yes | — | From @BotFather |
-| `F1BOT_SQLITE_PATH` | No | `f1bot.db` | Auto-set to `/data/f1bot.db` by docker-compose |
-| `F1BOT_LOG_LEVEL` | No | `INFO` | `DEBUG` / `INFO` / `WARNING` |
+| `F1BOT_SQLITE_PATH` | No | `f1bot.db` | SQLite database path (auto-set to `/data/f1bot.db` in Docker) |
+| `F1BOT_LOG_LEVEL` | No | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
+| `F1BOT_LOG_FORMAT` | No | `auto` | `auto` (JSON if not TTY) / `console` / `json` |
+| `REDIS_URL` | No | `redis://localhost:6379/0` | Redis connection (set automatically in docker-compose) |
+
+## Deployment
+
+Any Linux VPS with Docker works. Free/cheap options:
+- [Oracle Cloud Free Tier](https://www.oracle.com/cloud/free/) — 1 GB RAM ARM instance, always free
+- [Hetzner](https://www.hetzner.com/cloud) — €4/month CAX11 ARM
+
+The bot uses ~100 MB RAM in steady state.
 
 ## Data sources
 
-- [Jolpica-F1 API](https://api.jolpi.ca/ergast/f1/) — schedule, standings, results, pit stops (free, no auth, 500 req/hr)
-- [OpenF1 API](https://openf1.org) — session results, lap timings with sector times (free, no auth, 30 req/min)
+| API | Purpose | Auth | Rate limits |
+|---|---|---|---|
+| [Jolpica-F1](https://api.jolpi.ca/ergast/f1/) | Schedule, standings, results, pit stops | None | 500 req/hr |
+| [OpenF1](https://openf1.org) | Session results, lap timings with sector times | None | 3 req/s, 30 req/min |
+
+## Tech stack
+
+- **Runtime:** Python 3.13, [python-telegram-bot](https://python-telegram-bot.org/) (PTB) 22.x with JobQueue
+- **Data:** SQLite via aiosqlite, Pydantic v2 models
+- **HTTP:** httpx with token-bucket rate limiting
+- **Logging:** structlog (JSON in production, colored console in dev)
+- **Build:** uv, multi-stage Docker (python:3.13-slim)
+- **Testing:** pytest, pytest-asyncio, pytest-httpx
+- **Linting:** ruff

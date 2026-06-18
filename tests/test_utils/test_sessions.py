@@ -8,6 +8,8 @@ from f1_bot.utils.sessions import (
     find_recent_completed_session,
     find_recent_completed_sessions,
     match_openf1_session,
+    normalize_session_key,
+    session_entries,
 )
 
 
@@ -101,3 +103,75 @@ def test_find_recent_completed_sessions_limit():
     assert entries[0].key == "qualifying"
     assert entries[1].key == "fp3"
     assert entries[2].key == "fp2"
+
+
+# ---------------------------------------------------------------------------
+# normalize_session_key
+# ---------------------------------------------------------------------------
+
+
+
+def test_normalize_session_key_race():
+    assert normalize_session_key("race") == "race"
+
+
+def test_normalize_session_key_alias_sq():
+    assert normalize_session_key("sq") == "sprint_qualifying"
+
+
+def test_normalize_session_key_alias_sprintshootout():
+    assert normalize_session_key("sprintshootout") == "sprint_qualifying"
+
+
+def test_normalize_session_key_fp1():
+    assert normalize_session_key("fp1") == "fp1"
+
+
+def test_normalize_session_key_unknown_returns_none():
+    assert normalize_session_key("unknown") is None
+
+
+def test_normalize_session_key_none_returns_none():
+    assert normalize_session_key(None) is None
+
+
+def test_normalize_session_key_case_insensitive():
+    assert normalize_session_key("RACE") == "race"
+    assert normalize_session_key("Qualifying") == "qualifying"
+
+
+def test_normalize_session_key_strips_separators():
+    """Underscores, hyphens, spaces are stripped before lookup."""
+    assert normalize_session_key("sprint_qualifying") == "sprint_qualifying"
+    assert normalize_session_key("sprint-qualifying") == "sprint_qualifying"
+    assert normalize_session_key("sprint qualifying") == "sprint_qualifying"
+
+
+# ---------------------------------------------------------------------------
+# session_entries — degenerate cases
+# ---------------------------------------------------------------------------
+
+
+def test_session_entries_empty_races_returns_empty():
+    assert session_entries([]) == []
+
+
+def test_session_entries_race_with_all_none_sessions():
+    """A race with no optional sessions still produces at least the race entry."""
+    race = Race(
+        season=2024,
+        round=1,
+        name="Test GP",
+        circuit=_circuit(),
+        date=date(2024, 3, 1),
+        time=time(13, 0),
+        # All optional sessions are None by default
+    )
+    entries = session_entries([race])
+    # Should have at least the mandatory "race" entry
+    keys = [e.key for e in entries]
+    assert "race" in keys
+    # fp1, fp2, fp3 etc should NOT be present
+    assert "fp1" not in keys
+    assert "fp2" not in keys
+    assert "fp3" not in keys

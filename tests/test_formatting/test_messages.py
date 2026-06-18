@@ -4,6 +4,8 @@ from datetime import date, time
 
 from f1_bot.formatting.messages import (
     _esc,
+    _format_result_value,
+    _parse_lap_time_ms,
     format_constructor_standings,
     format_driver_standings,
     format_laps_by_driver,
@@ -380,3 +382,73 @@ def test_format_pitstops_escapes_underscored_driver_id():
     stops = [PitStop(driver_id="de_vries", lap=10, stop_number=1, duration=22.0)]
     text = format_pitstops(_race(), stops, 5)
     assert r"de\_vries" in text
+
+
+# ---------------------------------------------------------------------------
+# _parse_lap_time_ms — private but complex parsing logic
+# ---------------------------------------------------------------------------
+
+
+
+def test_parse_lap_time_ms_valid_with_colon():
+    """Standard format M:SS.mmm → milliseconds."""
+    assert _parse_lap_time_ms("1:23.456") == 83456
+
+
+def test_parse_lap_time_ms_sub_minute():
+    """0:SS.mmm format."""
+    assert _parse_lap_time_ms("0:59.999") == 59999
+
+
+def test_parse_lap_time_ms_none_returns_none():
+    assert _parse_lap_time_ms(None) is None
+
+
+def test_parse_lap_time_ms_empty_string_returns_none():
+    assert _parse_lap_time_ms("") is None
+
+
+def test_parse_lap_time_ms_malformed_returns_none():
+    assert _parse_lap_time_ms("abc") is None
+
+
+def test_parse_lap_time_ms_no_colon_treated_as_seconds():
+    """A plain number without colon is treated as seconds."""
+    result = _parse_lap_time_ms("23.456")
+    assert result == 23456
+
+
+# ---------------------------------------------------------------------------
+# _format_result_value — recursive formatter
+# ---------------------------------------------------------------------------
+
+
+def test_format_result_value_none():
+    assert _format_result_value(None) is None
+
+
+def test_format_result_value_string():
+    assert _format_result_value("1:23.456") == "1:23.456"
+
+
+def test_format_result_value_float():
+    assert _format_result_value(1.234) == "1.234"
+
+
+def test_format_result_value_list_of_strings():
+    """List of sector times joined with ' / '."""
+    assert _format_result_value(["23.1", "24.2", "25.3"]) == "23.1 / 24.2 / 25.3"
+
+
+def test_format_result_value_list_with_none():
+    """None items in list are filtered out."""
+    assert _format_result_value(["23.1", None, "25.3"]) == "23.1 / 25.3"
+
+
+def test_format_result_value_list_all_none():
+    """All-None list returns None."""
+    assert _format_result_value([None, None]) is None
+
+
+def test_format_result_value_empty_list():
+    assert _format_result_value([]) is None

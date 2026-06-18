@@ -270,3 +270,137 @@ async def test_upsert_user_timezone_overwrite(repo):
     await repo.upsert_user_preference(UserPreference(telegram_id=100, timezone="Europe/London"))
     tz = await repo.get_user_timezone(telegram_id=100)
     assert tz == "Europe/London"
+
+
+# --- get_schedule_bounds edge cases ---
+
+
+async def test_schedule_bounds_empty_schedule(repo):
+    """Empty schedule returns zeroes and Nones."""
+    bounds = await repo.get_schedule_bounds(2099)
+    assert bounds["total_rounds"] == 0
+    assert bounds["completed_rounds"] == 0
+    assert bounds["upcoming_rounds"] == 0
+    assert bounds["last_completed_round"] is None
+    assert bounds["next_upcoming_round"] is None
+    assert bounds["sprint_rounds"] == []
+    assert bounds["completed_sprint_rounds"] == []
+
+
+async def test_schedule_bounds_all_completed(repo, sqlite_store):
+    """When all races are in the past, next_upcoming_round is None."""
+    from datetime import date, time
+
+    from f1_bot.models.race import Circuit, Race
+
+    circuit = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
+    races = [
+        Race(season=2024, round=1, name="R1", circuit=circuit, date=date(2024, 1, 15), time=time(13, 0)),
+        Race(season=2024, round=2, name="R2", circuit=circuit, date=date(2024, 2, 15), time=time(13, 0)),
+    ]
+    await repo.save_schedule(2024, races)
+
+    # Reference time well after both races
+    from datetime import UTC, datetime
+    ref = datetime(2024, 12, 31, 23, 59, tzinfo=UTC)
+    bounds = await repo.get_schedule_bounds(2024, reference_dt=ref)
+
+    assert bounds["completed_rounds"] == 2
+    assert bounds["upcoming_rounds"] == 0
+    assert bounds["last_completed_round"] == 2
+    assert bounds["next_upcoming_round"] is None
+
+
+async def test_schedule_bounds_all_upcoming(repo, sqlite_store):
+    """When all races are in the future, last_completed_round is None."""
+    from datetime import UTC, date, datetime, time
+
+    from f1_bot.models.race import Circuit, Race
+
+    circuit = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
+    races = [
+        Race(season=2099, round=1, name="R1", circuit=circuit, date=date(2099, 6, 15), time=time(13, 0)),
+        Race(season=2099, round=2, name="R2", circuit=circuit, date=date(2099, 7, 15), time=time(13, 0)),
+    ]
+    await repo.save_schedule(2099, races)
+
+    ref = datetime(2099, 1, 1, 0, 0, tzinfo=UTC)
+    bounds = await repo.get_schedule_bounds(2099, reference_dt=ref)
+
+    assert bounds["completed_rounds"] == 0
+    assert bounds["upcoming_rounds"] == 2
+    assert bounds["last_completed_round"] is None
+    assert bounds["next_upcoming_round"] == 1
+
+
+async def test_schedule_bounds_sprint_classification(repo, sqlite_store):
+    """Sprint weekends are tracked in sprint_rounds and completed_sprint_rounds."""
+    from datetime import UTC, date, datetime, time
+
+    from f1_bot.models.race import Circuit, Race, RaceSession
+
+    circuit = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
+    sprint_race = Race(
+        season=2024,
+        round=4,
+        name="Sprint GP",
+        circuit=circuit,
+        date=date(2024, 4, 20),
+        time=time(13, 0),
+        sprint=RaceSession(name="Sprint", date=date(2024, 4, 19), time=time(10, 0)),
+    )
+    normal_race = Race(
+        season=2024,
+        round=5,
+        name="Normal GP",
+        circuit=circuit,
+        date=date(2024, 5, 10),
+        time=time(13, 0),
+    )
+    await repo.save_schedule(2024, [sprint_race, normal_race])
+
+    ref = datetime(2024, 12, 31, 23, 59, tzinfo=UTC)
+    bounds = await repo.get_schedule_bounds(2024, reference_dt=ref)
+
+    assert 4 in bounds["sprint_rounds"]
+    assert 5 not in bounds["sprint_rounds"]
+    assert 4 in bounds["completed_sprint_rounds"]
+
+
+async def test_schedule_bounds_naive_reference_dt_treated_as_utc(repo, sqlite_store):
+    """Naive datetime reference_dt is treated as UTC."""
+    from datetime import date, datetime, time
+
+    from f1_bot.models.race import Circuit, Race
+
+    circuit = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
+    race = Race(season=2024, round=1, name="R1", circuit=circuit, date=date(2024, 3, 10), time=time(13, 0))
+    await repo.save_schedule(2024, [race])
+
+    # Naive datetime after race
+    naive_ref = datetime(2024, 6, 1, 0, 0)  # no tzinfo
+    bounds = await repo.get_schedule_bounds(2024, reference_dt=naive_ref)
+
+    assert bounds["completed_rounds"] == 1
+    assert bounds["last_completed_round"] == 1
+
+
+async def test_schedule_bounds_aware_non_utc_reference_dt(repo, sqlite_store):
+    """Timezone-aware non-UTC reference_dt is compared correctly."""
+    from datetime import date, datetime, time, timedelta, timezone
+
+    from f1_bot.models.race import Circuit, Race
+
+    circuit = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
+    # Race at 2024-03-10 13:00 UTC
+    race = Race(season=2024, round=1, name="R1", circuit=circuit, date=date(2024, 3, 10), time=time(13, 0))
+    await repo.save_schedule(2024, [race])
+
+    # Reference in UTC+8: 2024-03-10 20:30 (= 12:30 UTC, which is BEFORE the race at 13:00 UTC)
+    tz_plus8 = timezone(timedelta(hours=8))
+    ref = datetime(2024, 3, 10, 20, 30, tzinfo=tz_plus8)
+    bounds = await repo.get_schedule_bounds(2024, reference_dt=ref)
+
+    # The race is at 13:00 UTC; ref is 12:30 UTC — race is still upcoming
+    assert bounds["completed_rounds"] == 0
+    assert bounds["next_upcoming_round"] == 1

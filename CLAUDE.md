@@ -2,13 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-# F1 Bot — Project Instructions
-
 ## Running the project
 
 ```bash
 uv run -m f1_bot                          # start the bot (requires .env)
-uv run pytest -m "not integration"        # unit tests only (~5s)
+uv run pytest -m "not integration"        # unit tests only (~288 tests, ~16s)
 uv run pytest -m integration -v           # integration tests (real HTTP)
 uv run pytest tests/test_smoke.py -v      # full-stack smoke test
 uv run pytest tests/test_handlers/test_race_data.py -v  # single test file
@@ -17,7 +15,7 @@ uv run ruff check src/ tests/             # lint
 
 ## Architecture
 
-**SQL-only handlers:** background scheduler (JobQueue / APScheduler) fetches from Jolpica + OpenF1 → stores in SQLite. Telegram handlers read exclusively from SQLite via `Repository`. No API calls from handlers.
+**SQL-only handlers:** background scheduler (JobQueue) fetches from Jolpica + OpenF1 → stores in SQLite. Telegram handlers read exclusively from SQLite via `Repository`. No API calls from handlers.
 
 ```
 Startup / Scheduler → JolpicaClient + OpenF1Client → SQLite
@@ -34,9 +32,9 @@ Startup / Scheduler → JolpicaClient + OpenF1Client → SQLite
 | Command | Handler file |
 |---|---|
 | `/start`, `/help` | `handlers/start.py` |
-| `/next` | `handlers/schedule.py` — unified entry for next session (replaces `/nextsession`, `/nextpractice`, `/nextqualifying`, `/nextsprint`) |
+| `/next` | `handlers/schedule.py` — unified entry for next session |
 | `/schedule`, `/countdown` | `handlers/schedule.py` |
-| `/results` | `handlers/results.py` — unified entry for all results (replaces `/qualifying`, `/sprint`, `/sessionresult`) |
+| `/results` | `handlers/results.py` — unified entry for all results |
 | `/pitstops`, `/laps` | `handlers/race_data.py` |
 | `/standings` | `handlers/standings.py` |
 | `/driver`, `/circuit` | `handlers/extras.py` |
@@ -64,9 +62,11 @@ Startup / Scheduler → JolpicaClient + OpenF1Client → SQLite
 | `src/f1_bot/scheduler/jobs.py` | `startup_sync()` + individual `sync_*` callbacks; each takes `(jolpica, repo)` or `(openf1, repo)` |
 | `src/f1_bot/scheduler/manager.py` | Registers all jobs via `run_repeating`; owns `_POLL_INTERVAL` |
 | `src/f1_bot/handlers/pagination.py` | Shared keyboard builders: `next_overview_keyboard`, `next_filtered_keyboard`, `results_overview_keyboard`, `results_filtered_keyboard`, `round_keyboard`, `schedule_keyboard` |
+| `src/f1_bot/formatting/messages.py` | All message formatters (`format_schedule`, `format_standings`, `format_session_results`, etc.) |
+| `src/f1_bot/formatting/emoji.py` | `pos_icon`, `flag_icon`, `session_icon`, `flag_color` — pure mapping functions |
 | `src/f1_bot/utils/rate_limiter.py` | Token bucket; constructor: `RateLimiter(per_second=..., per_period=..., period=...)` |
 | `src/f1_bot/utils/fuzzy_match.py` | `match_driver()` / `match_circuit()` using difflib; scores all fields, takes max |
-| `src/f1_bot/utils/sessions.py` | `find_next_sessions()` / `find_recent_completed_session()` — session-level timeline logic |
+| `src/f1_bot/utils/sessions.py` | `find_next_sessions()` / `find_recent_completed_session()` / `normalize_session_key()` — session-level timeline logic |
 | `tests/conftest.py` | `sqlite_store`, `repo` fixtures (tmp SQLite) |
 
 ## Known gotchas
@@ -88,10 +88,19 @@ set fields on frozen Pydantic models during test setup (e.g., attaching a `sprin
 
 **Legacy callback handlers:** `schedule.py` and `results.py` register legacy callback patterns (e.g., `nsess:`, `qual:`) that respond with "please use /next" — these handle stale inline keyboards from before the refactoring.
 
-## Test markers
+**PTB InlineKeyboardMarkup stores tuples:** `kb.inline_keyboard` returns tuples-of-tuples, not lists. Assert with `((),)` not `[[]]`.
 
+**Lazy imports in jobs.py:** `match_openf1_session` and `find_race_session` are imported inside function bodies. Patch at `f1_bot.utils.sessions.match_openf1_session`, not `f1_bot.scheduler.jobs.match_openf1_session`.
+
+## Test conventions
+
+- `asyncio_mode = "auto"` — all async tests run without explicit `@pytest.mark.asyncio`
 - `pytest.mark.integration` — requires network (Jolpica or OpenF1 HTTP)
 - No marker — unit test; uses in-memory SQLite; safe to run offline
+- Fixtures: `sqlite_store` and `repo` in `tests/conftest.py` provide tmp SQLite
+- Mocking HTTP: use `pytest-httpx` (`httpx_mock` fixture) for unit tests
+- Scheduler tests: import private constants (`_LIVE_WINDOW_MARGIN`, `_RESULTS_WINDOW`) directly for boundary assertions
+- Relative-date fixtures: For testing time-windowed sync functions where `now` is computed internally, use `date.today() - timedelta(days=N)` instead of patching
 
 ## APIs
 

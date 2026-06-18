@@ -28,3 +28,11 @@ wheels/
 .coverage
 coverage.json
 htmlcov/
+
+# Node (Copilot/tooling)
+node_modules/
+package.json
+package-lock.json
+
+# Serena
+.serena/
