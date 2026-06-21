@@ -86,7 +86,11 @@ async def _next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     mode = parts[1]
     session_filter = parts[2]
-    rnd = int(parts[3])
+    try:
+        rnd = int(parts[3])
+    except (ValueError, IndexError):
+        await query.answer(text="Invalid selection", show_alert=True)
+        return
 
     try:
         races, bounds, season = await load_schedule_and_bounds(context)

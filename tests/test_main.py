@@ -50,3 +50,20 @@ async def test_post_init_sets_commands():
         "circuit",
     }
     assert cmd_names == expected_commands
+
+
+async def test_post_shutdown_closes_resources():
+    """Verify that _post_shutdown closes SQLiteStore, JolpicaClient, and OpenF1Client."""
+    from f1_bot.main import _post_shutdown
+
+    app = MagicMock()
+    app.bot_data = {
+        "sqlite": AsyncMock(),
+        "jolpica": AsyncMock(),
+        "openf1": AsyncMock(),
+    }
+    await _post_shutdown(app)
+    app.bot_data["jolpica"].close.assert_awaited_once()
+    app.bot_data["openf1"].close.assert_awaited_once()
+    app.bot_data["sqlite"].close.assert_awaited_once()
+

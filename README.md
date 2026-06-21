@@ -41,6 +41,10 @@ Startup / Scheduler → Jolpica + OpenF1 APIs → SQLite
 - **Startup sync:** `startup_sync()` in `_post_init` fetches schedule, standings, results, pit stops, laps, and session data before the bot starts accepting commands.
 - **Unified polling:** All scheduler jobs share a 1-hour interval (`_POLL_INTERVAL` in `scheduler/manager.py`).
 - **OpenF1 for laps:** Lap timing data (including sector times) comes from OpenF1, not Jolpica.
+- **DB transactions & executemany:** Write operations (`save_races`, `save_drivers`, `save_circuits`) are wrapped in explicit database transactions (`BEGIN`/`commit`/`rollback`) to ensure atomic execution. Driver and circuit bulk updates use `executemany` to minimize context switches.
+- **Laps in-memory cache:** Validated `LapTime` objects are cached inside `Repository` on retrieval, preventing costly database reads and repetitive CPU-heavy Pydantic validation (which blocks the event loop for ~1300 laps per call) on pagination clicks. Saving new laps invalidates this cache.
+- **Reduced schedule query overhead:** Pagination logic passes preloaded `races` to `get_schedule_bounds()` to eliminate redundant SQLite queries on navigation events.
+- **Input and formatting guards:** Callback query parameter parsing is guarded against parsing errors (`ValueError`), and markdown-sensitive fields (like `race.name` in circuit info) are escaped to prevent Telegram MarkdownV2 parse failures.
 - **Fuzzy matching:** `/driver` and `/circuit` commands use difflib-based fuzzy matching across all name fields.
 - **Driver mapping & cache enrichment:** OpenF1 driver profiles are cached and enriched with country flags mapped from ISO 3-letter codes. OpenF1 session results are mapped to Jolpica's driver entities using their permanent numbers via `Repository.get_drivers_by_id_map()`.
 
@@ -99,7 +103,7 @@ uv run -m f1_bot
 ## Running tests
 
 ```bash
-# Unit tests only (~288 tests, no network required)
+# Unit tests only (~336 tests, no network required)
 uv run pytest -m "not integration"
 
 # Integration tests (real API calls, requires internet)

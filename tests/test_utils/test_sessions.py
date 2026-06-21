@@ -144,6 +144,9 @@ def test_normalize_session_key_strips_separators():
     assert normalize_session_key("sprint_qualifying") == "sprint_qualifying"
     assert normalize_session_key("sprint-qualifying") == "sprint_qualifying"
     assert normalize_session_key("sprint qualifying") == "sprint_qualifying"
+    assert normalize_session_key("practice_1") == "fp1"
+    assert normalize_session_key("practice_2") == "fp2"
+    assert normalize_session_key("practice_3") == "fp3"
 
 
 # ---------------------------------------------------------------------------

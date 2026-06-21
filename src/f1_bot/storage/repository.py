@@ -16,6 +16,7 @@ class Repository:
 
     def __init__(self, sqlite: SQLiteStore) -> None:
         self.sqlite = sqlite
+        self._laps_cache = {}
 
     # --- Schedule ---
 
@@ -35,7 +36,12 @@ class Repository:
         upcoming = [r for r in races if r.date >= today]
         return upcoming[0] if upcoming else None
 
-    async def get_schedule_bounds(self, season: int, reference_dt: datetime | None = None) -> dict:
+    async def get_schedule_bounds(
+        self,
+        season: int,
+        reference_dt: datetime | None = None,
+        races: list[Race] | None = None,
+    ) -> dict:
         from datetime import datetime
 
         from f1_bot.formatting.timezone import combine_race_dt
@@ -45,7 +51,8 @@ class Repository:
         elif reference_dt.tzinfo is None:
             reference_dt = reference_dt.replace(tzinfo=UTC)
 
-        races = await self.get_schedule(season)
+        if races is None:
+            races = await self.get_schedule(season)
         races = sorted(races, key=lambda r: r.round)
 
         total_rounds = max([r.round for r in races]) if races else 0
@@ -159,12 +166,24 @@ class Repository:
 
     # --- Lap Timings ---
 
-    async def get_lap_timings(self, season: int, round_num: int) -> list[dict] | None:
-        return await self.sqlite.get_lap_timings(season, round_num)
+    async def get_lap_timings(self, season: int, round_num: int) -> list:
+        key = (season, round_num)
+        if key in self._laps_cache:
+            return self._laps_cache[key]
+        from f1_bot.models.results import LapTime
+        rows = await self.sqlite.get_lap_timings(season, round_num)
+        if rows:
+            result = [LapTime.model_validate(r) for r in rows]
+            self._laps_cache[key] = result
+            return result
+        return []
 
     async def save_lap_timings(self, season: int, round_num: int, timings: list) -> None:
         data = [t.model_dump(mode="json") if hasattr(t, "model_dump") else t for t in timings]
         await self.sqlite.save_lap_timings(season, round_num, data)
+        key = (season, round_num)
+        if key in self._laps_cache:
+            del self._laps_cache[key]
 
     # --- Pit Stops ---
 

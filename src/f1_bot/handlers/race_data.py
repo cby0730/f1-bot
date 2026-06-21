@@ -72,7 +72,12 @@ async def pitstops_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 async def _pitstops_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    rnd = int(query.data.split(":")[1])
+    parts = query.data.split(":")
+    try:
+        rnd = int(parts[1])
+    except (ValueError, IndexError):
+        await query.answer(text="Invalid selection", show_alert=True)
+        return
 
     try:
         races, bounds, season = await load_schedule_and_bounds(context)
@@ -112,10 +117,12 @@ async def _pitstops_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 async def _get_laps(repo, season: int, rnd: int) -> list[LapTime]:
-    cached = await repo.get_lap_timings(season, rnd)
-    if cached:
-        return [LapTime.model_validate(item) for item in cached]
-    return []
+    raw_laps = await repo.get_lap_timings(season, rnd)
+    if not raw_laps:
+        return []
+    if isinstance(raw_laps[0], LapTime):
+        return raw_laps
+    return [LapTime.model_validate(item) for item in raw_laps]
 
 
 def _laps_summary_keyboard(rnd: int, navigable_rounds: list[int]) -> InlineKeyboardMarkup:
@@ -231,7 +238,11 @@ async def _laps_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     query = update.callback_query
 
     parts = query.data.split(":")  # e.g. ["lap", "10", "d", "VER", "0"] or ["lap", "10"]
-    rnd = int(parts[1])
+    try:
+        rnd = int(parts[1])
+    except (ValueError, IndexError):
+        await query.answer(text="Invalid selection", show_alert=True)
+        return
     mode = parts[2] if len(parts) > 2 else "s"
 
     try:

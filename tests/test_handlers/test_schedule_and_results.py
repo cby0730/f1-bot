@@ -549,3 +549,86 @@ async def test_results_callback_auto_jump_session(monkeypatch):
     markup = kwargs["reply_markup"]
     nav_row = markup.inline_keyboard[0]
     assert nav_row[0].text == "R7/8"
+
+
+async def test_results_callback_fp2_fallback_routing():
+    from f1_bot.handlers.results import _results_callback
+
+    c = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
+    # r7 is a sprint weekend and does not have fp2
+    r7 = Race(
+        season=2026,
+        round=7,
+        name="China",
+        circuit=c,
+        date=date(2026, 4, 19),
+        time=time(15, 0),
+        fp1=RaceSession(name="FP1", date=date(2026, 4, 17), time=time(11, 30)),
+        sprint_qualifying=RaceSession(
+            name="Sprint Qualifying", date=date(2026, 4, 17), time=time(15, 30)
+        ),
+        sprint=RaceSession(name="Sprint", date=date(2026, 4, 18), time=time(11, 0)),
+        qualifying=RaceSession(name="Qualifying", date=date(2026, 4, 18), time=time(15, 0)),
+    )
+
+    repo = MagicMock()
+    repo.get_schedule = AsyncMock(return_value=[r7])
+    repo.get_schedule_bounds = AsyncMock(return_value={"last_completed_round": 7})
+    repo.get_drivers_by_id_map = AsyncMock(return_value={})
+
+    update = MagicMock()
+    update.callback_query.data = "res:filtered:fp2:7"
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
+
+    # Mock inline keyboard to extract current round
+    btn_mock = MagicMock()
+    btn_mock.callback_data = "res:filtered:fp1:7"
+    update.callback_query.message.reply_markup.inline_keyboard = [[btn_mock]]
+
+    ctx = _context(repo=repo)
+    await _results_callback(update, ctx)
+
+    assert update.callback_query.answer.call_count == 1
+    update.callback_query.answer.assert_called_with(
+        text="No FP2 data yet this season 🏎", show_alert=True
+    )
+    update.callback_query.edit_message_text.assert_not_called()
+
+
+async def test_results_callback_invalid_round_value_error():
+    from f1_bot.handlers.results import _results_callback
+
+    update = MagicMock()
+    update.callback_query.data = "res:filtered:fp1:not_an_int"
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
+
+    ctx = _context()
+    await _results_callback(update, ctx)
+
+    assert update.callback_query.answer.call_count == 1
+    update.callback_query.answer.assert_called_with(
+        text="Invalid selection", show_alert=True
+    )
+    update.callback_query.edit_message_text.assert_not_called()
+
+
+async def test_schedule_callback_invalid_round_value_error():
+    from f1_bot.handlers.schedule import _next_callback
+
+    update = MagicMock()
+    update.callback_query.data = "next:filtered:race:not_an_int"
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
+
+    ctx = _context()
+    await _next_callback(update, ctx)
+
+    assert update.callback_query.answer.call_count == 1
+    update.callback_query.answer.assert_called_with(
+        text="Invalid selection", show_alert=True
+    )
+    update.callback_query.edit_message_text.assert_not_called()
+
+

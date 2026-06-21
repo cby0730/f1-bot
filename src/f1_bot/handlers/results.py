@@ -218,7 +218,11 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
     mode = parts[1]
     session_key = parts[2]
-    rnd = int(parts[3])
+    try:
+        rnd = int(parts[3])
+    except (ValueError, IndexError):
+        await query.answer(text="Invalid selection", show_alert=True)
+        return
 
     try:
         races, bounds, season = await load_schedule_and_bounds(context)
@@ -279,12 +283,13 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             return
 
         # Check if session exists for this weekend
-        if session_key in ("fp3", "sprint_qualifying", "sprint"):
+        if session_key in ("fp2", "fp3", "sprint_qualifying", "sprint"):
             entry = find_race_session([race], rnd, session_key)
             if entry is None:
                 navigable = _get_completed_rounds_for_session(races, bounds, session_key)
                 if not navigable:
                     label_map = {
+                        "fp2": "No FP2 data yet this season 🏎",
                         "fp3": "No FP3 data yet this season 🏎",
                         "sprint_qualifying": "No Sprint Qualifying data yet this season",
                         "sprint": "No Sprint data yet this season",

@@ -131,32 +131,36 @@ class SQLiteStore:
 
     async def save_races(self, season: int, races_json: list[dict]) -> None:
         now = datetime.now(UTC).replace(tzinfo=None).isoformat()
-        await self._conn.execute("DELETE FROM races WHERE season=?", (season,))
-        async with self._conn.executemany(
-            """INSERT INTO races
-               (season, round, name, circuit_id, circuit_name, locality, country,
-                race_date, race_time, gmt_offset, data_json, updated_at)
-               VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
-            [
-                (
-                    r["season"],
-                    r["round"],
-                    r["name"],
-                    r["circuit"]["circuit_id"],
-                    r["circuit"]["name"],
-                    r["circuit"]["locality"],
-                    r["circuit"]["country"],
-                    r["date"],
-                    r.get("time"),
-                    r.get("gmt_offset"),
-                    json.dumps(r),
-                    now,
-                )
-                for r in races_json
-            ],
-        ):
-            pass
-        await self._conn.commit()
+        try:
+            await self._conn.execute("BEGIN")
+            await self._conn.execute("DELETE FROM races WHERE season=?", (season,))
+            await self._conn.executemany(
+                """INSERT INTO races
+                   (season, round, name, circuit_id, circuit_name, locality, country,
+                    race_date, race_time, gmt_offset, data_json, updated_at)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?)""",
+                [
+                    (
+                        r["season"],
+                        r["round"],
+                        r["name"],
+                        r["circuit"]["circuit_id"],
+                        r["circuit"]["name"],
+                        r["circuit"]["locality"],
+                        r["circuit"]["country"],
+                        r["date"],
+                        r.get("time"),
+                        r.get("gmt_offset"),
+                        json.dumps(r),
+                        now,
+                    )
+                    for r in races_json
+                ],
+            )
+            await self._conn.commit()
+        except Exception:
+            await self._conn.rollback()
+            raise
 
     async def get_races(self, season: int) -> list[dict]:
         async with self._conn.execute(
@@ -322,16 +326,18 @@ class SQLiteStore:
         )
         await self._conn.commit()
 
-    # --- Drivers / Circuits ---
-
     async def save_drivers(self, drivers_json: list[dict]) -> None:
         now = datetime.now(UTC).replace(tzinfo=None).isoformat()
-        for d in drivers_json:
-            await self._conn.execute(
+        try:
+            await self._conn.execute("BEGIN")
+            await self._conn.executemany(
                 "INSERT OR REPLACE INTO drivers (driver_id, data_json, updated_at) VALUES (?,?,?)",
-                (d["driver_id"], json.dumps(d), now),
+                [(d["driver_id"], json.dumps(d), now) for d in drivers_json],
             )
-        await self._conn.commit()
+            await self._conn.commit()
+        except Exception:
+            await self._conn.rollback()
+            raise
 
     async def get_drivers(self) -> list[dict]:
         async with self._conn.execute("SELECT data_json FROM drivers") as cur:
@@ -340,12 +346,16 @@ class SQLiteStore:
 
     async def save_circuits(self, circuits_json: list[dict]) -> None:
         now = datetime.now(UTC).replace(tzinfo=None).isoformat()
-        for c in circuits_json:
-            await self._conn.execute(
+        try:
+            await self._conn.execute("BEGIN")
+            await self._conn.executemany(
                 "INSERT OR REPLACE INTO circuits (circuit_id, data_json, updated_at) VALUES (?,?,?)",
-                (c["circuit_id"], json.dumps(c), now),
+                [(c["circuit_id"], json.dumps(c), now) for c in circuits_json],
             )
-        await self._conn.commit()
+            await self._conn.commit()
+        except Exception:
+            await self._conn.rollback()
+            raise
 
     async def get_all_result_types(self, season: int, round_num: int) -> list[str]:
         """Return all result types stored for a given season/round."""

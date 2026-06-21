@@ -503,7 +503,7 @@ def format_circuit_info(circuit, recent_races: list | None = None) -> str:
     if recent_races:
         lines.append("\n*Recent winners:*")
         for race in recent_races[:5]:
-            lines.append(f"  {race.season}: {race.name}")
+            lines.append(f"  {race.season}: {_esc(race.name)}")
     if circuit.url:
         lines.append(f"\n[Wikipedia]({circuit.url})")
     return "\n".join(lines)

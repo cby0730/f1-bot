@@ -559,3 +559,16 @@ def test_format_schedule_timezone_marker(monkeypatch):
     # London user: race is on Sunday June 21, but today in London is Saturday June 20 -> do not show 🔜
     text_london = format_schedule([race], "Europe/London")
     assert "🔜" not in text_london
+
+
+def test_format_circuit_info_escapes_race_name():
+    from f1_bot.formatting.messages import format_circuit_info
+
+    circuit = _circuit()
+    race = _race()
+    race.name = "My_Special*Grand_Prix"
+
+    text = format_circuit_info(circuit, recent_races=[race])
+    # The output should contain the escaped race name: My\_Special\*Grand\_Prix
+    assert "My\\_Special\\*Grand\\_Prix" in text
+

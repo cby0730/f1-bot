@@ -522,6 +522,83 @@ async def test_schedule_bounds_aware_non_utc_reference_dt(repo, sqlite_store):
     ref = datetime(2024, 3, 10, 20, 30, tzinfo=tz_plus8)
     bounds = await repo.get_schedule_bounds(2024, reference_dt=ref)
 
-    # The race is at 13:00 UTC; ref is 12:30 UTC — race is still upcoming
     assert bounds["completed_rounds"] == 0
     assert bounds["next_upcoming_round"] == 1
+
+
+async def test_get_lap_timings_cached_and_save_clears_cache(repo, sqlite_store):
+    """Verify in-memory caching of lap timings and that save_lap_timings invalidates the cache."""
+    from f1_bot.models.results import LapTime
+
+    timings = [
+        LapTime(
+            driver_id="hamilton",
+            lap_number=1,
+            lap_time=90.5,
+            sector_1=30.0,
+            sector_2=30.0,
+            sector_3=30.5,
+        ),
+        LapTime(
+            driver_id="verstappen",
+            lap_number=1,
+            lap_time=91.0,
+            sector_1=30.2,
+            sector_2=30.1,
+            sector_3=30.7,
+        ),
+    ]
+    await repo.save_lap_timings(2024, 5, timings)
+
+    # Spy sqlite.get_lap_timings
+    original_get = sqlite_store.get_lap_timings
+    call_count = 0
+
+    async def spy_get(season, round_num):
+        nonlocal call_count
+        call_count += 1
+        return await original_get(season, round_num)
+
+    sqlite_store.get_lap_timings = spy_get
+
+    # First fetch: should call database and return LapTime list
+    res1 = await repo.get_lap_timings(2024, 5)
+    assert len(res1) == 2
+    assert call_count == 1
+    assert isinstance(res1[0], LapTime)
+
+    # Second fetch: should hit memory cache (no database call)
+    res2 = await repo.get_lap_timings(2024, 5)
+    assert len(res2) == 2
+    assert call_count == 1
+    assert isinstance(res2[0], LapTime)
+
+    # Save timings: should clear the cache
+    await repo.save_lap_timings(2024, 5, timings)
+
+    # Third fetch: should query database again
+    res3 = await repo.get_lap_timings(2024, 5)
+    assert len(res3) == 2
+    assert call_count == 2
+
+
+async def test_get_schedule_bounds_with_preloaded_races(repo):
+    """Verify get_schedule_bounds avoids calling get_schedule if preloaded races are provided."""
+    from unittest.mock import AsyncMock
+
+    # Spy repo.get_schedule
+    repo.get_schedule = AsyncMock(return_value=[])
+
+    races = [_race(round_num=1)]
+
+    # Calling get_schedule_bounds with races=races
+    bounds = await repo.get_schedule_bounds(2024, races=races)
+    assert bounds["total_rounds"] == 1
+    # verify repo.get_schedule was NOT called
+    repo.get_schedule.assert_not_called()
+
+    # Calling get_schedule_bounds WITHOUT races
+    await repo.get_schedule_bounds(2024)
+    # verify repo.get_schedule WAS called
+    repo.get_schedule.assert_awaited_once_with(2024)
+

@@ -342,7 +342,7 @@ async def load_schedule_and_bounds(context) -> tuple[list, dict, int]:
     if not races:
         raise RuntimeError("schedule_unavailable")
 
-    bounds = await repo.get_schedule_bounds(season)
+    bounds = await repo.get_schedule_bounds(season, races=races)
     return races, bounds, season
 
 

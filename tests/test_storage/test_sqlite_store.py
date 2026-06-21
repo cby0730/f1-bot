@@ -109,3 +109,53 @@ async def test_migration_clears_old_session_keys(tmp_path):
     assert "race" in rows
     assert "session:11235" not in rows
     await store.close()
+
+
+async def test_save_races_transaction_rollback(sqlite_store, sample_race_dict):
+    """Ensure save_races rolls back the DELETE operation if writing new races fails."""
+    # 1. Save valid race
+    await sqlite_store.save_races(2024, [sample_race_dict])
+    rows = await sqlite_store.get_races(2024)
+    assert len(rows) == 1
+
+    # 2. Try to save invalid race that triggers KeyError (missing "round" key)
+    invalid_race = sample_race_dict.copy()
+    del invalid_race["round"]
+
+    import pytest
+    with pytest.raises(KeyError):
+        await sqlite_store.save_races(2024, [invalid_race])
+
+    # 3. Verify that the DELETE operation was rolled back and previous race remains
+    rows_after = await sqlite_store.get_races(2024)
+    assert len(rows_after) == 1
+    assert rows_after[0]["name"] == "Monaco Grand Prix"
+
+
+async def test_save_and_get_drivers(sqlite_store):
+    """Verify save_drivers uses executemany and inserts successfully."""
+    drivers = [
+        {"driver_id": "verstappen", "name": "Max Verstappen"},
+        {"driver_id": "hamilton", "name": "Lewis Hamilton"},
+    ]
+    await sqlite_store.save_drivers(drivers)
+    rows = await sqlite_store.get_drivers()
+    assert len(rows) == 2
+    ids = {d["driver_id"] for d in rows}
+    assert ids == {"verstappen", "hamilton"}
+
+
+async def test_save_circuits(sqlite_store):
+    """Verify save_circuits uses executemany and inserts successfully."""
+    circuits = [
+        {"circuit_id": "monza", "name": "Monza"},
+        {"circuit_id": "spa", "name": "Spa"},
+    ]
+    await sqlite_store.save_circuits(circuits)
+    import json
+    async with sqlite_store._conn.execute("SELECT data_json FROM circuits") as cur:
+        rows = await cur.fetchall()
+    assert len(rows) == 2
+    ids = {json.loads(r["data_json"])["circuit_id"] for r in rows}
+    assert ids == {"monza", "spa"}
+

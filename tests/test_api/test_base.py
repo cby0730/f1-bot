@@ -95,3 +95,32 @@ async def test_network_error_raises_api_connection_error(httpx_mock: HTTPXMock):
     with pytest.raises(APIConnectionError):
         await client.get("/test")
     await client.close()
+
+
+async def test_429_retry_after_http_date(httpx_mock: HTTPXMock):
+    """A 429 with an HTTP-date Retry-After should fallback to 60s sleep and retry."""
+    httpx_mock.add_response(status_code=429, headers={"Retry-After": "Wed, 21 Oct 2015 07:28:00 GMT"})
+    httpx_mock.add_response(json={"ok": True})
+    client = _make_client()
+
+    from unittest.mock import patch
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        result = await client.get("/test")
+        assert result == {"ok": True}
+        mock_sleep.assert_awaited_once_with(60)
+    await client.close()
+
+
+async def test_429_retry_after_empty(httpx_mock: HTTPXMock):
+    """A 429 with an empty Retry-After should fallback to 60s sleep and retry."""
+    httpx_mock.add_response(status_code=429, headers={"Retry-After": ""})
+    httpx_mock.add_response(json={"ok": True})
+    client = _make_client()
+
+    from unittest.mock import patch
+    with patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+        result = await client.get("/test")
+        assert result == {"ok": True}
+        mock_sleep.assert_awaited_once_with(60)
+    await client.close()
+

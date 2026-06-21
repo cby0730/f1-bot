@@ -490,3 +490,40 @@ async def test_laps_by_lap_handles_partial_null_sectors():
     assert "25.5" in text
     # Missing S2/S3 should format as '—'
     assert "—" in text
+
+
+async def test_pitstops_callback_invalid_round_value_error():
+    from f1_bot.handlers.race_data import _pitstops_callback
+
+    update = MagicMock()
+    update.callback_query.data = "pit:not_an_int"
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
+
+    ctx = _context(MagicMock())
+    await _pitstops_callback(update, ctx)
+
+    assert update.callback_query.answer.call_count == 1
+    update.callback_query.answer.assert_called_with(
+        text="Invalid selection", show_alert=True
+    )
+    update.callback_query.edit_message_text.assert_not_called()
+
+
+async def test_laps_callback_invalid_round_value_error():
+    from f1_bot.handlers.race_data import _laps_callback
+
+    update = MagicMock()
+    update.callback_query.data = "lap:not_an_int:s"
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
+
+    ctx = _context(MagicMock())
+    await _laps_callback(update, ctx)
+
+    assert update.callback_query.answer.call_count == 1
+    update.callback_query.answer.assert_called_with(
+        text="Invalid selection", show_alert=True
+    )
+    update.callback_query.edit_message_text.assert_not_called()
+

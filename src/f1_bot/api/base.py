@@ -37,7 +37,7 @@ class BaseAPIClient:
         self._client = httpx.AsyncClient(
             base_url=self._base_url,
             timeout=httpx.Timeout(30.0, connect=10.0),
-            headers={"User-Agent": "f1-bot/0.0.5 (github.com/billy/f1-bot)"},
+            headers={"User-Agent": "f1-bot/0.0.6 (github.com/billy/f1-bot)"},
         )
 
     async def close(self) -> None:
@@ -58,7 +58,11 @@ class BaseAPIClient:
             raise APIConnectionError(path) from e
 
         if response.status_code == 429:
-            retry_after = int(response.headers.get("Retry-After", 60))
+            retry_after_raw = response.headers.get("Retry-After")
+            try:
+                retry_after = int(retry_after_raw) if retry_after_raw else 60
+            except ValueError:
+                retry_after = 60
             log.warning("api_rate_limited", path=path, retry_after=retry_after)
             if _retried:
                 raise APIRateLimitError(f"{path} rate-limited after retry")

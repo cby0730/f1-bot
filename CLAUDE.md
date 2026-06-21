@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 uv run -m f1_bot                          # start the bot (requires .env)
-uv run pytest -m "not integration"        # unit tests only (~316 tests, ~16s)
+uv run pytest -m "not integration"        # unit tests only (~336 tests, ~16s)
 uv run pytest -m integration -v           # integration tests (real HTTP)
 uv run pytest tests/test_smoke.py -v      # full-stack smoke test
 uv run pytest tests/test_handlers/test_race_data.py -v  # single test file
@@ -96,6 +96,14 @@ set fields on frozen Pydantic models during test setup (e.g., attaching a `sprin
 **Driver ID Mapping:** OpenF1 driver profiles use a composite ID `openf1_<driver_number>_<last_name>`. These are mapped to Jolpica's driver objects when querying results using `Repository.get_drivers_by_id_map()`.
 
 **Telegram proxy & timeout settings:** The bot supports `TELEGRAM_PROXY`, `TELEGRAM_CONNECT_TIMEOUT`, and `TELEGRAM_READ_TIMEOUT` configured directly from the Pydantic Settings class and passed to python-telegram-bot's custom request runner.
+
+**Laps In-Memory Caching:** `Repository.get_lap_timings()` returns and caches `list[LapTime]` objects. This cache prevents CPU-heavy validation overhead on pagination clicks. Ensure new sync saves (e.g. `save_lap_timings()`) invalidate the cache for that round.
+
+**SQLite Transactions:** Explicitly wrap multiple write operations in `BEGIN`/`commit`/`rollback` (e.g., `save_races()`, `save_drivers()`, `save_circuits()`) using `try-except` since `aiosqlite` doesn't automatically wrap context manager transactions.
+
+**Callback Parsing Guards:** Always wrap callback integer parameters conversion (`int(parts[N])`) in a `try-except (ValueError, IndexError)` block to prevent crashing on spoofed/malformed queries, displaying "Invalid selection" if caught.
+
+**MarkdownV2 Escaping:** When formatting Telegram messages, any string fields (like `race.name` or `circuit.name`) must be escaped via `_esc` helper functions to prevent markdown formatting crash on Telegram server.
 
 ## Test conventions
 
