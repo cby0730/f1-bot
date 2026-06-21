@@ -43,7 +43,7 @@ async def driver_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     try:
         standings = await jolpica.get_driver_standings(season)
         standing = next((s for s in standings if s.driver.driver_id == driver.driver_id), None)
-    except Exception:
+    except Exception:  # noqa: S110
         pass
 
     await update.effective_message.reply_text(
@@ -80,7 +80,7 @@ async def circuit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     try:
         schedule = await jolpica.get_current_schedule()
         recent_races = [r for r in schedule if r.circuit.circuit_id == circuit.circuit_id]
-    except Exception:
+    except Exception:  # noqa: S110
         pass
 
     await update.effective_message.reply_text(

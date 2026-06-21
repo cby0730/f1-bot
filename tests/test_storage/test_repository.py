@@ -601,4 +601,3 @@ async def test_get_schedule_bounds_with_preloaded_races(repo):
     await repo.get_schedule_bounds(2024)
     # verify repo.get_schedule WAS called
     repo.get_schedule.assert_awaited_once_with(2024)
-

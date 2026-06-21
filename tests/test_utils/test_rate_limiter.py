@@ -2,7 +2,6 @@ import asyncio
 import time
 
 import pytest
-
 from f1_bot.utils.rate_limiter import RateLimiter
 
 

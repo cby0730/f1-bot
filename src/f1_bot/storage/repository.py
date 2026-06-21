@@ -171,6 +171,7 @@ class Repository:
         if key in self._laps_cache:
             return self._laps_cache[key]
         from f1_bot.models.results import LapTime
+
         rows = await self.sqlite.get_lap_timings(season, round_num)
         if rows:
             result = [LapTime.model_validate(r) for r in rows]

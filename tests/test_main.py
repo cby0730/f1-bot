@@ -66,4 +66,3 @@ async def test_post_shutdown_closes_resources():
     app.bot_data["jolpica"].close.assert_awaited_once()
     app.bot_data["openf1"].close.assert_awaited_once()
     app.bot_data["sqlite"].close.assert_awaited_once()
-

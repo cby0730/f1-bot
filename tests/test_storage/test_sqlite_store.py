@@ -123,6 +123,7 @@ async def test_save_races_transaction_rollback(sqlite_store, sample_race_dict):
     del invalid_race["round"]
 
     import pytest
+
     with pytest.raises(KeyError):
         await sqlite_store.save_races(2024, [invalid_race])
 
@@ -153,9 +154,9 @@ async def test_save_circuits(sqlite_store):
     ]
     await sqlite_store.save_circuits(circuits)
     import json
+
     async with sqlite_store._conn.execute("SELECT data_json FROM circuits") as cur:
         rows = await cur.fetchall()
     assert len(rows) == 2
     ids = {json.loads(r["data_json"])["circuit_id"] for r in rows}
     assert ids == {"monza", "spa"}
-

@@ -3,7 +3,6 @@ from unittest import mock
 
 import pytest
 import structlog
-
 from f1_bot.utils.logging import setup_logging
 
 

@@ -571,4 +571,3 @@ def test_format_circuit_info_escapes_race_name():
     text = format_circuit_info(circuit, recent_races=[race])
     # The output should contain the escaped race name: My\_Special\*Grand\_Prix
     assert "My\\_Special\\*Grand\\_Prix" in text
-

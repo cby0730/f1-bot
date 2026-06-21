@@ -3,8 +3,6 @@
 from datetime import date, time, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
-from telegram import InlineKeyboardMarkup
-
 from f1_bot.handlers.results import results_handler
 from f1_bot.handlers.schedule import (
     countdown_handler,
@@ -12,6 +10,7 @@ from f1_bot.handlers.schedule import (
     schedule_handler,
 )
 from f1_bot.models.race import Circuit, Race, RaceSession
+from telegram import InlineKeyboardMarkup
 
 
 def _circuit():
@@ -608,9 +607,7 @@ async def test_results_callback_invalid_round_value_error():
     await _results_callback(update, ctx)
 
     assert update.callback_query.answer.call_count == 1
-    update.callback_query.answer.assert_called_with(
-        text="Invalid selection", show_alert=True
-    )
+    update.callback_query.answer.assert_called_with(text="Invalid selection", show_alert=True)
     update.callback_query.edit_message_text.assert_not_called()
 
 
@@ -626,9 +623,5 @@ async def test_schedule_callback_invalid_round_value_error():
     await _next_callback(update, ctx)
 
     assert update.callback_query.answer.call_count == 1
-    update.callback_query.answer.assert_called_with(
-        text="Invalid selection", show_alert=True
-    )
+    update.callback_query.answer.assert_called_with(text="Invalid selection", show_alert=True)
     update.callback_query.edit_message_text.assert_not_called()
-
-
