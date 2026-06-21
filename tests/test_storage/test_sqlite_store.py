@@ -82,3 +82,30 @@ async def test_upsert_user_preference_updates_timezone(sqlite_store):
 
 async def test_get_user_preference_missing_returns_none(sqlite_store):
     assert await sqlite_store.get_user_preference(0) is None
+
+
+async def test_migration_clears_old_session_keys(tmp_path):
+    """It deletes rows matching 'session:%' without secondary colons, but keeps two-colon types."""
+    db_file = str(tmp_path / "migration_test.db")
+    import sqlite3
+
+    conn = sqlite3.connect(db_file)
+    conn.execute(
+        "CREATE TABLE results (season INTEGER, round INTEGER, type TEXT, data_json TEXT, updated_at TEXT, PRIMARY KEY (season, round, type))"
+    )
+    conn.execute("INSERT INTO results VALUES (2026, 2, 'session:11235', '[]', '2026-06-20')")
+    conn.execute("INSERT INTO results VALUES (2026, 2, 'session:fp1:11235', '[]', '2026-06-20')")
+    conn.execute("INSERT INTO results VALUES (2026, 2, 'race', '[]', '2026-06-20')")
+    conn.commit()
+    conn.close()
+
+    from f1_bot.storage.sqlite_store import SQLiteStore
+
+    store = SQLiteStore(db_file)
+    await store.init()
+
+    rows = await store.get_all_result_types(2026, 2)
+    assert "session:fp1:11235" in rows
+    assert "race" in rows
+    assert "session:11235" not in rows
+    await store.close()

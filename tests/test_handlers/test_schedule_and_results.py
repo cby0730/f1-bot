@@ -48,12 +48,12 @@ def _past_race():
         round=15,
         name="Italian Grand Prix",
         circuit=_circuit(),
-        date=_past_date(1),
+        date=_past_date(5),
         time=time(13, 0),
-        fp1=RaceSession(name="FP1", date=_past_date(3), time=time(11, 30)),
-        fp2=RaceSession(name="FP2", date=_past_date(3), time=time(15, 0)),
-        fp3=RaceSession(name="FP3", date=_past_date(2), time=time(10, 30)),
-        qualifying=RaceSession(name="Qualifying", date=_past_date(2), time=time(14, 0)),
+        fp1=RaceSession(name="FP1", date=_past_date(7), time=time(11, 30)),
+        fp2=RaceSession(name="FP2", date=_past_date(7), time=time(15, 0)),
+        fp3=RaceSession(name="FP3", date=_past_date(6), time=time(10, 30)),
+        qualifying=RaceSession(name="Qualifying", date=_past_date(6), time=time(14, 0)),
     )
 
 
@@ -126,9 +126,9 @@ async def test_next_handler_shows_next_upcoming_race():
     # First row: FP1, FP2, FP3, Q
     labels = [btn.text for btn in markup.inline_keyboard[0]]
     assert labels == ["FP1", "FP2", "FP3", "Q"]
-    # Second row: SQ, SPR, Race, All
+    # Second row: SQ, SPR, Race (All is excluded)
     labels = [btn.text for btn in markup.inline_keyboard[1]]
-    assert labels == ["SQ", "SPR", "Race", "All"]
+    assert labels == ["SQ", "SPR", "Race"]
 
 
 async def test_next_handler_no_upcoming_races():
@@ -162,9 +162,6 @@ async def test_next_handler_callback_data_format():
     # FP1 button callback_data
     fp1_btn = markup.inline_keyboard[0][0]
     assert fp1_btn.callback_data == "next:filtered:fp1:10"
-    # All button callback_data
-    all_btn = markup.inline_keyboard[1][3]
-    assert all_btn.callback_data == "next:filtered:all:10"
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +194,7 @@ async def test_results_handler_shows_last_completed_round():
         ]
     )
     repo.get_last_result_round = AsyncMock(return_value=15)
-    repo.get_drivers_map = AsyncMock(return_value={})
+    repo.get_drivers_by_id_map = AsyncMock(return_value={})
     ctx = _context(repo=repo)
     update = _update()
 
@@ -209,8 +206,15 @@ async def test_results_handler_shows_last_completed_round():
     # Should have two-state keyboard with session filter buttons
     markup = update.effective_message.reply_text.await_args.kwargs.get("reply_markup")
     assert isinstance(markup, InlineKeyboardMarkup)
-    # Overview keyboard has 2 rows
-    assert len(markup.inline_keyboard) == 2
+    # Overview keyboard now has 3 rows (pager row + 2 filter rows) because completed rounds > 1
+    assert len(markup.inline_keyboard) == 3
+    # Check the pager row
+    pager_row = markup.inline_keyboard[0]
+    assert len(pager_row) == 2  # Prev (◀) and current label
+    assert pager_row[0].text == "◀"
+    assert pager_row[0].callback_data == "res:back:_:14"
+    assert pager_row[1].text == "R15/15"
+    assert pager_row[1].callback_data == "res:back:_:15"
 
 
 async def test_results_handler_no_completed_round_shows_no_data():
@@ -234,12 +238,26 @@ async def test_results_handler_sql_only_no_api_calls():
     repo = MagicMock()
     repo.get_schedule = AsyncMock(return_value=[r1])
     repo.get_schedule_bounds = AsyncMock(return_value=_bounds([r1]))
-    repo.get_race_results = AsyncMock(return_value=[{"position": 1, "grid": 1, "laps": 50,
-        "status": "Finished", "points": 25,
-        "driver": {"driver_id": "ver", "given_name": "Max", "family_name": "Verstappen", "code": "VER"},
-        "constructor": {"constructor_id": "rb", "name": "Red Bull"}}])
+    repo.get_race_results = AsyncMock(
+        return_value=[
+            {
+                "position": 1,
+                "grid": 1,
+                "laps": 50,
+                "status": "Finished",
+                "points": 25,
+                "driver": {
+                    "driver_id": "ver",
+                    "given_name": "Max",
+                    "family_name": "Verstappen",
+                    "code": "VER",
+                },
+                "constructor": {"constructor_id": "rb", "name": "Red Bull"},
+            }
+        ]
+    )
     repo.get_last_result_round = AsyncMock(return_value=15)
-    repo.get_drivers_map = AsyncMock(return_value={})
+    repo.get_drivers_by_id_map = AsyncMock(return_value={})
 
     jolpica = MagicMock()
     openf1 = MagicMock()
@@ -284,3 +302,250 @@ async def test_countdown_handler_shows_countdown():
 
     text = update.effective_message.reply_text.await_args.args[0]
     assert "Countdown" in text
+
+
+async def test_get_next_race_utc_alignment(repo, monkeypatch):
+    """It uses UTC date for scheduling checks to avoid local time zone delta shifts."""
+    from datetime import UTC, date, datetime, time
+
+    from f1_bot.models.race import Circuit, Race
+
+    class MockDatetime:
+        @classmethod
+        def now(cls, tz=None):
+            # Return UTC time: Saturday June 20, 2026, 23:00 UTC (Taipei is Sunday June 21, 07:00)
+            return datetime(2026, 6, 20, 23, 0, 0, tzinfo=UTC)
+
+    monkeypatch.setattr("f1_bot.storage.repository.datetime", MockDatetime)
+
+    race = Race(
+        season=2026,
+        round=1,
+        name="Test Grand Prix",
+        circuit=Circuit(circuit_id="test", name="Test", locality="Test", country="Test"),
+        date=date(2026, 6, 20),
+        time=time(13, 0),
+    )
+
+    await repo.save_schedule(2026, [race])
+    next_race = await repo.get_next_race(2026)
+    assert next_race is not None
+    assert next_race.name == "Test Grand Prix"
+
+
+async def test_format_all_results_dynamic_truncation(monkeypatch):
+    """Verify Stage 1, Stage 2, and Stage 3 truncation rules in _format_all_results."""
+    from f1_bot.handlers.results import _format_all_results
+
+    mock_results = {
+        "fp1": "FP1: Max",
+        "fp2": "FP2: Max",
+        "fp3": "FP3: Max",
+        "sprint_qualifying": "SQ: Max",
+        "sprint": "Sprint: Max",
+        "qualifying": "Q: Max",
+        "race": "Race: Max",
+    }
+
+    async def mock_format_session(repo, season, rnd, race, key, drivers_map, top_n=None):
+        val = mock_results.get(key)
+        if val and top_n is not None:
+            return val + f" (top {top_n})"
+        return val
+
+    monkeypatch.setattr("f1_bot.handlers.results._format_results_for_session", mock_format_session)
+
+    repo = MagicMock()
+    race = MagicMock()
+    drivers_map = {}
+
+    # Case 1: Short message (<= 4096)
+    text = await _format_all_results(repo, 2026, 1, race, drivers_map)
+    assert "FP1: Max" in text
+    assert "Race: Max" in text
+    assert "omitted" not in text
+
+    # Case 2: Long message (> 4096) -> Drop practice
+    mock_results["fp1"] = "A" * 4100
+    text_long = await _format_all_results(repo, 2026, 1, race, drivers_map)
+    assert "FP2: Max" not in text_long
+    assert "FP1: Max" not in text_long
+    assert "SQ: Max" in text_long
+    assert "Race: Max" in text_long
+    assert "omitted to fit Telegram character limits" in text_long
+    assert "top 10" not in text_long
+
+    # Case 3: Extremely long message even without practice -> Truncate to top 10
+    mock_results["fp1"] = "A" * 4100
+    mock_results["race"] = "B" * 4100
+    text_extreme = await _format_all_results(repo, 2026, 1, race, drivers_map)
+    assert "FP2: Max" not in text_extreme
+    assert "SQ: Max (top 10)" in text_extreme
+    assert "B" * 4100 + " (top 10)" in text_extreme
+    assert "truncated to top 10" in text_extreme
+
+
+async def test_get_completed_rounds_for_session():
+    from f1_bot.handlers.results import _get_completed_rounds_for_session
+
+    c = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
+    r1 = Race(
+        season=2026,
+        round=1,
+        name="Race 1",
+        circuit=c,
+        date=date(2026, 3, 1),
+        time=time(13, 0),
+        fp1=RaceSession(name="FP1", date=date(2026, 2, 27), time=time(11, 30)),
+        fp2=RaceSession(name="FP2", date=date(2026, 2, 27), time=time(15, 0)),
+        fp3=RaceSession(name="FP3", date=date(2026, 2, 28), time=time(10, 30)),
+        qualifying=RaceSession(name="Qualifying", date=date(2026, 2, 28), time=time(14, 0)),
+    )
+    r2 = Race(
+        season=2026,
+        round=2,
+        name="Race 2",
+        circuit=c,
+        date=date(2026, 3, 15),
+        time=time(13, 0),
+        fp1=RaceSession(name="FP1", date=date(2026, 3, 13), time=time(11, 30)),
+        sprint_qualifying=RaceSession(name="SQ", date=date(2026, 3, 13), time=time(15, 0)),
+        sprint=RaceSession(name="Sprint", date=date(2026, 3, 14), time=time(10, 30)),
+        qualifying=RaceSession(name="Qualifying", date=date(2026, 3, 14), time=time(14, 0)),
+    )
+    r3 = Race(
+        season=2026,
+        round=3,
+        name="Race 3",
+        circuit=c,
+        date=date(2026, 4, 1),
+        time=time(13, 0),
+        fp1=RaceSession(name="FP1", date=date(2026, 3, 30), time=time(11, 30)),
+        fp2=RaceSession(name="FP2", date=date(2026, 3, 30), time=time(15, 0)),
+        fp3=RaceSession(name="FP3", date=date(2026, 3, 31), time=time(10, 30)),
+        qualifying=RaceSession(name="Qualifying", date=date(2026, 3, 31), time=time(14, 0)),
+    )
+    races = [r1, r2, r3]
+    bounds = {"last_completed_round": 3}
+
+    assert _get_completed_rounds_for_session(races, bounds, "fp3") == [1, 3]
+    assert _get_completed_rounds_for_session(races, bounds, "sprint") == [2]
+    assert _get_completed_rounds_for_session(races, bounds, "race") == [1, 2, 3]
+
+
+def test_results_filtered_keyboard_custom_denominator():
+    from f1_bot.handlers.pagination import results_filtered_keyboard
+
+    navigable = [1, 2, 3, 5, 6]
+    markup = results_filtered_keyboard(
+        current_round=5, navigable_rounds=navigable, session_key="fp3", last_completed_round=7
+    )
+
+    nav_row = markup.inline_keyboard[0]
+    assert len(nav_row) == 3
+    assert nav_row[0].text == "◀"
+    assert nav_row[0].callback_data == "res:filtered:fp3:3"
+    assert nav_row[1].text == "R5/7"
+    assert nav_row[2].text == "▶"
+    assert nav_row[2].callback_data == "res:filtered:fp3:6"
+
+
+async def test_results_callback_duplicate_answer_guard(monkeypatch):
+    from f1_bot.handlers.results import _results_callback
+
+    c = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
+    r = Race(
+        season=2026,
+        round=8,
+        name="Monaco",
+        circuit=c,
+        date=date(2026, 5, 24),
+        time=time(13, 0),
+        fp1=RaceSession(name="FP1", date=date(2026, 5, 22), time=time(11, 30)),
+        fp2=RaceSession(name="FP2", date=date(2026, 5, 22), time=time(15, 0)),
+        fp3=RaceSession(name="FP3", date=date(2026, 5, 23), time=time(10, 30)),
+        qualifying=RaceSession(name="Qualifying", date=date(2026, 5, 23), time=time(14, 0)),
+    )
+
+    repo = MagicMock()
+    repo.get_schedule = AsyncMock(return_value=[r])
+    repo.get_schedule_bounds = AsyncMock(return_value={"last_completed_round": 8})
+    repo.get_drivers_by_id_map = AsyncMock(return_value={})
+
+    update = MagicMock()
+    update.callback_query.data = "res:filtered:sprint:8"
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
+
+    # Mock inline keyboard to extract current round
+    btn_mock = MagicMock()
+    btn_mock.callback_data = "res:filtered:fp3:8"
+    update.callback_query.message.reply_markup.inline_keyboard = [[btn_mock]]
+
+    ctx = _context(repo=repo)
+    await _results_callback(update, ctx)
+
+    assert update.callback_query.answer.call_count == 1
+    update.callback_query.answer.assert_called_with(
+        text="No Sprint data yet this season", show_alert=True
+    )
+    update.callback_query.edit_message_text.assert_not_called()
+
+
+async def test_results_callback_auto_jump_session(monkeypatch):
+    from f1_bot.handlers.results import _results_callback
+
+    c = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
+    r7 = Race(
+        season=2026,
+        round=7,
+        name="China",
+        circuit=c,
+        date=date(2026, 4, 19),
+        time=time(15, 0),
+        fp1=RaceSession(name="FP1", date=date(2026, 4, 17), time=time(11, 30)),
+        sprint_qualifying=RaceSession(
+            name="Sprint Qualifying", date=date(2026, 4, 17), time=time(15, 30)
+        ),
+        sprint=RaceSession(name="Sprint", date=date(2026, 4, 18), time=time(11, 0)),
+        qualifying=RaceSession(name="Qualifying", date=date(2026, 4, 18), time=time(15, 0)),
+    )
+    r8 = Race(
+        season=2026,
+        round=8,
+        name="Monaco",
+        circuit=c,
+        date=date(2026, 5, 24),
+        time=time(13, 0),
+        fp1=RaceSession(name="FP1", date=date(2026, 5, 22), time=time(11, 30)),
+        fp2=RaceSession(name="FP2", date=date(2026, 5, 22), time=time(15, 0)),
+        fp3=RaceSession(name="FP3", date=date(2026, 5, 23), time=time(10, 30)),
+        qualifying=RaceSession(name="Qualifying", date=date(2026, 5, 23), time=time(14, 0)),
+    )
+
+    repo = MagicMock()
+    repo.get_schedule = AsyncMock(return_value=[r7, r8])
+    repo.get_schedule_bounds = AsyncMock(return_value={"last_completed_round": 8})
+    repo.get_drivers_by_id_map = AsyncMock(return_value={})
+    repo.get_sprint_results = AsyncMock(return_value=[])
+
+    update = MagicMock()
+    update.callback_query.data = "res:filtered:sprint:8"
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
+
+    # Mock inline keyboard to extract current round
+    btn_mock = MagicMock()
+    btn_mock.callback_data = "res:filtered:fp3:8"
+    update.callback_query.message.reply_markup.inline_keyboard = [[btn_mock]]
+
+    ctx = _context(repo=repo)
+    await _results_callback(update, ctx)
+
+    assert update.callback_query.answer.call_count == 1
+    update.callback_query.answer.assert_called_with()
+    assert update.callback_query.edit_message_text.call_count == 1
+    args, kwargs = update.callback_query.edit_message_text.call_args
+    markup = kwargs["reply_markup"]
+    nav_row = markup.inline_keyboard[0]
+    assert nav_row[0].text == "R7/8"

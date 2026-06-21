@@ -14,6 +14,11 @@ class Settings(BaseSettings):
     # Required — no prefix (read directly from env)
     telegram_bot_token: str = Field(alias="TELEGRAM_BOT_TOKEN")
 
+    # Optional — no prefix (read directly from env)
+    telegram_proxy: str | None = Field(default=None, alias="TELEGRAM_PROXY")
+    telegram_connect_timeout: float = Field(default=20.0, alias="TELEGRAM_CONNECT_TIMEOUT")
+    telegram_read_timeout: float = Field(default=20.0, alias="TELEGRAM_READ_TIMEOUT")
+
     # SQLite — prefix: F1BOT_SQLITE_PATH
     sqlite_path: str = "f1bot.db"
 

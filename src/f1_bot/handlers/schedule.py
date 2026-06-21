@@ -26,7 +26,7 @@ log = structlog.get_logger(__name__)
 def _upcoming_rounds(races: list, group: str = "all") -> list[int]:
     """Return sorted list of round numbers that have at least one upcoming session in the group."""
     now = datetime.datetime.now(tz=datetime.UTC)
-    entries = find_next_sessions(races, group, limit=len(races), now=now)
+    entries = find_next_sessions(races, group, limit=len(races) * 7, now=now)
     seen: list[int] = []
     for entry in entries:
         if entry.race.round not in seen:
@@ -50,17 +50,18 @@ async def next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     repo = context.bot_data["repo"]
     user_tz = await repo.get_user_timezone(update.effective_user.id)
 
-    today = datetime.date.today()
+    today = datetime.datetime.now(tz=datetime.UTC).date()
     upcoming = [r for r in races if r.date >= today]
     if not upcoming:
         await update.effective_message.reply_text(no_data_message("upcoming race"))
         return
 
     race = upcoming[0]
+    upcoming_rounds = _upcoming_rounds(races, "all")
     await update.effective_message.reply_text(
         format_next_race(race, user_tz),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=next_overview_keyboard(race.round),
+        reply_markup=next_overview_keyboard(race.round, upcoming_rounds),
     )
 
 
@@ -77,10 +78,10 @@ async def _next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
       next:back:_:{round}             → State A: overview for round
     """
     query = update.callback_query
-    await query.answer()
 
     parts = query.data.split(":")
     if len(parts) < 4:
+        await query.answer()
         return
 
     mode = parts[1]
@@ -98,23 +99,31 @@ async def _next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if mode == "back":
         # Return to State A (overview) for the same round
+        upcoming_rounds = _upcoming_rounds(races, "all")
+        if not upcoming_rounds:
+            await query.answer(text="No upcoming races", show_alert=True)
+            return
+
+        if rnd not in upcoming_rounds:
+            rnd = upcoming_rounds[0]
+
         race = next((r for r in races if r.round == rnd), None)
-        today = datetime.date.today()
-        if race is None or race.date < today:
-            upcoming = [r for r in races if r.date >= today]
-            if not upcoming:
-                await query.answer(text="No upcoming races", show_alert=True)
-                return
-            race = upcoming[0]
+        if race is None:
+            race = next((r for r in races if r.round == upcoming_rounds[0]), None)
+
+        if race is None:
+            await query.answer(text="No upcoming races", show_alert=True)
+            return
 
         try:
             await query.edit_message_text(
                 format_next_race(race, user_tz),
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=next_overview_keyboard(race.round),
+                reply_markup=next_overview_keyboard(race.round, upcoming_rounds),
             )
         except BadRequest:
             pass
+        await query.answer()
         return
 
     if mode == "filtered":
@@ -129,7 +138,7 @@ async def _next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             rnd = upcoming_rounds[0]
 
         now = datetime.datetime.now(tz=datetime.UTC)
-        entries = find_next_sessions(races, session_filter, limit=len(races), now=now)
+        entries = find_next_sessions(races, session_filter, limit=len(races) * 7, now=now)
         entry = next((e for e in entries if e.race.round == rnd), None)
         if entry is None:
             rnd = upcoming_rounds[0]
@@ -150,6 +159,9 @@ async def _next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         except Exception as e:
             log.warning("next_filtered_callback_failed", error=str(e))
             await query.answer(text="Failed to load data", show_alert=True)
+            return
+
+        await query.answer()
         return
 
 

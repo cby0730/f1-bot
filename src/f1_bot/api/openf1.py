@@ -163,3 +163,7 @@ class OpenF1Client(BaseAPIClient):
             )
             for r in data
         ]
+
+    async def get_drivers(self, **filters) -> list[dict]:
+        """Retrieve driver profiles from OpenF1."""
+        return await self.get("/drivers", params=filters or None)

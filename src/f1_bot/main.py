@@ -1,5 +1,6 @@
 import structlog
 from telegram.ext import Application
+from telegram.request import HTTPXRequest
 
 from f1_bot.api.jolpica import JolpicaClient
 from f1_bot.api.openf1 import OpenF1Client
@@ -75,9 +76,19 @@ def build_app(settings: Settings) -> Application:
     jolpica = JolpicaClient(settings.jolpica_base_url, jolpica_limiter)
     openf1 = OpenF1Client(settings.openf1_base_url, openf1_limiter)
 
+    request_kwargs = {
+        "connect_timeout": settings.telegram_connect_timeout,
+        "read_timeout": settings.telegram_read_timeout,
+    }
+    if settings.telegram_proxy:
+        request_kwargs["proxy"] = settings.telegram_proxy
+
+    request = HTTPXRequest(**request_kwargs)
+
     app = (
         Application.builder()
         .token(settings.telegram_bot_token)
+        .request(request)
         .post_init(_post_init)
         .post_shutdown(_post_shutdown)
         .build()

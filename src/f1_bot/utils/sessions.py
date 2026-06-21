@@ -97,7 +97,14 @@ def find_next_sessions(
     now: datetime | None = None,
 ) -> list[SessionEntry]:
     now = now or datetime.now(tz=UTC)
-    allowed = SESSION_GROUPS[group]
+    if group in SESSION_GROUPS:
+        allowed = SESSION_GROUPS[group]
+    else:
+        normalized = normalize_session_key(group)
+        if normalized in SESSION_LABELS:
+            allowed = {normalized}
+        else:
+            raise ValueError(f"Unknown session group or key: {group}")
     upcoming = [
         entry
         for entry in session_entries(races)

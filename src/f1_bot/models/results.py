@@ -40,6 +40,7 @@ class SprintResult(BaseModel):
 class SessionResult(BaseModel):
     position: int | None = None
     driver_number: int
+    driver_id: str | None = None
     duration: str | float | list[str | float | None] | None = None
     gap_to_leader: str | float | list[str | float | None] | None = None
     number_of_laps: int | None = None

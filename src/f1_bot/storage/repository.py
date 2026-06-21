@@ -1,4 +1,4 @@
-from datetime import UTC, date, datetime
+from datetime import UTC, datetime
 
 import structlog
 
@@ -12,7 +12,7 @@ log = structlog.get_logger(__name__)
 
 
 class Repository:
-    """Unified data access: pure SQLite store (Redis removed)."""
+    """Unified data access: pure SQLite store."""
 
     def __init__(self, sqlite: SQLiteStore) -> None:
         self.sqlite = sqlite
@@ -31,7 +31,7 @@ class Repository:
 
     async def get_next_race(self, season: int) -> Race | None:
         races = await self.get_schedule(season)
-        today = date.today()
+        today = datetime.now(UTC).date()
         upcoming = [r for r in races if r.date >= today]
         return upcoming[0] if upcoming else None
 
@@ -142,7 +142,7 @@ class Repository:
         await self.sqlite.save_results(season, round_num, "sprint", data)
 
     async def get_session_results(
-        self, season: int, round_num: int, session_key: int
+        self, season: int, round_num: int, session_key: str | int
     ) -> list | None:
         return await self.sqlite.get_results(season, round_num, f"session:{session_key}")
 
@@ -150,7 +150,7 @@ class Repository:
         self,
         season: int,
         round_num: int,
-        session_key: int,
+        session_key: str | int,
         results: list,
         ttl: int = 86400,
     ) -> None:
@@ -198,11 +198,54 @@ class Repository:
         from f1_bot.models.driver import Driver
 
         rows = await self.sqlite.get_drivers()
+        drivers = [Driver.model_validate(r) for r in rows]
+        # Sort so that openf1 drivers come first, then jolpica drivers,
+        # ensuring jolpica drivers overwrite openf1 drivers for the same permanent_number key.
+        drivers.sort(key=lambda d: 1 if d.driver_id.startswith("openf1_") else 2)
+
         result = {}
-        for r in rows:
-            d = Driver.model_validate(r)
+        for d in drivers:
             if d.permanent_number and d.permanent_number.isdigit():
                 result[int(d.permanent_number)] = d
+        return result
+
+    async def get_drivers_by_id_map(self, season: int) -> dict:
+        """Return {driver_id(str): Driver} map from cached drivers."""
+        from f1_bot.models.driver import Driver
+
+        rows = await self.sqlite.get_drivers()
+        drivers = [Driver.model_validate(r) for r in rows]
+
+        # Build lookup for jolpica drivers by number
+        jolpica_by_number = {
+            int(d.permanent_number): d
+            for d in drivers
+            if not d.driver_id.startswith("openf1_")
+            and d.permanent_number
+            and d.permanent_number.isdigit()
+        }
+
+        # Sort: openf1 first, jolpica last (so jolpica overwrites number keys)
+        drivers.sort(key=lambda d: 1 if d.driver_id.startswith("openf1_") else 2)
+
+        result = {}
+        for d in drivers:
+            # Map openf1 driver_id to jolpica Driver if same permanent number exists
+            if (
+                d.driver_id.startswith("openf1_")
+                and d.permanent_number
+                and d.permanent_number.isdigit()
+            ):
+                mapped = jolpica_by_number.get(int(d.permanent_number))
+                if mapped:
+                    result[d.driver_id] = mapped
+                    continue
+
+            result[d.driver_id] = d
+            if d.permanent_number:
+                result[d.permanent_number] = d
+                if d.permanent_number.isdigit():
+                    result[int(d.permanent_number)] = d
         return result
 
     async def save_circuits(self, season: int, circuits: list) -> None:
@@ -233,3 +276,7 @@ class Repository:
     async def get_last_result_round(self, season: int) -> int | None:
         """Return the highest round with any result data."""
         return await self.sqlite.get_last_result_round(season)
+
+    async def get_all_results_by_type_prefix(self, type_prefix: str) -> list[dict]:
+        """Return list of dicts with keys: season, round, type, data_json."""
+        return await self.sqlite.get_all_results_by_type_prefix(type_prefix)

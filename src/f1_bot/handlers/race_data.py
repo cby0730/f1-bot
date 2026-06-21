@@ -23,6 +23,7 @@ from f1_bot.handlers.pagination import (
     resolve_default_round,
     round_keyboard,
 )
+from f1_bot.models.driver import Driver
 from f1_bot.models.results import LapTime, PitStop
 
 log = structlog.get_logger(__name__)
@@ -71,7 +72,6 @@ async def pitstops_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 async def _pitstops_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    await query.answer()
     rnd = int(query.data.split(":")[1])
 
     try:
@@ -100,6 +100,9 @@ async def _pitstops_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     except Exception as e:
         log.warning("pitstops_callback_failed", error=str(e))
         await query.answer(text="Failed to load data", show_alert=True)
+        return
+
+    await query.answer()
 
 
 # ---------------------------------------------------------------------------
@@ -127,9 +130,7 @@ def _laps_summary_keyboard(rnd: int, navigable_rounds: list[int]) -> InlineKeybo
 def _laps_per_lap_keyboard(rnd: int, current_lap: int, total_laps: int) -> InlineKeyboardMarkup:
     nav_row: list[InlineKeyboardButton] = []
     if current_lap > 1:
-        nav_row.append(
-            InlineKeyboardButton("◀", callback_data=f"lap:{rnd}:l:{current_lap - 1}")
-        )
+        nav_row.append(InlineKeyboardButton("◀", callback_data=f"lap:{rnd}:l:{current_lap - 1}"))
     nav_row.append(
         InlineKeyboardButton(
             f"Lap {current_lap}/{total_laps}",
@@ -137,24 +138,29 @@ def _laps_per_lap_keyboard(rnd: int, current_lap: int, total_laps: int) -> Inlin
         )
     )
     if current_lap < total_laps:
-        nav_row.append(
-            InlineKeyboardButton("▶", callback_data=f"lap:{rnd}:l:{current_lap + 1}")
-        )
+        nav_row.append(InlineKeyboardButton("▶", callback_data=f"lap:{rnd}:l:{current_lap + 1}"))
     back_row = [InlineKeyboardButton("🔙 Summary", callback_data=f"lap:{rnd}:s")]
     return InlineKeyboardMarkup([nav_row, back_row])
 
 
-def _laps_driver_picker_keyboard(rnd: int, driver_ids: list[str]) -> InlineKeyboardMarkup:
+def _laps_driver_picker_keyboard(
+    rnd: int, driver_ids: list[str], drivers: dict[int, Driver] | None = None
+) -> InlineKeyboardMarkup:
     cols = 4
     rows: list[list[InlineKeyboardButton]] = []
     for i in range(0, len(driver_ids), cols):
         row_drivers = driver_ids[i : i + cols]
-        rows.append(
-            [
-                InlineKeyboardButton(d, callback_data=f"lap:{rnd}:d:{d}:0")
-                for d in row_drivers
-            ]
-        )
+        row_buttons = []
+        for d in row_drivers:
+            label = d
+            try:
+                num = int(d)
+                if drivers and num in drivers:
+                    label = drivers[num].code or d
+            except ValueError:
+                pass
+            row_buttons.append(InlineKeyboardButton(label, callback_data=f"lap:{rnd}:d:{d}:0"))
+        rows.append(row_buttons)
     rows.append([InlineKeyboardButton("🔙 Summary", callback_data=f"lap:{rnd}:s")])
     return InlineKeyboardMarkup(rows)
 
@@ -203,9 +209,11 @@ async def laps_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         await update.effective_message.reply_text(no_data_message("lap data"))
         return
 
+    drivers_map = await repo.get_drivers_map(season)
+
     completed = list(range(1, bounds["last_completed_round"] + 1))
     await update.effective_message.reply_text(
-        format_laps_summary(race, laps),
+        format_laps_summary(race, laps, drivers_map),
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_laps_summary_keyboard(rnd, completed),
     )
@@ -221,11 +229,10 @@ async def _laps_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
       lap:{rnd}:d:{driver}:{page} → per-driver
     """
     query = update.callback_query
-    await query.answer()
 
-    parts = query.data.split(":")  # e.g. ["lap", "10", "d", "VER", "0"]
+    parts = query.data.split(":")  # e.g. ["lap", "10", "d", "VER", "0"] or ["lap", "10"]
     rnd = int(parts[1])
-    mode = parts[2]
+    mode = parts[2] if len(parts) > 2 else "s"
 
     try:
         races, bounds, season = await load_schedule_and_bounds(context)
@@ -236,6 +243,7 @@ async def _laps_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     repo = context.bot_data["repo"]
     race = next((r for r in races if r.round == rnd), None)
     completed = list(range(1, bounds["last_completed_round"] + 1))
+    drivers_map = await repo.get_drivers_map(season)
 
     try:
         laps = await _get_laps(repo, season, rnd)
@@ -245,7 +253,7 @@ async def _laps_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         if mode == "s":
             # Summary
-            text = format_laps_summary(race, laps)
+            text = format_laps_summary(race, laps, drivers_map)
             keyboard = _laps_summary_keyboard(rnd, completed)
 
         elif mode == "l":
@@ -253,14 +261,14 @@ async def _laps_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             lap_num = int(parts[3])
             total_laps = max(lap.lap_number for lap in laps)
             lap_num = max(1, min(lap_num, total_laps))
-            text = format_laps_by_lap(race, laps, lap_num, total_laps)
+            text = format_laps_by_lap(race, laps, lap_num, total_laps, drivers_map)
             keyboard = _laps_per_lap_keyboard(rnd, lap_num, total_laps)
 
         elif mode == "dp":
             # Driver picker
             driver_ids = sorted({lap.driver_id for lap in laps})
             text = format_laps_driver_picker(race)
-            keyboard = _laps_driver_picker_keyboard(rnd, driver_ids)
+            keyboard = _laps_driver_picker_keyboard(rnd, driver_ids, drivers_map)
 
         elif mode == "d":
             # Per-driver
@@ -271,7 +279,9 @@ async def _laps_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
                 await query.answer(text=f"No data for driver {driver_id}", show_alert=True)
                 return
             total_laps = len(driver_laps)
-            text = format_laps_by_driver(race, laps, driver_id, page)
+            total_pages = (total_laps + _LAPS_PAGE_SIZE - 1) // _LAPS_PAGE_SIZE
+            page = max(0, min(page, total_pages - 1))
+            text = format_laps_by_driver(race, laps, driver_id, page, drivers_map)
             keyboard = _laps_per_driver_keyboard(rnd, driver_id, page, total_laps)
 
         else:
@@ -284,6 +294,9 @@ async def _laps_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     except Exception as e:
         log.warning("laps_callback_failed", error=str(e))
         await query.answer(text="Failed to load data", show_alert=True)
+        return
+
+    await query.answer()
 
 
 def register(app: Application) -> None:

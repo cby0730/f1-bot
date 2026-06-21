@@ -84,3 +84,14 @@ async def test_429_retry_does_not_double_acquire_rate_limiter(httpx_mock: HTTPXM
     await client.get("/test")
     assert client._rate_limiter.acquire.await_count == 1
     await client.close()
+
+
+async def test_network_error_raises_api_connection_error(httpx_mock: HTTPXMock):
+    """An httpx.RequestError (like ReadError or ProtocolError) raises APIConnectionError."""
+    httpx_mock.add_exception(httpx.ReadError("connection reset"))
+    client = _make_client()
+    from f1_bot.api.base import APIConnectionError
+
+    with pytest.raises(APIConnectionError):
+        await client.get("/test")
+    await client.close()

@@ -22,8 +22,8 @@ A Telegram bot for Formula 1 information — race schedules, standings, results,
 
 `/next` and `/results` use a unified two-state UX:
 
-- **State A (overview):** Shows a summary for the current round with session filter buttons (e.g., Practice / Qualifying / Sprint / Race).
-- **State B (filtered):** Tap a session button to drill into that session type. Shows ◀ ▶ round navigation and a Back button to return to the overview.
+- **State A (overview):** Shows a summary for the current round with session filter buttons (e.g., Practice / Qualifying / Sprint / Race) and `◀ ▶` round navigation.
+- **State B (filtered):** Tap a session button to drill into that session type. Shows `◀ ▶` round navigation and a Back button to return to the overview.
 
 ## Architecture
 
@@ -42,6 +42,7 @@ Startup / Scheduler → Jolpica + OpenF1 APIs → SQLite
 - **Unified polling:** All scheduler jobs share a 1-hour interval (`_POLL_INTERVAL` in `scheduler/manager.py`).
 - **OpenF1 for laps:** Lap timing data (including sector times) comes from OpenF1, not Jolpica.
 - **Fuzzy matching:** `/driver` and `/circuit` commands use difflib-based fuzzy matching across all name fields.
+- **Driver mapping & cache enrichment:** OpenF1 driver profiles are cached and enriched with country flags mapped from ISO 3-letter codes. OpenF1 session results are mapped to Jolpica's driver entities using their permanent numbers via `Repository.get_drivers_by_id_map()`.
 
 ### Project structure
 
@@ -122,10 +123,12 @@ uv run ruff check src/ tests/
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `TELEGRAM_BOT_TOKEN` | Yes | — | From @BotFather |
+| `TELEGRAM_PROXY` | No | — | Proxy URL for Telegram client (e.g., `socks5://127.0.0.1:7890`) |
+| `TELEGRAM_CONNECT_TIMEOUT` | No | `20.0` | Connection timeout for Telegram client in seconds |
+| `TELEGRAM_READ_TIMEOUT` | No | `20.0` | Read timeout for Telegram client in seconds |
 | `F1BOT_SQLITE_PATH` | No | `f1bot.db` | SQLite database path (auto-set to `/data/f1bot.db` in Docker) |
 | `F1BOT_LOG_LEVEL` | No | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
 | `F1BOT_LOG_FORMAT` | No | `auto` | `auto` (JSON if not TTY) / `console` / `json` |
-| `REDIS_URL` | No | `redis://localhost:6379/0` | Redis connection (set automatically in docker-compose) |
 
 ## Deployment
 

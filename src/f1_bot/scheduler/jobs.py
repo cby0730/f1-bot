@@ -165,7 +165,108 @@ def _is_in_live_window(entry, now: datetime.datetime) -> bool:
     return (entry.starts_at - _LIVE_WINDOW_MARGIN) <= now <= (session_end + _LIVE_WINDOW_MARGIN)
 
 
-async def sync_openf1_session_results(openf1, jolpica, repo, races: list, full: bool = False) -> None:
+def make_openf1_driver_id(d: dict) -> str:
+    # Use fallback if last_name or broadcast_name are missing
+    last_name = (
+        (d.get("last_name") or d.get("broadcast_name") or "driver")
+        .lower()
+        .strip()
+        .replace(" ", "_")
+    )
+    return f"openf1_{d['driver_number']}_{last_name}"
+
+
+async def _enrich_and_save_openf1_drivers(
+    openf1, repo, season: int, session_key: int, results: list
+) -> None:
+    """Fetch drivers from OpenF1, cache them to database, and link driver_ids to SessionResult list."""
+    try:
+        openf1_drivers = await openf1.get_drivers(session_key=session_key)
+    except Exception as e:
+        log.warning("openf1_drivers_fetch_failed", session_key=session_key, error=str(e))
+        openf1_drivers = []
+
+    if openf1_drivers:
+        from f1_bot.models.driver import Driver
+
+        drivers_to_save = []
+        d_map = {}
+        for d in openf1_drivers:
+            d_id = make_openf1_driver_id(d)
+            d_map[d["driver_number"]] = d_id
+
+            nationality = d.get("country_code") or ""
+            drv = Driver(
+                driver_id=d_id,
+                permanent_number=str(d["driver_number"]),
+                code=d.get("name_acronym"),
+                given_name=d.get("first_name") or "",
+                family_name=d.get("last_name") or d.get("broadcast_name") or "",
+                nationality=nationality,
+                headshot_url=d.get("headshot_url"),
+                team_name=d.get("team_name"),
+                team_colour=d.get("team_colour"),
+            )
+            drivers_to_save.append(drv)
+
+        if drivers_to_save:
+            await repo.save_drivers(int(season), drivers_to_save)
+
+        for r in results:
+            r.driver_id = d_map.get(r.driver_number)
+
+
+async def run_driver_id_backfill_migration(openf1, repo) -> None:
+    """One-time startup migration to populate driver_id in historical session results."""
+    migration_key = "backfill_session_results_driver_id_v2"
+    if await repo.get_sync_metadata(migration_key):
+        return
+
+    log.info("database_migration_backfill_start")
+    try:
+        rows = await repo.get_all_results_by_type_prefix("session:")
+        if not rows:
+            await repo.set_sync_metadata(migration_key)
+            log.info("database_migration_backfill_no_records")
+            return
+
+        for row in rows:
+            season = row["season"]
+            rnd = row["round"]
+            session_type = row["type"]
+            parts = session_type.split(":")
+            if len(parts) == 3:
+                save_key = f"{parts[1]}:{parts[2]}"
+                session_key = int(parts[2])
+            elif len(parts) == 2:
+                session_key_str = parts[1]
+                if not session_key_str.isdigit():
+                    continue
+                save_key = int(session_key_str)
+                session_key = save_key
+            else:
+                continue
+
+            import json
+
+            from f1_bot.models.results import SessionResult
+
+            results_list = [SessionResult.model_validate(r) for r in json.loads(row["data_json"])]
+
+            await _enrich_and_save_openf1_drivers(openf1, repo, season, session_key, results_list)
+
+            await repo.save_session_results(season, rnd, save_key, results_list)
+            await asyncio.sleep(0.1)
+
+        await repo.set_sync_metadata(migration_key)
+        log.info("database_migration_backfill_complete")
+    except Exception as e:
+        log.error("database_migration_backfill_failed", error=str(e))
+
+
+async def sync_openf1_session_results(
+    openf1, jolpica, repo, races: list, full: bool = False
+) -> None:
     """Sync FP1/FP2/FP3/SQ session results from OpenF1."""
     from f1_bot.utils.sessions import match_openf1_session
 
@@ -209,11 +310,18 @@ async def sync_openf1_session_results(openf1, jolpica, repo, races: list, full: 
         try:
             results = await openf1.get_session_results(session_key=openf1_session.session_key)
             if results:
-                await repo.save_session_results(season, race.round, openf1_session.session_key, results)
+                await _enrich_and_save_openf1_drivers(
+                    openf1, repo, season, openf1_session.session_key, results
+                )
+                await repo.save_session_results(
+                    season, race.round, f"{entry.key}:{openf1_session.session_key}", results
+                )
                 log.info("openf1_session_synced", session=entry.key, round=race.round)
             await asyncio.sleep(_OPENF1_THROTTLE)
         except Exception as e:
-            log.warning("openf1_session_sync_failed", session=entry.key, round=race.round, error=str(e))
+            log.warning(
+                "openf1_session_sync_failed", session=entry.key, round=race.round, error=str(e)
+            )
 
 
 async def sync_openf1_laps(openf1, repo, races: list, full: bool = False) -> None:
@@ -237,9 +345,7 @@ async def sync_openf1_laps(openf1, repo, races: list, full: bool = False) -> Non
         if race_dt > now or race_dt < cutoff:
             continue
 
-        if _is_in_live_window(
-            type("Entry", (), {"starts_at": race_dt})(), now
-        ):
+        if _is_in_live_window(type("Entry", (), {"starts_at": race_dt})(), now):
             continue
 
         # Find matching OpenF1 race session
@@ -269,6 +375,9 @@ async def sync_openf1_laps(openf1, repo, races: list, full: bool = False) -> Non
 async def startup_sync(jolpica, openf1, repo) -> None:
     """Full-season sync on bot startup. Blocks until complete."""
     log.info("startup_sync_begin")
+
+    # Run database migration
+    await run_driver_id_backfill_migration(openf1, repo)
 
     races = await sync_schedule(jolpica, repo)
     if not races:

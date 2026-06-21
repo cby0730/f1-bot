@@ -119,3 +119,24 @@ async def test_standings_callback_wcc_no_data_shows_warning():
 
     text = query.edit_message_text.call_args.args[0]
     assert "⚠️" in text
+
+
+async def test_standings_callback_handles_bad_request():
+    """It catches telegram.error.BadRequest gracefully when message is unmodified."""
+    from telegram.error import BadRequest
+
+    repo = MagicMock()
+    repo.get_driver_standings = AsyncMock(return_value=_driver_standings())
+    query = MagicMock()
+    query.answer = AsyncMock()
+    query.edit_message_text = AsyncMock(side_effect=BadRequest("Message is not modified"))
+    query.data = "standings:wdc"
+    update = MagicMock()
+    update.callback_query = query
+    update.effective_user.id = 123
+    ctx = _context(repo)
+
+    # Should not raise exception
+    await standings_callback(update, ctx)
+    query.answer.assert_called_once()
+    query.edit_message_text.assert_called_once()

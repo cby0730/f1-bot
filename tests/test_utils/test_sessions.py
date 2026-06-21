@@ -110,7 +110,6 @@ def test_find_recent_completed_sessions_limit():
 # ---------------------------------------------------------------------------
 
 
-
 def test_normalize_session_key_race():
     assert normalize_session_key("race") == "race"
 
@@ -175,3 +174,22 @@ def test_session_entries_race_with_all_none_sessions():
     assert "fp1" not in keys
     assert "fp2" not in keys
     assert "fp3" not in keys
+
+
+def test_find_next_sessions_single_key_support():
+    now = datetime(2024, 8, 30, 12, 0, tzinfo=UTC)
+    # fp2 starts at 15:00, which is after 12:00
+    entries = find_next_sessions([_race()], group="fp2", limit=1, now=now)
+    assert len(entries) == 1
+    assert entries[0].key == "fp2"
+
+    # fp1 starts at 11:30, which is before 12:00
+    entries_fp1 = find_next_sessions([_race()], group="fp1", limit=1, now=now)
+    assert len(entries_fp1) == 0
+
+
+def test_find_next_sessions_invalid_key_raises_error():
+    import pytest
+
+    with pytest.raises(ValueError, match="Unknown session group or key"):
+        find_next_sessions([_race()], group="invalid_key")

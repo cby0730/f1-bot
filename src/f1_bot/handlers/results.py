@@ -8,7 +8,6 @@ State B (filtered): show results for specific session type with round navigation
 All reads are SQL-only — no direct API calls from handlers.
 """
 
-
 import structlog
 from telegram import Update
 from telegram.constants import ParseMode
@@ -68,11 +67,9 @@ async def _get_session_result(repo, season: int, rnd: int, session_key: str):
     """Try to find session results by scanning known OpenF1 session keys stored in results table."""
     # session results are stored as "session:{openf1_session_key}" in the results table
     all_types = await repo.get_all_result_types(season, rnd)
-    session_prefix = "session:"
     for t in all_types:
-        if t.startswith(session_prefix):
-            # We can't easily match session_key to OpenF1 key without a mapping,
-            # but we know what session types are stored. Try all session:* entries.
+        parts = t.split(":")
+        if len(parts) == 3 and parts[0] == "session" and parts[1] == session_key:
             cached = await repo.sqlite.get_results(season, rnd, t)
             if cached:
                 return [SessionResult.model_validate(r) for r in cached]
@@ -81,29 +78,31 @@ async def _get_session_result(repo, season: int, rnd: int, session_key: str):
 
 async def _get_drivers_map(repo, season: int) -> dict:
     """Get driver map from cached drivers (SQL-only)."""
-    return await repo.get_drivers_map(season)
+    return await repo.get_drivers_by_id_map(season)
 
 
-async def _format_results_for_session(repo, season: int, rnd: int, race, session_key: str, drivers_map: dict) -> str | None:
+async def _format_results_for_session(
+    repo, season: int, rnd: int, race, session_key: str, drivers_map: dict, top_n: int | None = None
+) -> str | None:
     """Format results for a specific session key. Returns formatted text or None."""
     if session_key == "race":
         results = await _get_race_results(repo, season, rnd)
         if results:
-            return format_race_results(race, results)
+            return format_race_results(race, results, top_n=top_n or 20)
     elif session_key == "qualifying":
         results = await _get_qualifying_results(repo, season, rnd)
         if results:
-            return format_qualifying_results(race, results)
+            return format_qualifying_results(race, results, top_n=top_n)
     elif session_key == "sprint":
         results = await _get_sprint_results(repo, season, rnd)
         if results:
-            return format_sprint_results(race, results)
+            return format_sprint_results(race, results, top_n=top_n)
     elif session_key in ("fp1", "fp2", "fp3", "sprint_qualifying"):
         entry = find_race_session([race], rnd, session_key)
         if entry:
             results = await _get_session_result(repo, season, rnd, session_key)
             if results:
-                return format_session_results(entry, results, drivers_map)
+                return format_session_results(entry, results, drivers_map, top_n=top_n)
     return None
 
 
@@ -129,6 +128,20 @@ async def _find_default_session(repo, races: list, season: int, rnd: int) -> str
         if entry:
             return entry.key
     return None
+
+
+def _get_completed_rounds_for_session(races: list, bounds: dict, session_key: str) -> list[int]:
+    """Get list of completed round numbers that have the specified session."""
+    last_completed = bounds.get("last_completed_round") or 0
+    if session_key in ("all", "race", "qualifying"):
+        return list(range(1, last_completed + 1))
+
+    rounds = []
+    for r in races:
+        if r.round <= last_completed:
+            if find_race_session([r], r.round, session_key) is not None:
+                rounds.append(r.round)
+    return sorted(rounds)
 
 
 # ---------------------------------------------------------------------------
@@ -162,17 +175,25 @@ async def results_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     default_session = await _find_default_session(repo, races, season, rnd)
 
     if default_session:
-        text = await _format_results_for_session(repo, season, rnd, race, default_session, drivers_map)
+        text = await _format_results_for_session(
+            repo, season, rnd, race, default_session, drivers_map
+        )
     else:
         text = None
 
     if not text:
         text = no_data_message("results")
 
+    last_completed = bounds.get("last_completed_round") or 0
+    max_round = max(last_completed, rnd or 0)
+    completed = list(range(1, max_round + 1))
+
     await update.effective_message.reply_text(
         text,
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=results_overview_keyboard(rnd, active_key=default_session),
+        reply_markup=results_overview_keyboard(
+            rnd, completed_rounds=completed, active_key=default_session
+        ),
     )
 
 
@@ -189,10 +210,10 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
       res:back:_:{round}                  → State A: overview for round
     """
     query = update.callback_query
-    await query.answer()
 
     parts = query.data.split(":")
     if len(parts) < 4:
+        await query.answer()
         return
 
     mode = parts[1]
@@ -218,18 +239,27 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         default_session = await _find_default_session(repo, races, season, rnd)
         text = None
         if default_session:
-            text = await _format_results_for_session(repo, season, rnd, race, default_session, drivers_map)
+            text = await _format_results_for_session(
+                repo, season, rnd, race, default_session, drivers_map
+            )
         if not text:
             text = no_data_message("results")
+
+        last_completed = bounds.get("last_completed_round") or 0
+        max_round = max(last_completed, rnd or 0)
+        completed = list(range(1, max_round + 1))
 
         try:
             await query.edit_message_text(
                 text,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=results_overview_keyboard(rnd, active_key=default_session),
+                reply_markup=results_overview_keyboard(
+                    rnd, completed_rounds=completed, active_key=default_session
+                ),
             )
         except BadRequest:
             pass
+        await query.answer()
         return
 
     if mode == "filtered":
@@ -245,48 +275,98 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 )
             except BadRequest:
                 pass
+            await query.answer()
             return
 
         # Check if session exists for this weekend
         if session_key in ("fp3", "sprint_qualifying", "sprint"):
             entry = find_race_session([race], rnd, session_key)
             if entry is None:
-                label_map = {
-                    "fp3": "No FP3 on sprint weekends 🏎",
-                    "sprint_qualifying": "No Sprint Qualifying this weekend",
-                    "sprint": "No Sprint this weekend",
-                }
-                msg = label_map.get(session_key, f"No {session_key} session this weekend")
-                await query.answer(text=msg, show_alert=True)
-                return
+                navigable = _get_completed_rounds_for_session(races, bounds, session_key)
+                if not navigable:
+                    label_map = {
+                        "fp3": "No FP3 data yet this season 🏎",
+                        "sprint_qualifying": "No Sprint Qualifying data yet this season",
+                        "sprint": "No Sprint data yet this season",
+                    }
+                    msg = label_map.get(session_key, f"No {session_key} data yet this season")
+                    await query.answer(text=msg, show_alert=True)
+                    return
+                rnd = navigable[-1]
+                race = next(r for r in races if r.round == rnd)
 
         text = await _format_results_for_session(repo, season, rnd, race, session_key, drivers_map)
         if not text:
             text = no_data_message(f"{session_key} results")
 
-        completed = list(range(1, (bounds.get("last_completed_round") or 0) + 1))
+        last_completed = bounds.get("last_completed_round") or 0
+        completed = _get_completed_rounds_for_session(races, bounds, session_key)
         try:
             await query.edit_message_text(
                 text,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=results_filtered_keyboard(rnd, completed, session_key),
+                reply_markup=results_filtered_keyboard(
+                    rnd, completed, session_key, last_completed_round=last_completed
+                ),
             )
         except BadRequest:
             pass
         except Exception as e:
             log.warning("results_filtered_failed", error=str(e))
             await query.answer(text="Failed to load data", show_alert=True)
+            return
+
+        await query.answer()
         return
 
 
 async def _format_all_results(repo, season: int, rnd: int, race, drivers_map: dict) -> str | None:
     """Format all available session results for a round into a combined message."""
+    # Stage 1: Try formatting all sessions with all 20 drivers
+    all_keys = ("fp1", "fp2", "fp3", "sprint_qualifying", "sprint", "qualifying", "race")
     sections = []
-    for key in ("fp1", "fp2", "fp3", "sprint_qualifying", "sprint", "qualifying", "race"):
+    for key in all_keys:
         text = await _format_results_for_session(repo, season, rnd, race, key, drivers_map)
         if text:
             sections.append(text)
-    return "\n\n".join(sections) if sections else None
+
+    if not sections:
+        return None
+
+    combined_text = "\n\n".join(sections)
+    if len(combined_text) <= 4096:
+        return combined_text
+
+    # Stage 2: Filter out FP1-FP3, formatting only competitive sessions with all 20 drivers
+    comp_keys = ("sprint_qualifying", "sprint", "qualifying", "race")
+    comp_sections = []
+    for key in comp_keys:
+        text = await _format_results_for_session(repo, season, rnd, race, key, drivers_map)
+        if text:
+            comp_sections.append(text)
+
+    if not comp_sections:
+        return None
+
+    filtered_text = "\n\n".join(comp_sections)
+    note = "\n\n⚠️ *Practice results (FP1/FP2/FP3) omitted to fit Telegram character limits. Please use the buttons above to view them.*"
+    if len(filtered_text) + len(note) <= 4096:
+        return filtered_text + note
+
+    # Stage 3: Extreme case: Truncate competitive sessions to top 10
+    truncated_sections = []
+    for key in comp_keys:
+        text = await _format_results_for_session(
+            repo, season, rnd, race, key, drivers_map, top_n=10
+        )
+        if text:
+            truncated_sections.append(text)
+
+    if not truncated_sections:
+        return None
+
+    truncated_note = "\n\n⚠️ *Practice results omitted and remaining results truncated to top 10 to fit Telegram character limits.*"
+    return "\n\n".join(truncated_sections) + truncated_note
 
 
 # ---------------------------------------------------------------------------

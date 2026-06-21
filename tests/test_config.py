@@ -33,3 +33,24 @@ def test_settings_missing_token_raises(monkeypatch):
     monkeypatch.delenv("TELEGRAM_BOT_TOKEN", raising=False)
     with pytest.raises((ValidationError, Exception)):
         Settings(_env_file=None)
+
+
+def test_settings_telegram_network(monkeypatch):
+    """Test defaults and environment variable overrides for Telegram network settings."""
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
+
+    # Defaults
+    s1 = Settings()
+    assert s1.telegram_proxy is None
+    assert s1.telegram_connect_timeout == 20.0
+    assert s1.telegram_read_timeout == 20.0
+
+    # Overrides
+    monkeypatch.setenv("TELEGRAM_PROXY", "socks5://127.0.0.1:1080")
+    monkeypatch.setenv("TELEGRAM_CONNECT_TIMEOUT", "15.5")
+    monkeypatch.setenv("TELEGRAM_READ_TIMEOUT", "30.0")
+
+    s2 = Settings()
+    assert s2.telegram_proxy == "socks5://127.0.0.1:1080"
+    assert s2.telegram_connect_timeout == 15.5
+    assert s2.telegram_read_timeout == 30.0

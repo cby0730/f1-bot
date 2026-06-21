@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from f1_bot.models.constructor import Constructor, ConstructorStanding
 from f1_bot.models.driver import Driver, DriverStanding
 from f1_bot.models.race import Circuit, Race, RaceSession
+from f1_bot.models.results import SessionResult
 from f1_bot.scheduler.jobs import (
     _LIVE_WINDOW_MARGIN,
     _is_in_live_window,
@@ -147,11 +148,17 @@ def _make_race(round_num: int, race_date: date, race_time: time = time(13, 0), s
         circuit=_circuit(),
         date=race_date,
         time=race_time,
-        qualifying=RaceSession(name="Qualifying", date=race_date - timedelta(days=1), time=time(14, 0)),
+        qualifying=RaceSession(
+            name="Qualifying", date=race_date - timedelta(days=1), time=time(14, 0)
+        ),
     )
     if sprint:
-        kwargs["sprint"] = RaceSession(name="Sprint", date=race_date - timedelta(days=1), time=time(10, 0))
-        kwargs["sprint_qualifying"] = RaceSession(name="Sprint Qualifying", date=race_date - timedelta(days=2), time=time(14, 0))
+        kwargs["sprint"] = RaceSession(
+            name="Sprint", date=race_date - timedelta(days=1), time=time(10, 0)
+        )
+        kwargs["sprint_qualifying"] = RaceSession(
+            name="Sprint Qualifying", date=race_date - timedelta(days=2), time=time(14, 0)
+        )
     return Race(**kwargs)
 
 
@@ -413,6 +420,58 @@ class TestSyncOpenF1SessionResults:
         # Second session should still be saved
         assert repo.save_session_results.await_count == 1
 
+    async def test_sync_openf1_session_results_saves_drivers_and_links_driver_id(self):
+        today = date.today()
+        race = Race(
+            season=2025,
+            round=5,
+            name="Race 5",
+            circuit=_circuit(),
+            date=today,
+            time=time(13, 0),
+            fp1=RaceSession(name="FP1", date=today - timedelta(days=2), time=time(10, 0)),
+        )
+        openf1_session = MagicMock(session_key=101)
+
+        # Mock OpenF1 client responses
+        openf1 = MagicMock()
+        openf1.get_sessions = AsyncMock(return_value=[openf1_session])
+
+        session_result = SessionResult(position=1, driver_number=44, duration="1:12.345")
+        openf1.get_session_results = AsyncMock(return_value=[session_result])
+
+        driver_profile = {
+            "driver_number": 44,
+            "first_name": "Lewis",
+            "last_name": "Hamilton",
+            "country_code": "GBR",
+            "name_acronym": "HAM",
+            "team_name": "Mercedes",
+            "team_colour": "00D2BE",
+        }
+        openf1.get_drivers = AsyncMock(return_value=[driver_profile])
+
+        repo = MagicMock()
+        repo.save_drivers = AsyncMock()
+        repo.save_session_results = AsyncMock()
+
+        with patch("f1_bot.utils.sessions.match_openf1_session") as mock_match:
+            mock_match.return_value = openf1_session
+            await sync_openf1_session_results(openf1, None, repo, [race], full=True)
+
+        # Verify that drivers were saved
+        repo.save_drivers.assert_awaited_once()
+        saved_drivers = repo.save_drivers.call_args[0][1]
+        assert len(saved_drivers) == 1
+        assert saved_drivers[0].driver_id == "openf1_44_hamilton"
+        assert saved_drivers[0].nationality == "GBR"
+
+        # Verify that session results were saved with the driver_id linked
+        repo.save_session_results.assert_awaited_once()
+        saved_results = repo.save_session_results.call_args[0][3]
+        assert len(saved_results) == 1
+        assert saved_results[0].driver_id == "openf1_44_hamilton"
+
 
 # ---------------------------------------------------------------------------
 # sync_openf1_laps
@@ -484,15 +543,21 @@ class TestHourlySync:
         }
         context.bot_data["repo"].get_schedule = AsyncMock(return_value=[])
         context.bot_data["repo"].set_sync_metadata = AsyncMock()
-        context.bot_data["repo"].get_schedule_bounds = AsyncMock(return_value={"last_completed_round": 3})
+        context.bot_data["repo"].get_schedule_bounds = AsyncMock(
+            return_value={"last_completed_round": 3}
+        )
 
-        with patch("f1_bot.scheduler.jobs.sync_schedule", new_callable=AsyncMock, return_value=[]) as mock_sched:
-            with patch("f1_bot.scheduler.jobs.sync_standings", new_callable=AsyncMock) as mock_stand:
-                with patch("f1_bot.scheduler.jobs.sync_drivers_and_circuits", new_callable=AsyncMock) as mock_dc:
+        with patch(
+            "f1_bot.scheduler.jobs.sync_schedule", new_callable=AsyncMock, return_value=[]
+        ) as mock_sched:
+            with patch(
+                "f1_bot.scheduler.jobs.sync_standings", new_callable=AsyncMock
+            ) as mock_stand:
+                with patch(
+                    "f1_bot.scheduler.jobs.sync_drivers_and_circuits", new_callable=AsyncMock
+                ) as mock_dc:
                     await hourly_sync(context)
 
-        mock_sched.assert_awaited_once_with(
-            context.bot_data["jolpica"], context.bot_data["repo"]
-        )
+        mock_sched.assert_awaited_once_with(context.bot_data["jolpica"], context.bot_data["repo"])
         mock_stand.assert_awaited_once()
         mock_dc.assert_awaited_once()

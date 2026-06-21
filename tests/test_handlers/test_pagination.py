@@ -87,13 +87,25 @@ class TestScheduleKeyboard:
 
 
 class TestNextOverviewKeyboard:
-    def test_has_two_rows(self):
-        kb = next_overview_keyboard(5)
+    def test_has_no_pager_when_single_round(self):
+        kb = next_overview_keyboard(5, [5])
         assert len(kb.inline_keyboard) == 2
+        practice_row = kb.inline_keyboard[0]
+        labels = [btn.text for btn in practice_row]
+        assert "FP1" in labels
+        assert "FP2" in labels
+
+    def test_has_three_rows_with_pager_when_multiple_rounds(self):
+        kb = next_overview_keyboard(5, [5, 6])
+        assert len(kb.inline_keyboard) == 3
+        pager_row = kb.inline_keyboard[0]
+        assert len(pager_row) == 2  # R5/6 and ▶
+        assert pager_row[0].text == "R5/6"
+        assert pager_row[1].text == "▶"
 
     def test_practice_row_buttons(self):
-        kb = next_overview_keyboard(5)
-        practice_row = kb.inline_keyboard[0]
+        kb = next_overview_keyboard(5, [5, 6])
+        practice_row = kb.inline_keyboard[1]
         labels = [btn.text for btn in practice_row]
         assert "FP1" in labels
         assert "FP2" in labels
@@ -101,17 +113,17 @@ class TestNextOverviewKeyboard:
         assert "Q" in labels
 
     def test_competitive_row_buttons(self):
-        kb = next_overview_keyboard(5)
-        comp_row = kb.inline_keyboard[1]
+        kb = next_overview_keyboard(5, [5, 6])
+        comp_row = kb.inline_keyboard[2]
         labels = [btn.text for btn in comp_row]
         assert "SQ" in labels
         assert "SPR" in labels
         assert "Race" in labels
-        assert "All" in labels
+        assert "All" not in labels
 
     def test_callback_data_format(self):
-        kb = next_overview_keyboard(7)
-        btn = kb.inline_keyboard[0][0]  # FP1 button
+        kb = next_overview_keyboard(7, [7, 8])
+        btn = kb.inline_keyboard[1][0]  # FP1 button
         assert btn.callback_data == "next:filtered:fp1:7"
 
 
@@ -122,13 +134,26 @@ class TestNextOverviewKeyboard:
 
 class TestResultsOverviewKeyboard:
     def test_no_active_key_all_plain(self):
-        kb = results_overview_keyboard(3)
+        kb = results_overview_keyboard(3, completed_rounds=[3])
         for row in kb.inline_keyboard:
             for btn in row:
                 assert not btn.text.startswith("·")
+        assert len(kb.inline_keyboard) == 2
+
+    def test_with_pager_row(self):
+        kb = results_overview_keyboard(3, completed_rounds=[1, 2, 3, 4])
+        assert len(kb.inline_keyboard) == 3
+        pager_row = kb.inline_keyboard[0]
+        assert len(pager_row) == 3  # Prev button, middle label, and Next button
+        assert pager_row[0].text == "◀"
+        assert pager_row[0].callback_data == "res:back:_:2"
+        assert pager_row[1].text == "R3/4"
+        assert pager_row[1].callback_data == "res:back:_:3"
+        assert pager_row[2].text == "▶"
+        assert pager_row[2].callback_data == "res:back:_:4"
 
     def test_active_key_highlighted(self):
-        kb = results_overview_keyboard(3, active_key="race")
+        kb = results_overview_keyboard(3, completed_rounds=[3], active_key="race")
         # Find the race button
         found = False
         for row in kb.inline_keyboard:
@@ -139,7 +164,7 @@ class TestResultsOverviewKeyboard:
         assert found, "Race button should be highlighted with ·Race·"
 
     def test_callback_data_format(self):
-        kb = results_overview_keyboard(5, active_key="qualifying")
+        kb = results_overview_keyboard(5, completed_rounds=[5], active_key="qualifying")
         btn = kb.inline_keyboard[0][-1]  # Q button (last in practice row)
         assert btn.callback_data == "res:filtered:qualifying:5"
 
@@ -161,12 +186,31 @@ class TestResultsFilteredKeyboard:
         back_btn = [btn for btn in last_row if "Back" in btn.text][0]
         assert back_btn.callback_data == "res:back:_:5"
 
-    def test_active_session_highlighted(self):
-        kb = results_filtered_keyboard(3, [1, 2, 3], "fp1")
-        # FP1 should be highlighted
+    def test_state_b_has_no_filter_row(self):
+        """State B should only have nav row + back row, no session filter buttons."""
+        kb = results_filtered_keyboard(3, [1, 2, 3], "race")
         all_btns = [btn for row in kb.inline_keyboard for btn in row]
-        fp1_btns = [btn for btn in all_btns if "fp1" in (btn.callback_data or "")]
-        assert any(btn.text == "·FP1·" for btn in fp1_btns)
+        filter_keys = {"fp1", "fp2", "fp3", "qualifying", "sprint_qualifying", "sprint", "all"}
+        for btn in all_btns:
+            parts = (btn.callback_data or "").split(":")
+            assert not any(k in parts for k in filter_keys), (
+                f"Filter button found in State B: {btn.callback_data}"
+            )
+
+    def test_state_b_nav_row_is_first(self):
+        """Nav row (◀ ▶) should be the first row in State B keyboard."""
+        kb = results_filtered_keyboard(5, [4, 5, 6], "qualifying")
+        first_row = kb.inline_keyboard[0]
+        texts = [btn.text for btn in first_row]
+        assert "◀" in texts
+        assert "▶" in texts
+
+    def test_state_b_single_round_back_only(self):
+        """When only one navigable round exists, State B has nav row with label and back row."""
+        kb = results_filtered_keyboard(3, [3], "race")
+        assert len(kb.inline_keyboard) == 2
+        assert any("R3/3" in btn.text for btn in kb.inline_keyboard[0])
+        assert any("Back" in btn.text for btn in kb.inline_keyboard[1])
 
 
 # ---------------------------------------------------------------------------

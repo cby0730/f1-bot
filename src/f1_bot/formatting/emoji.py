@@ -55,12 +55,76 @@ FLAG_COLORS = {
 }
 
 
+ISO_3_TO_2 = {
+    "ARG": "AR",
+    "AUS": "AU",
+    "AUT": "AT",
+    "BEL": "BE",
+    "BRA": "BR",
+    "CAN": "CA",
+    "CHN": "CN",
+    "COL": "CO",
+    "CZE": "CZ",
+    "DEN": "DK",
+    "ESP": "ES",
+    "FIN": "FI",
+    "FRA": "FR",
+    "GBR": "GB",
+    "GER": "DE",
+    "IND": "IN",
+    "ITA": "IT",
+    "JPN": "JP",
+    "KOR": "KR",
+    "MEX": "MX",
+    "MON": "MC",
+    "NED": "NL",
+    "NZL": "NZ",
+    "POL": "PL",
+    "RUS": "RU",
+    "SUI": "CH",
+    "SWE": "SE",
+    "THA": "TH",
+    "USA": "US",
+    "VEN": "VE",
+    "EST": "EE",
+    "ZAF": "ZA",
+    "IDN": "ID",
+    "ZWE": "ZW",
+    "ISR": "IL",
+    "TUR": "TR",
+    "SMR": "SM",
+    "ISL": "IS",
+}
+
+
+def country_code_to_flag(country_code_alpha3: str) -> str:
+    """Convert a 3-letter country code to a country flag emoji."""
+    if not country_code_alpha3:
+        return "🏴"
+    alpha2 = ISO_3_TO_2.get(country_code_alpha3.upper())
+    if not alpha2:
+        return "🏴"
+    return "".join(chr(127397 + ord(c)) for c in alpha2.upper())
+
+
 def pos_icon(position: int) -> str:
     return POSITION_MEDALS.get(position, f"P{position}")
 
 
 def flag_icon(nationality: str) -> str:
-    return COUNTRY_FLAGS.get(nationality, "🏴")
+    if not nationality:
+        return "🏴"
+    # If the input is already a flag emoji (regional indicators), return it
+    if len(nationality) == 2 and all(127397 < ord(c) < 127500 for c in nationality):
+        return nationality
+    # Check manual lookup
+    ret = COUNTRY_FLAGS.get(nationality)
+    if ret:
+        return ret
+    # Check 3-letter code
+    if len(nationality) == 3:
+        return country_code_to_flag(nationality)
+    return "🏴"
 
 
 def session_icon(session_type: str) -> str:

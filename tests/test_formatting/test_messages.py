@@ -43,8 +43,14 @@ def _race(round_num=5, r_date=date(2024, 5, 26), r_time=time(13, 0, 0)):
     )
 
 
-def _driver(driver_id="hamilton", given="Lewis", family="Hamilton", nat="British"):
-    return Driver(driver_id=driver_id, given_name=given, family_name=family, nationality=nat)
+def _driver(driver_id="hamilton", given="Lewis", family="Hamilton", nat="British", perm_num="44"):
+    return Driver(
+        driver_id=driver_id,
+        given_name=given,
+        family_name=family,
+        nationality=nat,
+        permanent_number=perm_num,
+    )
 
 
 def _constructor(cid="mercedes", name="Mercedes"):
@@ -172,8 +178,8 @@ def test_format_race_results_shows_winner():
         ),
     ]
     text = format_race_results(_race(), results)
-    assert "Hamilton" in text
-    assert "1:23:45" in text
+    assert "Hamilton (#44) — ⏱ 1:23:45.678" in text
+    assert "🇬🇧" in text
 
 
 def test_format_race_results_fastest_lap_marker():
@@ -191,7 +197,35 @@ def test_format_race_results_fastest_lap_marker():
         ),
     ]
     text = format_race_results(_race(), results)
-    assert "⚡" in text
+    assert "Hamilton (#44) ⚡ — ⏱ 1:23:45" in text
+
+
+def test_format_race_results_gap_time():
+    results = [
+        RaceResult(
+            position=1,
+            grid=1,
+            laps=78,
+            status="Finished",
+            points=25.0,
+            driver=_driver(driver_id="hamilton", given="Lewis", family="Hamilton", perm_num="44"),
+            constructor=_constructor(),
+            time="1:23:45.678",
+        ),
+        RaceResult(
+            position=2,
+            grid=2,
+            laps=78,
+            status="Finished",
+            points=18.0,
+            driver=_driver(driver_id="bottas", given="Valtteri", family="Bottas", perm_num="77"),
+            constructor=_constructor(),
+            time="+3.264",
+        ),
+    ]
+    text = format_race_results(_race(), results)
+    assert "Lewis Hamilton (#44) — ⏱ 1:23:45.678" in text
+    assert "Valtteri Bottas (#77) — +3.264" in text
 
 
 # --- format_qualifying_results ---
@@ -210,6 +244,8 @@ def test_format_qualifying_shows_q3_time():
     ]
     text = format_qualifying_results(_race(), results)
     assert "1:09.8" in text
+    assert "#44" in text
+    assert "🇬🇧" in text
 
 
 def test_format_session_results_shows_session_and_duration():
@@ -225,6 +261,40 @@ def test_format_session_results_shows_session_and_duration():
     assert "FP1 Result" in text
     assert "#4" in text
     assert "1:12.345" in text
+
+
+def test_format_session_results_with_driver_mappings():
+    race = _race()
+    race = race.model_copy(
+        update={"fp1": RaceSession(name="FP1", date=date(2024, 5, 24), time=time(11, 30))}
+    )
+    entry = find_race_session([race], 5, "fp1")
+
+    # 1. Test lookup via driver_id
+    results_id = [
+        SessionResult(position=1, driver_number=44, driver_id="hamilton", duration="1:12.345")
+    ]
+    drivers_dict = {"hamilton": _driver(driver_id="hamilton", nat="British")}
+    text_id = format_session_results(entry, results_id, drivers_dict)
+    assert "🇬🇧 #44 Lewis Hamilton" in text_id
+
+    # 2. Test fallback lookup via driver_number (legacy compatibility)
+    results_num = [SessionResult(position=1, driver_number=44, duration="1:12.345")]
+    drivers_dict_legacy = {44: _driver(driver_id="hamilton", nat="British")}
+    text_legacy = format_session_results(entry, results_num, drivers_dict_legacy)
+    assert "🇬🇧 #44 Lewis Hamilton" in text_legacy
+
+    # 3. Test dynamic flag generation for uncommon countries
+    results_uncommon = [
+        SessionResult(position=1, driver_number=88, driver_id="rookie", duration="1:12.345")
+    ]
+    drivers_dict_uncommon = {
+        "rookie": _driver(
+            driver_id="rookie", given="Arvid", family="Lindblad", nat="EST", perm_num="88"
+        )
+    }
+    text_uncommon = format_session_results(entry, results_uncommon, drivers_dict_uncommon)
+    assert "🇪🇪 #88 Arvid Lindblad" in text_uncommon
 
 
 # --- format_pitstops ---
@@ -300,12 +370,15 @@ def test_format_laps_by_lap_shows_all_drivers_for_lap():
     assert "HAM" in text
     # Lap 4 drivers should not appear
     assert "1:31.800" not in text
+    assert "Timing data from live feeds may occasionally be incomplete." in text
 
 
 def test_format_laps_by_lap_shows_position():
     laps = [LapTime(lap_number=1, driver_id="NOR", time="1:30.000", position=3)]
     text = format_laps_by_lap(_race(), laps, 1, 52)
     assert "P3" in text
+    assert "standing start lap" in text
+    assert "Timing data from live feeds may occasionally be incomplete." not in text
 
 
 def test_format_laps_by_lap_empty_lap():
@@ -318,20 +391,17 @@ def test_format_laps_by_lap_empty_lap():
 
 
 def test_format_laps_by_driver_shows_driver_laps():
-    laps = [
-        LapTime(lap_number=i, driver_id="VER", time=f"1:3{i}.000") for i in range(1, 6)
-    ]
+    laps = [LapTime(lap_number=i, driver_id="VER", time=f"1:3{i}.000") for i in range(1, 6)]
     text = format_laps_by_driver(_race(), laps, "VER", page=0)
     assert "VER" in text
     for i in range(1, 6):
         # format_laps_by_driver uses {:>3} padding: single-digit laps get 2 leading spaces
         assert f"Lap {i:>3}" in text
+    assert "Timing data from live feeds may occasionally be incomplete." in text
 
 
 def test_format_laps_by_driver_paginates():
-    laps = [
-        LapTime(lap_number=i, driver_id="HAM", time="1:30.000") for i in range(1, 25)
-    ]
+    laps = [LapTime(lap_number=i, driver_id="HAM", time="1:30.000") for i in range(1, 25)]
     text_p0 = format_laps_by_driver(_race(), laps, "HAM", page=0)
     text_p1 = format_laps_by_driver(_race(), laps, "HAM", page=1)
     # Page 0: laps 1-20; page 1: laps 21-24
@@ -387,7 +457,6 @@ def test_format_pitstops_escapes_underscored_driver_id():
 # ---------------------------------------------------------------------------
 # _parse_lap_time_ms — private but complex parsing logic
 # ---------------------------------------------------------------------------
-
 
 
 def test_parse_lap_time_ms_valid_with_colon():
@@ -452,3 +521,41 @@ def test_format_result_value_list_all_none():
 
 def test_format_result_value_empty_list():
     assert _format_result_value([]) is None
+
+
+def test_format_schedule_timezone_marker(monkeypatch):
+    """It checks that the 'today' marker in format_schedule is timezone-aware."""
+    from datetime import date, datetime, time
+
+    from f1_bot.formatting.messages import format_schedule
+    from f1_bot.models.race import Circuit, Race
+
+    class MockDatetime:
+        @classmethod
+        def now(cls, tz=None):
+            from datetime import UTC
+
+            # Saturday June 20, 2026, 18:00 UTC (Taipei is Sunday June 21, 02:00, London is Saturday June 20, 19:00)
+            utc_dt = datetime(2026, 6, 20, 18, 0, 0, tzinfo=UTC)
+            if tz is not None:
+                return utc_dt.astimezone(tz)
+            return utc_dt
+
+    monkeypatch.setattr("f1_bot.formatting.messages.datetime", MockDatetime)
+
+    race = Race(
+        season=2026,
+        round=1,
+        name="Test GP",
+        circuit=Circuit(circuit_id="test", name="Test", locality="Test", country="Test"),
+        date=date(2026, 6, 21),
+        time=time(13, 0),
+    )
+
+    # Taipei user: race is on Sunday June 21, which matches today in Taipei -> show 🔜
+    text_taipei = format_schedule([race], "Asia/Taipei")
+    assert "🔜" in text_taipei
+
+    # London user: race is on Sunday June 21, but today in London is Saturday June 20 -> do not show 🔜
+    text_london = format_schedule([race], "Europe/London")
+    assert "🔜" not in text_london

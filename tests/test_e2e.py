@@ -466,8 +466,14 @@ async def test_scenario_11_results_shows_race_results_from_db(e2e_app, httpx_moc
 
     results = [
         RaceResult(
-            position=1, grid=1, laps=50, status="Finished", points=25.0,
-            driver=Driver(driver_id="ver", given_name="Max", family_name="Verstappen", nationality="Dutch"),
+            position=1,
+            grid=1,
+            laps=50,
+            status="Finished",
+            points=25.0,
+            driver=Driver(
+                driver_id="ver", given_name="Max", family_name="Verstappen", nationality="Dutch"
+            ),
             constructor=Constructor(constructor_id="rb", name="Red Bull", nationality="Austrian"),
         )
     ]
@@ -490,8 +496,14 @@ async def test_scenario_12_results_callback_filtered_race(e2e_app, httpx_mock):
 
     results = [
         RaceResult(
-            position=1, grid=1, laps=50, status="Finished", points=25.0,
-            driver=Driver(driver_id="ham", given_name="Lewis", family_name="Hamilton", nationality="British"),
+            position=1,
+            grid=1,
+            laps=50,
+            status="Finished",
+            points=25.0,
+            driver=Driver(
+                driver_id="ham", given_name="Lewis", family_name="Hamilton", nationality="British"
+            ),
             constructor=Constructor(constructor_id="mer", name="Mercedes", nationality="German"),
         )
     ]
@@ -514,8 +526,14 @@ async def test_scenario_13_results_shows_keyboard(e2e_app, httpx_mock):
 
     results = [
         RaceResult(
-            position=1, grid=2, laps=50, status="Finished", points=25.0,
-            driver=Driver(driver_id="nor", given_name="Lando", family_name="Norris", nationality="British"),
+            position=1,
+            grid=2,
+            laps=50,
+            status="Finished",
+            points=25.0,
+            driver=Driver(
+                driver_id="nor", given_name="Lando", family_name="Norris", nationality="British"
+            ),
             constructor=Constructor(constructor_id="mcl", name="McLaren", nationality="British"),
         )
     ]
@@ -540,9 +558,16 @@ async def test_scenario_14_results_qualifying_filter(e2e_app, httpx_mock):
     results = [
         QualifyingResult(
             position=1,
-            driver=Driver(driver_id="lec", given_name="Charles", family_name="Leclerc", nationality="Monegasque"),
+            driver=Driver(
+                driver_id="lec",
+                given_name="Charles",
+                family_name="Leclerc",
+                nationality="Monegasque",
+            ),
             constructor=Constructor(constructor_id="fer", name="Ferrari", nationality="Italian"),
-            q1="1:15.0", q2="1:14.0", q3="1:13.0",
+            q1="1:15.0",
+            q2="1:14.0",
+            q3="1:13.0",
         )
     ]
     await repo.save_qualifying_results(2026, 10, results)
@@ -575,8 +600,14 @@ async def test_scenario_16_results_sprint_filter(e2e_app, httpx_mock):
 
     results = [
         SprintResult(
-            position=1, grid=1, laps=17, status="Finished", points=8.0,
-            driver=Driver(driver_id="ver", given_name="Max", family_name="Verstappen", nationality="Dutch"),
+            position=1,
+            grid=1,
+            laps=17,
+            status="Finished",
+            points=8.0,
+            driver=Driver(
+                driver_id="ver", given_name="Max", family_name="Verstappen", nationality="Dutch"
+            ),
             constructor=Constructor(constructor_id="rb", name="Red Bull", nationality="Austrian"),
         )
     ]
@@ -599,8 +630,14 @@ async def test_scenario_17_results_sprint_round_3(e2e_app, httpx_mock):
 
     results = [
         SprintResult(
-            position=1, grid=1, laps=17, status="Finished", points=8.0,
-            driver=Driver(driver_id="nor", given_name="Lando", family_name="Norris", nationality="British"),
+            position=1,
+            grid=1,
+            laps=17,
+            status="Finished",
+            points=8.0,
+            driver=Driver(
+                driver_id="nor", given_name="Lando", family_name="Norris", nationality="British"
+            ),
             constructor=Constructor(constructor_id="mcl", name="McLaren", nationality="British"),
         )
     ]
@@ -621,8 +658,12 @@ async def test_scenario_18_results_no_data_empty_schedule(e2e_app, httpx_mock):
 
     future_races = [
         Race(
-            season=2026, round=i, name=f"Grand Prix {i}",
-            circuit=Circuit(circuit_id=f"c{i}", name=f"Circuit {i}", locality=f"Loc{i}", country=f"C{i}"),
+            season=2026,
+            round=i,
+            name=f"Grand Prix {i}",
+            circuit=Circuit(
+                circuit_id=f"c{i}", name=f"Circuit {i}", locality=f"Loc{i}", country=f"C{i}"
+            ),
             date=datetime(2099, 3 + i, 1).date(),
         )
         for i in range(1, 4)
@@ -655,8 +696,12 @@ async def test_scenario_20_results_no_completed_sessions(e2e_app, httpx_mock):
 
     future_races = [
         Race(
-            season=2026, round=i, name=f"Grand Prix {i}",
-            circuit=Circuit(circuit_id=f"c{i}", name=f"Circuit {i}", locality=f"Loc{i}", country=f"C{i}"),
+            season=2026,
+            round=i,
+            name=f"Grand Prix {i}",
+            circuit=Circuit(
+                circuit_id=f"c{i}", name=f"Circuit {i}", locality=f"Loc{i}", country=f"C{i}"
+            ),
             date=datetime(2099, 3 + i, 1).date(),
         )
         for i in range(1, 4)
@@ -680,8 +725,14 @@ async def test_scenario_21_results_back_button(e2e_app, httpx_mock):
 
     results = [
         RaceResult(
-            position=1, grid=1, laps=50, status="Finished", points=25.0,
-            driver=Driver(driver_id="ham", given_name="Lewis", family_name="Hamilton", nationality="British"),
+            position=1,
+            grid=1,
+            laps=50,
+            status="Finished",
+            points=25.0,
+            driver=Driver(
+                driver_id="ham", given_name="Lewis", family_name="Hamilton", nationality="British"
+            ),
             constructor=Constructor(constructor_id="mer", name="Mercedes", nationality="German"),
         )
     ]
@@ -740,8 +791,14 @@ async def test_scenario_24_results_round_navigation(e2e_app, httpx_mock):
     # Populate round 15
     results_15 = [
         RaceResult(
-            position=1, grid=1, laps=50, status="Finished", points=25.0,
-            driver=Driver(driver_id="ver", given_name="Max", family_name="Verstappen", nationality="Dutch"),
+            position=1,
+            grid=1,
+            laps=50,
+            status="Finished",
+            points=25.0,
+            driver=Driver(
+                driver_id="ver", given_name="Max", family_name="Verstappen", nationality="Dutch"
+            ),
             constructor=Constructor(constructor_id="rb", name="Red Bull", nationality="Austrian"),
         )
     ]
@@ -750,8 +807,14 @@ async def test_scenario_24_results_round_navigation(e2e_app, httpx_mock):
     # Populate round 14
     results_14 = [
         RaceResult(
-            position=1, grid=1, laps=50, status="Finished", points=25.0,
-            driver=Driver(driver_id="nor", given_name="Lando", family_name="Norris", nationality="British"),
+            position=1,
+            grid=1,
+            laps=50,
+            status="Finished",
+            points=25.0,
+            driver=Driver(
+                driver_id="nor", given_name="Lando", family_name="Norris", nationality="British"
+            ),
             constructor=Constructor(constructor_id="mcl", name="McLaren", nationality="British"),
         )
     ]

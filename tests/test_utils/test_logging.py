@@ -105,6 +105,7 @@ def test_setup_logging_format_choices(clean_logging):
 
 def test_add_taiwan_timestamp():
     from f1_bot.utils.logging import add_taiwan_timestamp
+
     event_dict = {}
     res = add_taiwan_timestamp(None, "test", event_dict)
     assert "timestamp" in res

@@ -2,6 +2,7 @@ import datetime
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
+from telegram.error import BadRequest
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
 from f1_bot.formatting.messages import (
@@ -64,7 +65,10 @@ async def standings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
             else no_data_message("standings")
         )
 
-    await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard)
+    try:
+        await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN, reply_markup=keyboard)
+    except BadRequest:
+        pass
 
 
 def register(app: Application) -> None:

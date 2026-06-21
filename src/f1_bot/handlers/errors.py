@@ -3,6 +3,7 @@ import traceback
 import structlog
 from telegram import Update
 from telegram.constants import ParseMode
+from telegram.error import NetworkError
 from telegram.ext import ContextTypes
 
 log = structlog.get_logger(__name__)
@@ -24,6 +25,13 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
                 parse_mode=ParseMode.MARKDOWN,
             )
             return
+
+    if isinstance(context.error, NetworkError):
+        log.warning(
+            "telegram_network_error",
+            error=str(context.error),
+        )
+        return
 
     log.error(
         "unhandled_error",

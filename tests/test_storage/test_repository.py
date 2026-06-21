@@ -1,7 +1,6 @@
-"""Tests for Repository — verifies Redis-first / SQLite-fallback two-layer caching.
+"""Tests for Repository — verifies pure SQLite data storage operations.
 
-All tests use real fakeredis + in-memory SQLite (no mocks for storage layer).
-This exercises the actual caching logic, not just the interface.
+All tests use in-memory SQLite (no mocks for storage layer).
 """
 
 from datetime import date, time
@@ -69,8 +68,8 @@ def _constructor_standing(position: int = 1) -> ConstructorStanding:
 # --- Schedule tests ---
 
 
-async def test_save_and_get_schedule_redis_hit(repo):
-    """save_schedule writes to Redis; subsequent get_schedule reads from Redis (hot path)."""
+async def test_save_and_get_schedule(repo):
+    """save_schedule writes to SQLite; subsequent get_schedule reads from SQLite."""
     races = [_race(round_num=5)]
     await repo.save_schedule(2024, races)
     result = await repo.get_schedule(2024)
@@ -79,8 +78,8 @@ async def test_save_and_get_schedule_redis_hit(repo):
     assert result[0].name == "Monaco Grand Prix"
 
 
-async def test_get_schedule_sqlite_fallback(repo, sqlite_store):
-    """When Redis is empty, get_schedule falls back to SQLite."""
+async def test_get_schedule_from_sqlite(repo, sqlite_store):
+    """get_schedule falls back to reading SQLite store directly."""
     races = [_race(round_num=7)]
     races_json = [r.model_dump(mode="json") for r in races]
     await sqlite_store.save_races(2024, races_json)
@@ -118,7 +117,7 @@ async def test_get_next_race_all_past_returns_none(repo):
 
 
 async def test_save_and_get_driver_standings(repo):
-    """save/get driver standings via Redis-first path."""
+    """save/get driver standings via Repository/SQLite."""
     standings = [_driver_standing(1), _driver_standing(2)]
     await repo.save_driver_standings(2024, standings)
     result = await repo.get_driver_standings(2024)
@@ -127,8 +126,8 @@ async def test_save_and_get_driver_standings(repo):
     assert result[0].driver.driver_id == "hamilton"
 
 
-async def test_get_driver_standings_sqlite_fallback(repo, sqlite_store):
-    """When Redis is empty, falls back to SQLite for driver standings."""
+async def test_get_driver_standings_from_sqlite(repo, sqlite_store):
+    """falls back to reading driver standings from SQLite directly."""
     standings = [_driver_standing(1)]
     data = [s.model_dump(mode="json") for s in standings]
     await sqlite_store.save_driver_standings(2024, 0, data)
@@ -164,7 +163,7 @@ async def test_get_constructor_standings_empty(repo):
 
 
 async def test_save_and_get_race_results(repo):
-    """Race results: save → Redis hit on re-read."""
+    """Race results: save and re-read from SQLite."""
     results = [
         RaceResult(
             position=1,
@@ -236,16 +235,105 @@ async def test_save_and_get_sprint_results(repo):
 
 
 async def test_save_and_get_session_results(repo):
-    results = [SessionResult(position=1, driver_number=44, duration="1:20.123")]
+    results = [
+        SessionResult(
+            position=1, driver_number=44, driver_id="openf1_44_hamilton", duration="1:20.123"
+        )
+    ]
     await repo.save_session_results(2024, 5, session_key=9001, results=results)
     cached = await repo.get_session_results(2024, 5, session_key=9001)
     assert cached is not None
     assert cached[0]["driver_number"] == 44
+    assert cached[0]["driver_id"] == "openf1_44_hamilton"
 
 
 async def test_get_session_results_miss_returns_none(repo):
     result = await repo.get_session_results(2024, 5, session_key=9999)
     assert result is None
+
+
+async def test_save_and_get_drivers_by_id_map(repo):
+    from f1_bot.models.driver import Driver
+
+    driver = Driver(
+        driver_id="hamilton",
+        permanent_number="44",
+        given_name="Lewis",
+        family_name="Hamilton",
+        nationality="British",
+    )
+    await repo.save_drivers(2024, [driver])
+
+    drivers_map = await repo.get_drivers_by_id_map(2024)
+    assert "hamilton" in drivers_map
+    assert drivers_map["hamilton"].family_name == "Hamilton"
+    assert drivers_map["hamilton"].permanent_number == "44"
+    assert "44" in drivers_map
+    assert 44 in drivers_map
+    assert drivers_map["44"] == drivers_map["hamilton"]
+    assert drivers_map[44] == drivers_map["hamilton"]
+
+
+async def test_driver_maps_merge_openf1_and_jolpica(repo):
+    """Test get_drivers_by_id_map and get_drivers_map properly merge OpenF1 and Jolpica profiles."""
+    from f1_bot.models.driver import Driver
+
+    # 1. Save a Jolpica driver (with nationality)
+    jolpica_driver = Driver(
+        driver_id="russell",
+        permanent_number="63",
+        given_name="George",
+        family_name="Russell",
+        nationality="British",
+    )
+
+    # 2. Save an OpenF1 driver sharing the same permanent number (without nationality)
+    openf1_driver = Driver(
+        driver_id="openf1_63_russell",
+        permanent_number="63",
+        given_name="George",
+        family_name="Russell",
+        nationality="",
+    )
+
+    # 3. Save a junior OpenF1 driver with no matching Jolpica driver
+    junior_driver = Driver(
+        driver_id="openf1_97_aron",
+        permanent_number="97",
+        given_name="Paul",
+        family_name="Aron",
+        nationality="",
+    )
+
+    await repo.save_drivers(2026, [jolpica_driver, openf1_driver, junior_driver])
+
+    # Verify get_drivers_by_id_map
+    by_id_map = await repo.get_drivers_by_id_map(2026)
+
+    # OpenF1 Russell key maps to Jolpica profile
+    assert "openf1_63_russell" in by_id_map
+    assert by_id_map["openf1_63_russell"].driver_id == "russell"
+    assert by_id_map["openf1_63_russell"].nationality == "British"
+
+    # Jolpica Russell key maps to Jolpica profile
+    assert "russell" in by_id_map
+    assert by_id_map["russell"].nationality == "British"
+
+    # Junior driver falls back to OpenF1 profile
+    assert "openf1_97_aron" in by_id_map
+    assert by_id_map["openf1_97_aron"].driver_id == "openf1_97_aron"
+    assert by_id_map["openf1_97_aron"].nationality == ""
+
+    # Verify get_drivers_map
+    by_number_map = await repo.get_drivers_map(2026)
+
+    # Key 63 points to Jolpica profile
+    assert 63 in by_number_map
+    assert by_number_map[63].nationality == "British"
+
+    # Key 97 points to OpenF1 profile
+    assert 97 in by_number_map
+    assert by_number_map[97].nationality == ""
 
 
 # --- User preference / timezone tests ---
@@ -295,13 +383,28 @@ async def test_schedule_bounds_all_completed(repo, sqlite_store):
 
     circuit = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
     races = [
-        Race(season=2024, round=1, name="R1", circuit=circuit, date=date(2024, 1, 15), time=time(13, 0)),
-        Race(season=2024, round=2, name="R2", circuit=circuit, date=date(2024, 2, 15), time=time(13, 0)),
+        Race(
+            season=2024,
+            round=1,
+            name="R1",
+            circuit=circuit,
+            date=date(2024, 1, 15),
+            time=time(13, 0),
+        ),
+        Race(
+            season=2024,
+            round=2,
+            name="R2",
+            circuit=circuit,
+            date=date(2024, 2, 15),
+            time=time(13, 0),
+        ),
     ]
     await repo.save_schedule(2024, races)
 
     # Reference time well after both races
     from datetime import UTC, datetime
+
     ref = datetime(2024, 12, 31, 23, 59, tzinfo=UTC)
     bounds = await repo.get_schedule_bounds(2024, reference_dt=ref)
 
@@ -319,8 +422,22 @@ async def test_schedule_bounds_all_upcoming(repo, sqlite_store):
 
     circuit = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
     races = [
-        Race(season=2099, round=1, name="R1", circuit=circuit, date=date(2099, 6, 15), time=time(13, 0)),
-        Race(season=2099, round=2, name="R2", circuit=circuit, date=date(2099, 7, 15), time=time(13, 0)),
+        Race(
+            season=2099,
+            round=1,
+            name="R1",
+            circuit=circuit,
+            date=date(2099, 6, 15),
+            time=time(13, 0),
+        ),
+        Race(
+            season=2099,
+            round=2,
+            name="R2",
+            circuit=circuit,
+            date=date(2099, 7, 15),
+            time=time(13, 0),
+        ),
     ]
     await repo.save_schedule(2099, races)
 
@@ -374,7 +491,9 @@ async def test_schedule_bounds_naive_reference_dt_treated_as_utc(repo, sqlite_st
     from f1_bot.models.race import Circuit, Race
 
     circuit = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
-    race = Race(season=2024, round=1, name="R1", circuit=circuit, date=date(2024, 3, 10), time=time(13, 0))
+    race = Race(
+        season=2024, round=1, name="R1", circuit=circuit, date=date(2024, 3, 10), time=time(13, 0)
+    )
     await repo.save_schedule(2024, [race])
 
     # Naive datetime after race
@@ -393,7 +512,9 @@ async def test_schedule_bounds_aware_non_utc_reference_dt(repo, sqlite_store):
 
     circuit = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
     # Race at 2024-03-10 13:00 UTC
-    race = Race(season=2024, round=1, name="R1", circuit=circuit, date=date(2024, 3, 10), time=time(13, 0))
+    race = Race(
+        season=2024, round=1, name="R1", circuit=circuit, date=date(2024, 3, 10), time=time(13, 0)
+    )
     await repo.save_schedule(2024, [race])
 
     # Reference in UTC+8: 2024-03-10 20:30 (= 12:30 UTC, which is BEFORE the race at 13:00 UTC)

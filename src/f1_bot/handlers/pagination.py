@@ -96,18 +96,52 @@ def schedule_keyboard(
 # ---------------------------------------------------------------------------
 
 
-def next_overview_keyboard(current_round: int) -> InlineKeyboardMarkup:
+def next_overview_keyboard(current_round: int, upcoming_rounds: list[int]) -> InlineKeyboardMarkup:
     """State A keyboard for /next: session type filter buttons.
 
-    Row 1: FP1 FP2 FP3 Q
-    Row 2: SQ SPR Race All
+    Row 1: Pager (◀ R8/24 ▶) - optional, only if len(upcoming_rounds) > 1
+    Row 2: FP1 FP2 FP3 Q
+    Row 3: SQ SPR Race
     """
+    rows = []
+
+    # 1. Pager row (only if more than 1 upcoming round)
+    total = len(upcoming_rounds)
+    if total > 1:
+        try:
+            idx = upcoming_rounds.index(current_round)
+        except ValueError:
+            idx = 0
+
+        nav_row: list[InlineKeyboardButton] = []
+        if idx > 0:
+            prev_round = upcoming_rounds[idx - 1]
+            nav_row.append(InlineKeyboardButton("◀", callback_data=f"next:back:_:{prev_round}"))
+
+        nav_row.append(
+            InlineKeyboardButton(
+                f"R{current_round}/{upcoming_rounds[-1]}",
+                callback_data=f"next:back:_:{current_round}",
+            )
+        )
+
+        if idx < total - 1:
+            next_round = upcoming_rounds[idx + 1]
+            nav_row.append(InlineKeyboardButton("▶", callback_data=f"next:back:_:{next_round}"))
+
+        rows.append(nav_row)
+
+    # 2. Session filters (All is excluded)
     def _btn(key: str, label: str) -> InlineKeyboardButton:
         return InlineKeyboardButton(label, callback_data=f"next:filtered:{key}:{current_round}")
 
     practice_row = [_btn(key, label) for key, label in _PRACTICE_SESSIONS]
-    competitive_row = [_btn(key, label) for key, label in _COMPETITIVE_SESSIONS]
-    return InlineKeyboardMarkup([practice_row, competitive_row])
+    competitive_row = [_btn(key, label) for key, label in _COMPETITIVE_SESSIONS if key != "all"]
+
+    rows.append(practice_row)
+    rows.append(competitive_row)
+
+    return InlineKeyboardMarkup(rows)
 
 
 def next_filtered_keyboard(
@@ -128,7 +162,9 @@ def next_filtered_keyboard(
         if idx > 0:
             prev_round = navigable_rounds[idx - 1]
             nav_row.append(
-                InlineKeyboardButton("◀", callback_data=f"next:filtered:{session_filter}:{prev_round}")
+                InlineKeyboardButton(
+                    "◀", callback_data=f"next:filtered:{session_filter}:{prev_round}"
+                )
             )
         nav_row.append(
             InlineKeyboardButton(
@@ -139,7 +175,9 @@ def next_filtered_keyboard(
         if idx < total - 1:
             next_round = navigable_rounds[idx + 1]
             nav_row.append(
-                InlineKeyboardButton("▶", callback_data=f"next:filtered:{session_filter}:{next_round}")
+                InlineKeyboardButton(
+                    "▶", callback_data=f"next:filtered:{session_filter}:{next_round}"
+                )
             )
 
     back_row = [InlineKeyboardButton("🔙 Back", callback_data=f"next:back:_:{current_round}")]
@@ -150,34 +188,64 @@ def next_filtered_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
-def results_overview_keyboard(current_round: int, active_key: str | None = None) -> InlineKeyboardMarkup:
+def results_overview_keyboard(
+    current_round: int,
+    completed_rounds: list[int] | None = None,
+    active_key: str | None = None,
+) -> InlineKeyboardMarkup:
     """State A keyboard for /results: session type filter buttons.
 
-    Row 1: FP1 FP2 FP3 Q
-    Row 2: SQ SPR Race All
+    Row 1: Pager (◀ R10/24 ▶) - optional, only if len(completed_rounds) > 1
+    Row 2: FP1 FP2 FP3 Q
+    Row 3: SQ SPR Race All
     Active session is highlighted with · markers.
     """
+    rows = []
+
+    # 1. Pager row (only if more than 1 completed round)
+    if completed_rounds and len(completed_rounds) > 1:
+        try:
+            idx = completed_rounds.index(current_round)
+        except ValueError:
+            idx = len(completed_rounds) - 1
+
+        nav_row: list[InlineKeyboardButton] = []
+        if idx > 0:
+            prev_round = completed_rounds[idx - 1]
+            nav_row.append(InlineKeyboardButton("◀", callback_data=f"res:back:_:{prev_round}"))
+
+        nav_row.append(
+            InlineKeyboardButton(
+                f"R{current_round}/{completed_rounds[-1]}",
+                callback_data=f"res:back:_:{current_round}",
+            )
+        )
+
+        if idx < len(completed_rounds) - 1:
+            next_round = completed_rounds[idx + 1]
+            nav_row.append(InlineKeyboardButton("▶", callback_data=f"res:back:_:{next_round}"))
+
+        rows.append(nav_row)
+
     def _btn(key: str, label: str) -> InlineKeyboardButton:
         display = f"·{label}·" if key == active_key else label
         return InlineKeyboardButton(display, callback_data=f"res:filtered:{key}:{current_round}")
 
     practice_row = [_btn(key, label) for key, label in _PRACTICE_SESSIONS]
     competitive_row = [_btn(key, label) for key, label in _COMPETITIVE_SESSIONS]
-    return InlineKeyboardMarkup([practice_row, competitive_row])
+
+    rows.append(practice_row)
+    rows.append(competitive_row)
+    return InlineKeyboardMarkup(rows)
 
 
 def results_filtered_keyboard(
     current_round: int,
     navigable_rounds: list[int],
     session_key: str,
+    last_completed_round: int | None = None,
 ) -> InlineKeyboardMarkup:
-    """State B keyboard for /results filtered view: session filter row + nav row + Back."""
-    def _btn(key: str, label: str) -> InlineKeyboardButton:
-        display = f"·{label}·" if key == session_key else label
-        return InlineKeyboardButton(display, callback_data=f"res:filtered:{key}:{current_round}")
-
-    practice_row = [_btn(key, label) for key, label in _PRACTICE_SESSIONS]
-    competitive_row = [_btn(key, label) for key, label in _COMPETITIVE_SESSIONS]
+    """State B keyboard for /results filtered view: nav row + Back."""
 
     # Nav row
     total = len(navigable_rounds)
@@ -193,9 +261,10 @@ def results_filtered_keyboard(
             nav_row.append(
                 InlineKeyboardButton("◀", callback_data=f"res:filtered:{session_key}:{prev_round}")
             )
+        denom = last_completed_round if last_completed_round is not None else navigable_rounds[-1]
         nav_row.append(
             InlineKeyboardButton(
-                f"R{current_round}/{navigable_rounds[-1]}",
+                f"R{current_round}/{denom}",
                 callback_data=f"res:filtered:{session_key}:{current_round}",
             )
         )
@@ -206,7 +275,7 @@ def results_filtered_keyboard(
             )
 
     back_row = [InlineKeyboardButton("🔙 Back", callback_data=f"res:back:_:{current_round}")]
-    rows = [practice_row, competitive_row]
+    rows = []
     if nav_row:
         rows.append(nav_row)
     rows.append(back_row)
@@ -239,7 +308,9 @@ def session_result_keyboard(
             idx = total - 1
         if idx > 0:
             prev_round = navigable_rounds[idx - 1]
-            nav_row.append(InlineKeyboardButton("◀", callback_data=f"sr:{current_key}:{prev_round}"))
+            nav_row.append(
+                InlineKeyboardButton("◀", callback_data=f"sr:{current_key}:{prev_round}")
+            )
         nav_row.append(
             InlineKeyboardButton(
                 f"R{current_round}/{navigable_rounds[-1]}",
@@ -248,7 +319,9 @@ def session_result_keyboard(
         )
         if idx < total - 1:
             next_round = navigable_rounds[idx + 1]
-            nav_row.append(InlineKeyboardButton("▶", callback_data=f"sr:{current_key}:{next_round}"))
+            nav_row.append(
+                InlineKeyboardButton("▶", callback_data=f"sr:{current_key}:{next_round}")
+            )
 
     rows = [practice_row, competitive_row]
     if nav_row:

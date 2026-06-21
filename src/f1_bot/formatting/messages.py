@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from f1_bot.formatting.emoji import flag_icon, pos_icon, session_icon
 from f1_bot.formatting.timezone import combine_race_dt, format_dt
@@ -58,7 +59,7 @@ def format_next_race(race: Race, user_tz: str) -> str:
 
 
 def format_schedule(races: list[Race], user_tz: str) -> str:
-    today = date.today()
+    today = datetime.now(ZoneInfo(user_tz)).date()
     lines = [f"📅 *{races[0].season if races else ''} F1 Season Calendar*\n"]
     for race in races:
         race_dt = combine_race_dt(race.date, race.time)
@@ -121,51 +122,74 @@ def format_constructor_standings(standings: list[ConstructorStanding], season: i
 # ---------- Results ----------
 
 
-def format_race_results(race: Race, results: list[RaceResult]) -> str:
+def format_race_results(race: Race, results: list[RaceResult], top_n: int | None = None) -> str:
     lines = [f"🏁 *{_esc(race.name)} — Race Result*\n"]
-    for r in results[:20]:
+    for r in results[:top_n] if top_n is not None else results[:20]:
         icon = pos_icon(r.position)
         flag = flag_icon(r.driver.nationality or "")
         name = f"{r.driver.given_name} {r.driver.family_name}"
-        time_str = r.time or r.status
+        num_suffix = f" (#{r.driver.permanent_number})" if r.driver.permanent_number else ""
         fl = " ⚡" if r.fastest_lap_rank == 1 else ""
-        lines.append(f"{icon} {flag} {name}{fl} — {time_str}")
+
+        time_str = r.time or r.status
+        if time_str:
+            if r.position == 1 and not time_str.startswith("+"):
+                time_str = f"⏱ {time_str}"
+
+        lines.append(f"{icon} {flag} {name}{num_suffix}{fl} — {time_str}")
     return "\n".join(lines)
 
 
-def format_qualifying_results(race: Race, results: list[QualifyingResult]) -> str:
+def format_qualifying_results(
+    race: Race, results: list[QualifyingResult], top_n: int | None = None
+) -> str:
     lines = [f"⏱ *{_esc(race.name)} — Qualifying*\n"]
-    for r in results:
+    for r in results[:top_n] if top_n is not None else results:
         icon = pos_icon(r.position)
         flag = flag_icon(r.driver.nationality or "")
         name = f"{r.driver.given_name} {r.driver.family_name}"
         best = r.q3 or r.q2 or r.q1 or "—"
-        lines.append(f"{icon} {flag} {name} — {best}")
+        num_prefix = f" #{r.driver.permanent_number}" if r.driver.permanent_number else ""
+        lines.append(f"{icon} {flag}{num_prefix} {name} — {best}")
     return "\n".join(lines)
 
 
-def format_sprint_results(race: Race, results: list[SprintResult]) -> str:
+def format_sprint_results(race: Race, results: list[SprintResult], top_n: int | None = None) -> str:
     lines = [f"💨 *{_esc(race.name)} — Sprint*\n"]
-    for r in results:
+    for r in results[:top_n] if top_n is not None else results:
         icon = pos_icon(r.position)
         flag = flag_icon(r.driver.nationality or "")
         name = f"{r.driver.given_name} {r.driver.family_name}"
-        lines.append(f"{icon} {flag} {name} — {r.time or r.status}")
+        num_prefix = f" #{r.driver.permanent_number}" if r.driver.permanent_number else ""
+        lines.append(f"{icon} {flag}{num_prefix} {name} — {r.time or r.status}")
     return "\n".join(lines)
 
 
 def format_session_results(
-    entry: SessionEntry, results: list[SessionResult], drivers: dict[int, Driver] | None = None
+    entry: SessionEntry,
+    results: list[SessionResult],
+    drivers: dict[str | int, Driver] | None = None,
+    top_n: int | None = None,
 ) -> str:
     lines = [f"{session_icon(entry.key)} *{_esc(entry.race.name)} — {entry.label} Result*\n"]
-    for result in sorted(results, key=lambda r: r.position or 99):
+    sorted_results = sorted(results, key=lambda r: r.position or 99)
+    for result in sorted_results[:top_n] if top_n is not None else sorted_results:
         pos = pos_icon(result.position) if result.position else "—"
         status = _format_session_result_status(result)
         driver_name = ""
-        if drivers and result.driver_number in drivers:
-            d = drivers[result.driver_number]
+        flag = "🏴"
+        d = None
+        if drivers:
+            if result.driver_id and result.driver_id in drivers:
+                d = drivers[result.driver_id]
+            elif result.driver_number in drivers:
+                d = drivers[result.driver_number]
+
+        if d:
             driver_name = f" {d.given_name} {d.family_name}"
-        lines.append(f"{pos} #{result.driver_number}{driver_name} — {status}")
+            flag = flag_icon(d.nationality or "")
+
+        lines.append(f"{pos} {flag} #{result.driver_number}{driver_name} — {status}")
     return "\n".join(lines)
 
 
@@ -232,7 +256,9 @@ def _parse_lap_time_ms(time_str: str | None) -> int | None:
         return None
 
 
-def format_laps_summary(race: Race | None, laps: list[LapTime]) -> str:
+def format_laps_summary(
+    race: Race | None, laps: list[LapTime], drivers: dict[int, Driver] | None = None
+) -> str:
     """Per-driver best lap time and average — the default laps view."""
     title = _esc(race.name) if race else "Race"
     lines = [f"⏱ *{title} — Lap Times Summary*\n"]
@@ -243,7 +269,16 @@ def format_laps_summary(race: Race | None, laps: list[LapTime]) -> str:
 
     rows = []
     for driver_id, driver_laps in sorted(by_driver.items()):
-        times_ms = [_parse_lap_time_ms(lap.time) for lap in driver_laps]
+        times_ms = []
+        for lap in driver_laps:
+            if lap.time:
+                ms = _parse_lap_time_ms(lap.time)
+            elif lap.lap_duration is not None:
+                ms = int(lap.lap_duration * 1000)
+            else:
+                ms = None
+            times_ms.append(ms)
+
         valid = [t for t in times_ms if t is not None]
         if not valid:
             continue
@@ -255,13 +290,20 @@ def format_laps_summary(race: Race | None, laps: list[LapTime]) -> str:
             s = rem / 1000
             return f"{m}:{s:06.3f}"
 
-        rows.append((driver_id, ms_to_str(best_ms), ms_to_str(avg_ms), len(driver_laps)))
+        rows.append((driver_id, ms_to_str(best_ms), ms_to_str(avg_ms), len(driver_laps), best_ms))
 
-    rows.sort(key=lambda r: _parse_lap_time_ms(r[1]) or 999999)
-    for driver_id, best, avg, count in rows:
-        lines.append(
-            f"🏎 *{_esc(driver_id)}*: Best `{best}` | Avg `{avg}` | {count} laps"
-        )
+    rows.sort(key=lambda r: r[4])
+    for driver_id, best, avg, count, _ in rows:
+        label = driver_id
+        try:
+            num = int(driver_id)
+            if drivers and num in drivers:
+                d = drivers[num]
+                label = d.code or d.family_name
+        except ValueError:
+            pass
+
+        lines.append(f"🏎 *{_esc(label)}*: Best `{best}` | Avg `{avg}` | {count} laps")
     return "\n".join(lines)
 
 
@@ -283,14 +325,44 @@ def _fmt_lap_duration(val: float | None, time_str: str | None) -> str:
 
 
 def format_laps_by_lap(
-    race: Race | None, laps: list[LapTime], lap_number: int, total_laps: int
+    race: Race | None,
+    laps: list[LapTime],
+    lap_number: int,
+    total_laps: int,
+    drivers: dict[int, Driver] | None = None,
 ) -> str:
     """All drivers' times for a single lap number, with sector times."""
     title = _esc(race.name) if race else "Race"
     lines = [f"⏱ *{title} — Lap {lap_number}/{total_laps}*\n"]
 
     lap_entries = [lap for lap in laps if lap.lap_number == lap_number]
-    lap_entries.sort(key=lambda x: x.position or 999)
+
+    # Handle timing anomalies: append placeholder rows for active drivers who are missing data
+    driver_max_lap = {}
+    driver_min_lap = {}
+    for lap in laps:
+        d_id = lap.driver_id
+        driver_max_lap[d_id] = max(driver_max_lap.get(d_id, 0), lap.lap_number)
+        driver_min_lap[d_id] = min(driver_min_lap.get(d_id, 999), lap.lap_number)
+
+    existing_drivers = {e.driver_id for e in lap_entries}
+    for d_id in sorted(driver_max_lap.keys()):
+        if driver_min_lap[d_id] <= lap_number <= driver_max_lap[d_id]:
+            if d_id not in existing_drivers:
+                lap_entries.append(
+                    LapTime(
+                        lap_number=lap_number,
+                        driver_id=d_id,
+                        position=None,
+                        time=None,
+                        duration_sector_1=None,
+                        duration_sector_2=None,
+                        duration_sector_3=None,
+                        lap_duration=None,
+                    )
+                )
+
+    lap_entries.sort(key=lambda x: (x.position or 999, x.driver_id))
 
     has_sectors = any(e.duration_sector_1 is not None for e in lap_entries)
     if has_sectors:
@@ -301,20 +373,48 @@ def format_laps_by_lap(
             s2 = _fmt_sector(entry.duration_sector_2)
             s3 = _fmt_sector(entry.duration_sector_3)
             lap_t = _fmt_lap_duration(entry.lap_duration, entry.time)
-            lines.append(f"`{pos:>3} {entry.driver_id:<4} {s1}│{s2}│{s3}│{lap_t}`")
+
+            label = entry.driver_id
+            try:
+                num = int(entry.driver_id)
+                if drivers and num in drivers:
+                    label = drivers[num].code or entry.driver_id
+            except ValueError:
+                pass
+
+            lines.append(f"`{pos:>3} {label:<4} {s1}│{s2}│{s3}│{lap_t}`")
     else:
         for entry in lap_entries:
             pos = f"P{entry.position}" if entry.position else "—"
-            time_str = entry.time or "—"
-            lines.append(f"`{pos:>4}`  {_esc(entry.driver_id):<6} `{time_str}`")
+            time_str = _fmt_lap_duration(entry.lap_duration, entry.time)
+
+            label = entry.driver_id
+            try:
+                num = int(entry.driver_id)
+                if drivers and num in drivers:
+                    label = drivers[num].code or entry.driver_id
+            except ValueError:
+                pass
+
+            lines.append(f"`{pos:>4}`  {_esc(label):<6} `{time_str}`")
 
     if not lap_entries:
         lines.append("_No data for this lap_")
+
+    if lap_number == 1:
+        lines.append("\n*Note: Lap 1 is the standing start lap; timing data may be incomplete.*")
+    else:
+        lines.append("\n*Note: Timing data from live feeds may occasionally be incomplete.*")
+
     return "\n".join(lines)
 
 
 def format_laps_by_driver(
-    race: Race | None, laps: list[LapTime], driver_id: str, page: int
+    race: Race | None,
+    laps: list[LapTime],
+    driver_id: str,
+    page: int,
+    drivers: dict[int, Driver] | None = None,
 ) -> str:
     """One driver's lap times, paginated, with sector times."""
     title = _esc(race.name) if race else "Race"
@@ -326,7 +426,16 @@ def format_laps_by_driver(
     end = start + _LAPS_PAGE_SIZE
     page_laps = driver_laps[start:end]
 
-    lines = [f"⏱ *{title} — {_esc(driver_id)} Lap Times*\n"]
+    label = driver_id
+    try:
+        num = int(driver_id)
+        if drivers and num in drivers:
+            d = drivers[num]
+            label = f"{d.full_name} ({d.code})" if d.code else d.full_name
+    except ValueError:
+        pass
+
+    lines = [f"⏱ *{title} — {_esc(label)} Lap Times*\n"]
 
     has_sectors = any(e.duration_sector_1 is not None for e in page_laps)
     if has_sectors:
@@ -339,12 +448,13 @@ def format_laps_by_driver(
             lines.append(f"`L{lap.lap_number:>2}  {s1}│{s2}│{s3}│{lap_t}`")
     else:
         for lap in page_laps:
-            time_str = lap.time or "—"
+            time_str = _fmt_lap_duration(lap.lap_duration, lap.time)
             lines.append(f"Lap {lap.lap_number:>3}: `{time_str}`")
 
     if total > _LAPS_PAGE_SIZE:
         pages = (total + _LAPS_PAGE_SIZE - 1) // _LAPS_PAGE_SIZE
         lines.append(f"\n_Page {page + 1}/{pages} — {total} laps total_")
+    lines.append("\n*Note: Timing data from live feeds may occasionally be incomplete.*")
     return "\n".join(lines)
 
 

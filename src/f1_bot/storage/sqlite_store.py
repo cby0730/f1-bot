@@ -114,6 +114,13 @@ class SQLiteStore:
         self._conn.row_factory = aiosqlite.Row
         await self._conn.executescript(SCHEMA)
         await self._conn.commit()
+
+        # Database migration: remove old session result formats
+        await self._conn.execute(
+            "DELETE FROM results WHERE type LIKE 'session:%' AND type NOT LIKE 'session:%:%'"
+        )
+        await self._conn.commit()
+
         log.info("sqlite_initialized", path=self._db_path)
 
     async def close(self) -> None:
@@ -357,3 +364,12 @@ class SQLiteStore:
         ) as cur:
             row = await cur.fetchone()
         return row["r"] if row and row["r"] is not None else None
+
+    async def get_all_results_by_type_prefix(self, type_prefix: str) -> list[dict]:
+        """Return list of dicts with keys: season, round, type, data_json."""
+        async with self._conn.execute(
+            "SELECT season, round, type, data_json FROM results WHERE type LIKE ?",
+            (f"{type_prefix}%",),
+        ) as cur:
+            rows = await cur.fetchall()
+        return [dict(r) for r in rows]

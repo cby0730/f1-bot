@@ -281,7 +281,9 @@ class JolpicaClient(BaseAPIClient):
             if offset >= total:
                 break
         if total > 5000:
-            log.warning("lap_timings_unexpectedly_large", season=season, round=round_num, total=total)
+            log.warning(
+                "lap_timings_unexpectedly_large", season=season, round=round_num, total=total
+            )
         return all_laps
 
     async def get_drivers(self, season: str = "current") -> list[Driver]:

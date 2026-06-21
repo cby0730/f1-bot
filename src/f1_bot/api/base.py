@@ -37,7 +37,7 @@ class BaseAPIClient:
         self._client = httpx.AsyncClient(
             base_url=self._base_url,
             timeout=httpx.Timeout(30.0, connect=10.0),
-            headers={"User-Agent": "f1-bot/0.1.0 (github.com/billy/f1-bot)"},
+            headers={"User-Agent": "f1-bot/0.0.5 (github.com/billy/f1-bot)"},
         )
 
     async def close(self) -> None:
@@ -53,8 +53,8 @@ class BaseAPIClient:
         except httpx.TimeoutException as e:
             log.error("api_timeout", path=path, error=str(e))
             raise APITimeoutError(path) from e
-        except httpx.ConnectError as e:
-            log.error("api_connect_error", path=path, error=str(e))
+        except httpx.RequestError as e:
+            log.error("api_network_error", path=path, error=str(e))
             raise APIConnectionError(path) from e
 
         if response.status_code == 429:
