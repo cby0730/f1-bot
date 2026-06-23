@@ -1,5 +1,6 @@
 """Tests for driver profile and circuit info formatters."""
 
+from f1_bot.formatting.emoji import circuit_flag_icon
 from f1_bot.formatting.messages import format_circuit_info, format_driver_profile
 from f1_bot.models.driver import Driver, DriverStanding
 from f1_bot.models.race import Circuit
@@ -98,3 +99,32 @@ def test_circuit_info_shows_wikipedia_link():
 def test_circuit_info_no_url_no_link():
     text = format_circuit_info(_circuit(url=None))
     assert "Wikipedia" not in text
+
+
+def test_driver_profile_escapes_parentheses_in_url():
+    d = _driver(url="http://en.wikipedia.org/wiki/George_Russell_(racing_driver)")
+    text = format_driver_profile(d)
+    assert "George_Russell_%28racing_driver%29" in text
+
+
+def test_circuit_info_escapes_parentheses_in_url():
+    c = _circuit(url="http://en.wikipedia.org/wiki/George_Russell_(racing_driver)")
+    text = format_circuit_info(c)
+    assert "George_Russell_%28racing_driver%29" in text
+
+
+def test_circuit_flag_icon_specific_mappings():
+    assert circuit_flag_icon("UK") == "🇬🇧"
+    assert circuit_flag_icon("USA") == "🇺🇸"
+    assert circuit_flag_icon("UAE") == "🇦🇪"
+    assert circuit_flag_icon("Monaco") == "🇲🇨"
+    assert circuit_flag_icon("UnknownCountryString") == "🏴"
+
+
+def test_circuit_flag_icon_no_fallbacks():
+    # Test all known countries in CIRCUIT_COUNTRY_TO_ISO3 mapping do not resolve to 🏴
+    from f1_bot.formatting.emoji import CIRCUIT_COUNTRY_TO_ISO3
+
+    for country in CIRCUIT_COUNTRY_TO_ISO3:
+        flag = circuit_flag_icon(country)
+        assert flag != "🏴", f"Country '{country}' fell back to black flag 🏴"

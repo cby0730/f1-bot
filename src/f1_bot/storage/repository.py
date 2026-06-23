@@ -26,6 +26,17 @@ class Repository:
             return [Race.model_validate(r) for r in rows]
         return []
 
+    async def get_circuits_for_season(self, season: int) -> list:
+        """Extract ordered, unique circuits from the current season schedule."""
+        races = await self.get_schedule(season)
+        seen = set()
+        circuits = []
+        for r in races:
+            if r.circuit.circuit_id not in seen:
+                seen.add(r.circuit.circuit_id)
+                circuits.append((r.round, r.circuit))
+        return circuits  # list of (round_num, Circuit) tuples, ordered by round
+
     async def save_schedule(self, season: int, races: list[Race]) -> None:
         races_json = [r.model_dump(mode="json") for r in races]
         await self.sqlite.save_races(season, races_json)

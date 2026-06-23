@@ -485,14 +485,15 @@ def format_driver_profile(driver, standing=None) -> str:
             f"\n📊 *{standing.position}th* in WDC — *{standing.points:.0f} pts* ({standing.wins} wins)"
         )
     if driver.url:
-        lines.append(f"\n[Wikipedia]({driver.url})")
+        safe_url = driver.url.replace("(", "%28").replace(")", "%29")
+        lines.append(f"\n[Wikipedia]({safe_url})")
     return "\n".join(lines)
 
 
 def format_circuit_info(circuit, recent_races: list | None = None) -> str:
-    from f1_bot.formatting.emoji import flag_icon
+    from f1_bot.formatting.emoji import circuit_flag_icon
 
-    flag = flag_icon(circuit.country)
+    flag = circuit_flag_icon(circuit.country)
     coord_str = ""
     if circuit.lat and circuit.lng:
         coord_str = f"\n📍 {circuit.lat:.4f}, {circuit.lng:.4f}"
@@ -505,7 +506,8 @@ def format_circuit_info(circuit, recent_races: list | None = None) -> str:
         for race in recent_races[:5]:
             lines.append(f"  {race.season}: {_esc(race.name)}")
     if circuit.url:
-        lines.append(f"\n[Wikipedia]({circuit.url})")
+        safe_url = circuit.url.replace("(", "%28").replace(")", "%29")
+        lines.append(f"\n[Wikipedia]({safe_url})")
     return "\n".join(lines)
 
 

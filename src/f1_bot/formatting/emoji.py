@@ -94,6 +94,13 @@ ISO_3_TO_2 = {
     "TUR": "TR",
     "SMR": "SM",
     "ISL": "IS",
+    "BHR": "BH",
+    "SAU": "SA",
+    "HUN": "HU",
+    "SGP": "SG",
+    "QAT": "QA",
+    "UAE": "AE",
+    "AZE": "AZ",
 }
 
 
@@ -124,6 +131,46 @@ def flag_icon(nationality: str) -> str:
     # Check 3-letter code
     if len(nationality) == 3:
         return country_code_to_flag(nationality)
+    return "🏴"
+
+
+CIRCUIT_COUNTRY_TO_ISO3: dict[str, str] = {
+    "Bahrain": "BHR",
+    "Saudi Arabia": "SAU",
+    "Australia": "AUS",
+    "Japan": "JPN",
+    "China": "CHN",
+    "United States": "USA",
+    "Italy": "ITA",
+    "Monaco": "MON",
+    "Canada": "CAN",
+    "Spain": "ESP",
+    "Austria": "AUT",
+    "United Kingdom": "GBR",
+    "Hungary": "HUN",
+    "Belgium": "BEL",
+    "Netherlands": "NED",
+    "Singapore": "SGP",
+    "Mexico": "MEX",
+    "Brazil": "BRA",
+    "Qatar": "QAT",
+    "Abu Dhabi": "UAE",
+    "Azerbaijan": "AZE",
+    "Miami": "USA",
+    "Las Vegas": "USA",
+    "UK": "GBR",
+    "USA": "USA",
+    "UAE": "UAE",
+}
+
+
+def circuit_flag_icon(country: str) -> str:
+    """Convert a circuit country name (e.g. 'Monaco') to a flag emoji."""
+    if not country:
+        return "🏴"
+    iso3 = CIRCUIT_COUNTRY_TO_ISO3.get(country)
+    if iso3:
+        return country_code_to_flag(iso3)
     return "🏴"
 
 
