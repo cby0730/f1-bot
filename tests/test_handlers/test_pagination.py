@@ -193,9 +193,9 @@ class TestResultsFilteredKeyboard:
         filter_keys = {"fp1", "fp2", "fp3", "qualifying", "sprint_qualifying", "sprint", "all"}
         for btn in all_btns:
             parts = (btn.callback_data or "").split(":")
-            assert not any(
-                k in parts for k in filter_keys
-            ), f"Filter button found in State B: {btn.callback_data}"
+            assert not any(k in parts for k in filter_keys), (
+                f"Filter button found in State B: {btn.callback_data}"
+            )
 
     def test_state_b_nav_row_is_first(self):
         """Nav row (◀ ▶) should be the first row in State B keyboard."""

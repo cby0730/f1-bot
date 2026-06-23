@@ -1,6 +1,6 @@
 services:
   bot:
-    image: f1-bot:v0.1.0
+    image: f1-bot:prod
     build: .
     restart: unless-stopped
     env_file: .env

@@ -5,6 +5,7 @@ to get stable, reproducible data. Requires network access.
 """
 
 import pytest
+
 from f1_bot.api.openf1 import OpenF1Client
 from f1_bot.models.live import LivePosition, RaceControlMessage, WeatherData
 from f1_bot.models.race import Meeting

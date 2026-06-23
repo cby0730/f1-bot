@@ -1,8 +1,9 @@
 """Tests for Settings: env_prefix, aliases, defaults."""
 
 import pytest
-from f1_bot.config import Settings
 from pydantic import ValidationError
+
+from f1_bot.config import Settings
 
 
 def test_settings_defaults(monkeypatch):

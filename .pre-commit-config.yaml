@@ -1,6 +1,6 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: v6.0.0
     hooks:
       - id: check-added-large-files
       - id: end-of-file-fixer
@@ -10,7 +10,7 @@ repos:
 
   # 1. Ruff: Run linting, formatting, and enable Security (S) rule set
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.4.10
+    rev: v0.15.18
     hooks:
       - id: ruff
         args: [ --fix ]
@@ -18,13 +18,13 @@ repos:
 
   # 2. Gitleaks: Prevent API Tokens and secrets from being committed
   - repo: https://github.com/gitleaks/gitleaks
-    rev: v8.18.2
+    rev: v8.30.0
     hooks:
       - id: gitleaks
 
   # 3. Hadolint: Lint Dockerfile for security and best practices
   - repo: https://github.com/hadolint/hadolint
-    rev: v2.12.0
+    rev: v2.14.0
     hooks:
       - id: hadolint
 

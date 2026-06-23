@@ -11,9 +11,10 @@ from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
+from telegram import Update
+
 from f1_bot.config import Settings
 from f1_bot.main import build_app
-from telegram import Update
 
 # Define Bot Details for Mocking
 TELEGRAM_TOKEN = "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"

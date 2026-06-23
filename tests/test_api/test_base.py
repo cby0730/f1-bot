@@ -4,13 +4,14 @@ from unittest.mock import AsyncMock
 
 import httpx
 import pytest
+from pytest_httpx import HTTPXMock
+
 from f1_bot.api.base import (
     APIRateLimitError,
     APIServerError,
     BaseAPIClient,
 )
 from f1_bot.utils.rate_limiter import RateLimiter
-from pytest_httpx import HTTPXMock
 
 
 def _make_client(base_url="https://example.com") -> BaseAPIClient:

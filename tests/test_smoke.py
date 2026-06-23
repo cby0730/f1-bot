@@ -14,6 +14,7 @@ import datetime
 
 import pytest
 import pytest_asyncio
+
 from f1_bot.api.jolpica import JolpicaClient
 from f1_bot.scheduler.jobs import sync_results_window, sync_schedule, sync_standings
 from f1_bot.storage.repository import Repository

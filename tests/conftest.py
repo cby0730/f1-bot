@@ -2,6 +2,7 @@
 
 import pytest
 import pytest_asyncio
+
 from f1_bot.storage.repository import Repository
 from f1_bot.storage.sqlite_store import SQLiteStore
 

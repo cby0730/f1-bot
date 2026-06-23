@@ -1,9 +1,10 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from f1_bot.handlers.errors import CommandValidationError, error_handler
 from telegram import Update
 from telegram.error import NetworkError
+
+from f1_bot.handlers.errors import CommandValidationError, error_handler
 
 
 @pytest.mark.asyncio

@@ -3,9 +3,10 @@
 from datetime import date, time, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
+from telegram import InlineKeyboardMarkup
+
 from f1_bot.handlers.race_data import _laps_callback, laps_handler, pitstops_handler
 from f1_bot.models.race import Circuit, Race
-from telegram import InlineKeyboardMarkup
 
 
 def _circuit():

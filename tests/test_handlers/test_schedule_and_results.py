@@ -3,6 +3,8 @@
 from datetime import date, time, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
+from telegram import InlineKeyboardMarkup
+
 from f1_bot.handlers.results import results_handler
 from f1_bot.handlers.schedule import (
     countdown_handler,
@@ -10,7 +12,6 @@ from f1_bot.handlers.schedule import (
     schedule_handler,
 )
 from f1_bot.models.race import Circuit, Race, RaceSession
-from telegram import InlineKeyboardMarkup
 
 
 def _circuit():

@@ -5,6 +5,7 @@ They require network access; skip them with -m "not integration" if offline.
 """
 
 import pytest
+
 from f1_bot.api.jolpica import JolpicaClient
 from f1_bot.models.constructor import ConstructorStanding
 from f1_bot.models.driver import DriverStanding
