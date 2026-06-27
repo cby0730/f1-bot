@@ -24,7 +24,7 @@ async def test_save_and_get_notification(pg_store):
     assert subs[0].minutes_before == 30
 
 
-async def test_save_duplicate_returns_zero(pg_store):
+async def test_save_duplicate_returns_existing_id(pg_store):
     fire_at = datetime(2026, 7, 1, 12, 0, tzinfo=UTC)
     sub = NotificationSubscription(
         telegram_id=12345,
@@ -37,7 +37,7 @@ async def test_save_duplicate_returns_zero(pg_store):
     first_id = await pg_store.save_notification(sub)
     assert first_id > 0
     second_id = await pg_store.save_notification(sub)
-    assert second_id == 0
+    assert second_id == first_id
 
 
 async def test_delete_notification(pg_store):

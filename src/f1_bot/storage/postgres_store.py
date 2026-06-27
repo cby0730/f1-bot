@@ -460,7 +460,8 @@ class PostgresStore:
                 """INSERT INTO notification_subscriptions
                    (telegram_id, season, round, session_key, minutes_before, notified, fire_at)
                    VALUES ($1,$2,$3,$4,$5,$6,$7)
-                   ON CONFLICT (telegram_id, season, round, session_key, minutes_before) DO NOTHING
+                   ON CONFLICT (telegram_id, season, round, session_key, minutes_before)
+                   DO UPDATE SET notified=FALSE, fire_at=EXCLUDED.fire_at
                    RETURNING id""",
                 sub.telegram_id,
                 sub.season,
@@ -545,6 +546,9 @@ class PostgresStore:
         ]
 
     async def mark_notifications_sent(self, ids: list[int]) -> None:
+        # DELETE (not UPDATE SET notified=TRUE) to prevent row accumulation.
+        # Changing this to UPDATE would break re-subscription unless
+        # save_notification's ON CONFLICT is also DO UPDATE (not DO NOTHING).
         if not ids:
             return
         async with self._pool.acquire() as conn:
