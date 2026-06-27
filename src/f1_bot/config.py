@@ -19,8 +19,8 @@ class Settings(BaseSettings):
     telegram_connect_timeout: float = Field(default=20.0, alias="TELEGRAM_CONNECT_TIMEOUT")
     telegram_read_timeout: float = Field(default=20.0, alias="TELEGRAM_READ_TIMEOUT")
 
-    # SQLite — prefix: F1BOT_SQLITE_PATH
-    sqlite_path: str = "f1bot.db"
+    # Database — prefix: F1BOT_DATABASE_URL
+    database_url: str = "postgresql://mango:mango@localhost:31050/mango"
 
     # Logging — prefix: F1BOT_LOG_LEVEL, F1BOT_LOG_FORMAT
     log_level: str = "INFO"
@@ -35,3 +35,6 @@ class Settings(BaseSettings):
     jolpica_rate_per_hour: int = 500
     openf1_rate_per_second: float = 3.0
     openf1_rate_per_minute: int = 30
+
+    # Notification rate limit
+    notification_rate_per_second: float = 25.0

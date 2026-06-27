@@ -121,8 +121,8 @@ async def test_next_handler_shows_next_upcoming_race():
     # Should have two-state keyboard with session filter buttons
     markup = update.effective_message.reply_text.await_args.kwargs.get("reply_markup")
     assert isinstance(markup, InlineKeyboardMarkup)
-    # State A keyboard has 2 rows (practice + competitive)
-    assert len(markup.inline_keyboard) == 2
+    # State A keyboard has 3 rows (practice + competitive + bell)
+    assert len(markup.inline_keyboard) == 3
     # First row: FP1, FP2, FP3, Q
     labels = [btn.text for btn in markup.inline_keyboard[0]]
     assert labels == ["FP1", "FP2", "FP3", "Q"]
@@ -626,3 +626,58 @@ async def test_schedule_callback_invalid_round_value_error():
     assert update.callback_query.answer.call_count == 1
     update.callback_query.answer.assert_called_with(text="Invalid selection", show_alert=True)
     update.callback_query.edit_message_text.assert_not_called()
+
+
+# --- Fix 10: Nonexistent round in _results_callback ---
+
+
+async def test_results_callback_nonexistent_round():
+    """Callback with a round number that doesn't exist in schedule should show alert."""
+    from f1_bot.handlers.results import _results_callback
+
+    c = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
+    r1 = Race(season=2026, round=1, name="Test GP", circuit=c, date=date(2026, 3, 1))
+
+    repo = MagicMock()
+    repo.get_schedule = AsyncMock(return_value=[r1])
+    repo.get_schedule_bounds = AsyncMock(return_value={"last_completed_round": 1})
+
+    update = MagicMock()
+    update.callback_query.data = "res:filtered:race:99"  # round 99 doesn't exist
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
+
+    ctx = _context(repo=repo)
+    await _results_callback(update, ctx)
+
+    update.callback_query.answer.assert_called_with(text="Round not found", show_alert=True)
+    update.callback_query.edit_message_text.assert_not_called()
+
+
+async def test_format_all_results_prefetch_no_regression(monkeypatch):
+    """_format_all_results with short combined text returns it directly (Stage 1)."""
+    from f1_bot.handlers.results import _format_all_results
+
+    repo = MagicMock()
+    c = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
+    race = Race(season=2026, round=5, name="Test GP", circuit=c, date=date(2026, 5, 1))
+
+    call_count = 0
+
+    async def mock_format(r, s, rnd, rc, key, dm, top_n=None):
+        nonlocal call_count
+        call_count += 1
+        if key == "race":
+            return "Race results text"
+        if key == "qualifying":
+            return "Qualifying results text"
+        return None
+
+    monkeypatch.setattr("f1_bot.handlers.results._format_results_for_session", mock_format)
+
+    result = await _format_all_results(repo, 2026, 5, race, {})
+    assert result is not None
+    assert "Race results text" in result
+    assert "Qualifying results text" in result
+    # With pre-fetch, only 7 calls (one per session key), not 7+4=11
+    assert call_count == 7

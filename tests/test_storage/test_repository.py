@@ -1,6 +1,6 @@
-"""Tests for Repository — verifies pure SQLite data storage operations.
+"""Tests for Repository — verifies PostgreSQL data storage operations.
 
-All tests use in-memory SQLite (no mocks for storage layer).
+All tests use real Postgres (no mocks for storage layer).
 """
 
 from datetime import date, time
@@ -69,7 +69,7 @@ def _constructor_standing(position: int = 1) -> ConstructorStanding:
 
 
 async def test_save_and_get_schedule(repo):
-    """save_schedule writes to SQLite; subsequent get_schedule reads from SQLite."""
+    """save_schedule writes to DB; subsequent get_schedule reads from DB."""
     races = [_race(round_num=5)]
     await repo.save_schedule(2024, races)
     result = await repo.get_schedule(2024)
@@ -78,11 +78,11 @@ async def test_save_and_get_schedule(repo):
     assert result[0].name == "Monaco Grand Prix"
 
 
-async def test_get_schedule_from_sqlite(repo, sqlite_store):
-    """get_schedule falls back to reading SQLite store directly."""
+async def test_get_schedule_from_store(repo, pg_store):
+    """get_schedule falls back to reading store directly."""
     races = [_race(round_num=7)]
     races_json = [r.model_dump(mode="json") for r in races]
-    await sqlite_store.save_races(2024, races_json)
+    await pg_store.save_races(2024, races_json)
 
     result = await repo.get_schedule(2024)
     assert len(result) == 1
@@ -117,7 +117,7 @@ async def test_get_next_race_all_past_returns_none(repo):
 
 
 async def test_save_and_get_driver_standings(repo):
-    """save/get driver standings via Repository/SQLite."""
+    """save/get driver standings via Repository."""
     standings = [_driver_standing(1), _driver_standing(2)]
     await repo.save_driver_standings(2024, standings)
     result = await repo.get_driver_standings(2024)
@@ -126,11 +126,11 @@ async def test_save_and_get_driver_standings(repo):
     assert result[0].driver.driver_id == "hamilton"
 
 
-async def test_get_driver_standings_from_sqlite(repo, sqlite_store):
-    """falls back to reading driver standings from SQLite directly."""
+async def test_get_driver_standings_from_store(repo, pg_store):
+    """falls back to reading driver standings from store directly."""
     standings = [_driver_standing(1)]
     data = [s.model_dump(mode="json") for s in standings]
-    await sqlite_store.save_driver_standings(2024, 0, data)
+    await pg_store.save_driver_standings(2024, 0, data)
 
     result = await repo.get_driver_standings(2024)
     assert len(result) == 1
@@ -163,7 +163,7 @@ async def test_get_constructor_standings_empty(repo):
 
 
 async def test_save_and_get_race_results(repo):
-    """Race results: save and re-read from SQLite."""
+    """Race results: save and re-read from DB."""
     results = [
         RaceResult(
             position=1,
@@ -375,7 +375,7 @@ async def test_schedule_bounds_empty_schedule(repo):
     assert bounds["completed_sprint_rounds"] == []
 
 
-async def test_schedule_bounds_all_completed(repo, sqlite_store):
+async def test_schedule_bounds_all_completed(repo, pg_store):
     """When all races are in the past, next_upcoming_round is None."""
     from datetime import date, time
 
@@ -414,7 +414,7 @@ async def test_schedule_bounds_all_completed(repo, sqlite_store):
     assert bounds["next_upcoming_round"] is None
 
 
-async def test_schedule_bounds_all_upcoming(repo, sqlite_store):
+async def test_schedule_bounds_all_upcoming(repo, pg_store):
     """When all races are in the future, last_completed_round is None."""
     from datetime import UTC, date, datetime, time
 
@@ -450,7 +450,7 @@ async def test_schedule_bounds_all_upcoming(repo, sqlite_store):
     assert bounds["next_upcoming_round"] == 1
 
 
-async def test_schedule_bounds_sprint_classification(repo, sqlite_store):
+async def test_schedule_bounds_sprint_classification(repo, pg_store):
     """Sprint weekends are tracked in sprint_rounds and completed_sprint_rounds."""
     from datetime import UTC, date, datetime, time
 
@@ -484,7 +484,7 @@ async def test_schedule_bounds_sprint_classification(repo, sqlite_store):
     assert 4 in bounds["completed_sprint_rounds"]
 
 
-async def test_schedule_bounds_naive_reference_dt_treated_as_utc(repo, sqlite_store):
+async def test_schedule_bounds_naive_reference_dt_treated_as_utc(repo, pg_store):
     """Naive datetime reference_dt is treated as UTC."""
     from datetime import date, datetime, time
 
@@ -504,7 +504,7 @@ async def test_schedule_bounds_naive_reference_dt_treated_as_utc(repo, sqlite_st
     assert bounds["last_completed_round"] == 1
 
 
-async def test_schedule_bounds_aware_non_utc_reference_dt(repo, sqlite_store):
+async def test_schedule_bounds_aware_non_utc_reference_dt(repo, pg_store):
     """Timezone-aware non-UTC reference_dt is compared correctly."""
     from datetime import date, datetime, time, timedelta, timezone
 
@@ -526,7 +526,7 @@ async def test_schedule_bounds_aware_non_utc_reference_dt(repo, sqlite_store):
     assert bounds["next_upcoming_round"] == 1
 
 
-async def test_get_lap_timings_cached_and_save_clears_cache(repo, sqlite_store):
+async def test_get_lap_timings_cached_and_save_clears_cache(repo, pg_store):
     """Verify in-memory caching of lap timings and that save_lap_timings invalidates the cache."""
     from f1_bot.models.results import LapTime
 
@@ -550,8 +550,8 @@ async def test_get_lap_timings_cached_and_save_clears_cache(repo, sqlite_store):
     ]
     await repo.save_lap_timings(2024, 5, timings)
 
-    # Spy sqlite.get_lap_timings
-    original_get = sqlite_store.get_lap_timings
+    # Spy store.get_lap_timings
+    original_get = pg_store.get_lap_timings
     call_count = 0
 
     async def spy_get(season, round_num):
@@ -559,7 +559,7 @@ async def test_get_lap_timings_cached_and_save_clears_cache(repo, sqlite_store):
         call_count += 1
         return await original_get(season, round_num)
 
-    sqlite_store.get_lap_timings = spy_get
+    pg_store.get_lap_timings = spy_get
 
     # First fetch: should call database and return LapTime list
     res1 = await repo.get_lap_timings(2024, 5)
@@ -601,3 +601,52 @@ async def test_get_schedule_bounds_with_preloaded_races(repo):
     await repo.get_schedule_bounds(2024)
     # verify repo.get_schedule WAS called
     repo.get_schedule.assert_awaited_once_with(2024)
+
+
+# --- Fix 12: LRU cache eviction ---
+
+
+async def test_laps_cache_evicts_oldest_when_exceeding_max(repo, pg_store):
+    """When cache exceeds _MAX_LAPS_CACHE, the oldest entry is evicted."""
+    from f1_bot.models.results import LapTime
+    from f1_bot.storage.repository import _MAX_LAPS_CACHE
+
+    timing = LapTime(driver_id="hamilton", lap_number=1)
+
+    # Fill cache to max + 1
+    for i in range(1, _MAX_LAPS_CACHE + 2):
+        await repo.save_lap_timings(2024, i, [timing])
+        await repo.get_lap_timings(2024, i)
+
+    # Cache should have exactly _MAX_LAPS_CACHE entries
+    assert len(repo._laps_cache) == _MAX_LAPS_CACHE
+
+    # The first entry (round 1) should have been evicted
+    assert (2024, 1) not in repo._laps_cache
+    # The last entry should still be cached
+    assert (2024, _MAX_LAPS_CACHE + 1) in repo._laps_cache
+
+
+async def test_laps_cache_move_to_end_on_hit(repo, pg_store):
+    """Accessing a cached entry moves it to the end (prevents eviction)."""
+    from f1_bot.models.results import LapTime
+    from f1_bot.storage.repository import _MAX_LAPS_CACHE
+
+    timing = LapTime(driver_id="hamilton", lap_number=1)
+
+    # Insert entries 1 through MAX
+    for i in range(1, _MAX_LAPS_CACHE + 1):
+        await repo.save_lap_timings(2024, i, [timing])
+        await repo.get_lap_timings(2024, i)
+
+    # Access round 1 (oldest) — moves it to end
+    await repo.get_lap_timings(2024, 1)
+
+    # Insert one more to trigger eviction
+    await repo.save_lap_timings(2024, _MAX_LAPS_CACHE + 1, [timing])
+    await repo.get_lap_timings(2024, _MAX_LAPS_CACHE + 1)
+
+    # Round 1 should still be cached (was moved to end)
+    assert (2024, 1) in repo._laps_cache
+    # Round 2 should have been evicted (was oldest after round 1 was moved)
+    assert (2024, 2) not in repo._laps_cache

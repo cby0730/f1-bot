@@ -24,6 +24,10 @@ class APIServerError(F1BotAPIError):
     pass
 
 
+class APIClientError(F1BotAPIError):
+    """4xx client errors (not found, bad request, etc.)."""
+
+
 class APIRateLimitError(F1BotAPIError):
     pass
 
@@ -72,6 +76,10 @@ class BaseAPIClient:
         if response.status_code >= 500:
             log.error("api_server_error", path=path, status=response.status_code)
             raise APIServerError(f"{path} returned {response.status_code}")
+
+        if 400 <= response.status_code < 500:
+            log.warning("api_client_error", path=path, status=response.status_code)
+            raise APIClientError(f"{path} returned {response.status_code}")
 
         response.raise_for_status()
         return response.json()

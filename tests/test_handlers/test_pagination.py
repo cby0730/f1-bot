@@ -89,7 +89,7 @@ class TestScheduleKeyboard:
 class TestNextOverviewKeyboard:
     def test_has_no_pager_when_single_round(self):
         kb = next_overview_keyboard(5, [5])
-        assert len(kb.inline_keyboard) == 2
+        assert len(kb.inline_keyboard) == 3  # practice + competitive + bell
         practice_row = kb.inline_keyboard[0]
         labels = [btn.text for btn in practice_row]
         assert "FP1" in labels
@@ -97,7 +97,7 @@ class TestNextOverviewKeyboard:
 
     def test_has_three_rows_with_pager_when_multiple_rounds(self):
         kb = next_overview_keyboard(5, [5, 6])
-        assert len(kb.inline_keyboard) == 3
+        assert len(kb.inline_keyboard) == 4  # pager + practice + competitive + bell
         pager_row = kb.inline_keyboard[0]
         assert len(pager_row) == 2  # R5/6 and ▶
         assert pager_row[0].text == "R5/6"

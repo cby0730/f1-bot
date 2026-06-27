@@ -16,6 +16,7 @@ A Telegram bot for Formula 1 information — race schedules, standings, results,
 | `/driver <name>` | Driver profile and standings (fuzzy name matching) |
 | `/circuit <name>` | Circuit info (fuzzy name matching) |
 | `/timezone` | Set your timezone for local race times |
+| `/remind` | View and manage your session reminders |
 | `/start`, `/help` | Welcome message and command list |
 
 ### Two-state interaction pattern
@@ -30,21 +31,21 @@ A Telegram bot for Formula 1 information — race schedules, standings, results,
 Cache-first: a full data sync runs on startup, then background jobs poll on a 1-hour cycle. Telegram handlers are **SQL-only** — they never call external APIs directly.
 
 ```
-Startup / Scheduler → Jolpica + OpenF1 APIs → SQLite
-                                                 ↓
-                          Telegram users → handlers → Repository → SQLite (read)
+Startup / Scheduler → Jolpica + OpenF1 APIs → PostgreSQL
+                                                   ↓
+                       Telegram users → handlers → Repository → PostgreSQL (read)
 ```
 
 ### Key design decisions
 
-- **SQL-only handlers:** All handler reads go through `Repository` → SQLite. No API calls from handlers.
+- **SQL-only handlers:** All handler reads go through `Repository` → PostgreSQL. No API calls from handlers.
 - **Startup sync:** `startup_sync()` in `_post_init` fetches schedule, standings, results, pit stops, laps, and session data before the bot starts accepting commands.
 - **Unified polling:** All scheduler jobs share a 1-hour interval (`_POLL_INTERVAL` in `scheduler/manager.py`).
 - **OpenF1 for laps:** Lap timing data (including sector times) comes from OpenF1, not Jolpica.
-- **DB transactions & executemany:** Write operations (`save_races`, `save_drivers`, `save_circuits`) are wrapped in explicit database transactions (`BEGIN`/`commit`/`rollback`) to ensure atomic execution. Driver and circuit bulk updates use `executemany` to minimize context switches.
-- **Laps in-memory cache:** Validated `LapTime` objects are cached inside `Repository` on retrieval, preventing costly database reads and repetitive CPU-heavy Pydantic validation (which blocks the event loop for ~1300 laps per call) on pagination clicks. Saving new laps invalidates this cache.
-- **Reduced schedule query overhead:** Pagination logic passes preloaded `races` to `get_schedule_bounds()` to eliminate redundant SQLite queries on navigation events.
-- **Input and formatting guards:** Callback query parameter parsing is guarded against parsing errors (`ValueError`), and markdown-sensitive fields (like `race.name` in circuit info) are escaped to prevent Telegram MarkdownV2 parse failures.
+- **PostgreSQL storage:** All data is stored in PostgreSQL via asyncpg. Write operations use explicit transactions for atomicity.
+- **Notification system:** Users subscribe to session reminders via inline keyboard flow. A background `notification_sender` schedules PTB `run_once` jobs based on the earliest pending `fire_at` in the database, auto-rescheduling after each delivery.
+- **Laps in-memory cache:** Validated `LapTime` objects are cached inside `Repository` on retrieval, preventing costly database reads and repetitive CPU-heavy Pydantic validation on pagination clicks. Saving new laps invalidates this cache.
+- **Input and formatting guards:** Callback query parameter parsing is guarded against parsing errors (`ValueError`), and markdown-sensitive fields are escaped to prevent Telegram Markdown parse failures.
 - **Fuzzy matching:** `/driver` and `/circuit` commands use difflib-based fuzzy matching across all name fields.
 - **Driver mapping & cache enrichment:** OpenF1 driver profiles are cached and enriched with country flags mapped from ISO 3-letter codes. OpenF1 session results are mapped to Jolpica's driver entities using their permanent numbers via `Repository.get_drivers_by_id_map()`.
 
@@ -57,7 +58,7 @@ src/f1_bot/
 ├── handlers/       # Telegram command & callback handlers (read-only from SQLite)
 ├── models/         # Pydantic v2 models (frozen)
 ├── scheduler/      # Background sync jobs and job manager
-├── storage/        # SQLite store + Repository read layer
+├── storage/        # PostgreSQL store + Repository read layer
 └── utils/          # Rate limiter, fuzzy match, session helpers, logging
 ```
 
@@ -72,9 +73,9 @@ cd f1-bot
 
 # 2. Create your .env from the example
 cp .env.example .env
-# Edit .env and set TELEGRAM_BOT_TOKEN=your_token_here
+# Edit .env: set TELEGRAM_BOT_TOKEN and POSTGRES_PASSWORD
 
-# 3. Start
+# 3. Start (bot + PostgreSQL)
 docker compose up -d
 
 # 4. Check logs
@@ -84,17 +85,22 @@ docker compose logs -f bot
 To stop: `docker compose down`
 To update: `git pull && docker compose up -d --build`
 
+PostgreSQL data is persisted in a Docker volume (`pgdata`).
+
 ## Running locally (development)
 
-**Prerequisites:** Python 3.13+, [uv](https://docs.astral.sh/uv/).
+**Prerequisites:** Python 3.13+, [uv](https://docs.astral.sh/uv/), PostgreSQL (or use dev container).
 
 ```bash
+# Start dev PostgreSQL
+docker compose -f docker-compose.dev.yml up -d
+
 # Install dependencies
 uv sync
 
 # Set up environment
 cp .env.example .env
-# Edit .env: set TELEGRAM_BOT_TOKEN
+# Edit .env: set TELEGRAM_BOT_TOKEN and F1BOT_DATABASE_URL
 
 # Run
 uv run -m f1_bot
@@ -103,7 +109,10 @@ uv run -m f1_bot
 ## Running tests
 
 ```bash
-# Unit tests only (~336 tests, no network required)
+# Start dev PostgreSQL (required for tests)
+docker compose -f docker-compose.dev.yml up -d
+
+# Unit tests only (~411 tests, no network required)
 uv run pytest -m "not integration"
 
 # Integration tests (real API calls, requires internet)
@@ -127,10 +136,11 @@ uv run ruff check src/ tests/
 | Variable | Required | Default | Description |
 |---|---|---|---|
 | `TELEGRAM_BOT_TOKEN` | Yes | — | From @BotFather |
+| `POSTGRES_PASSWORD` | Yes (Docker) | — | PostgreSQL password (used by docker-compose) |
+| `F1BOT_DATABASE_URL` | No | `postgresql://...@localhost:31050/...` | PostgreSQL connection URL (auto-set in Docker) |
 | `TELEGRAM_PROXY` | No | — | Proxy URL for Telegram client (e.g., `socks5://127.0.0.1:7890`) |
 | `TELEGRAM_CONNECT_TIMEOUT` | No | `20.0` | Connection timeout for Telegram client in seconds |
 | `TELEGRAM_READ_TIMEOUT` | No | `20.0` | Read timeout for Telegram client in seconds |
-| `F1BOT_SQLITE_PATH` | No | `f1bot.db` | SQLite database path (auto-set to `/data/f1bot.db` in Docker) |
 | `F1BOT_LOG_LEVEL` | No | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
 | `F1BOT_LOG_FORMAT` | No | `auto` | `auto` (JSON if not TTY) / `console` / `json` |
 
@@ -152,7 +162,7 @@ The bot uses ~100 MB RAM in steady state.
 ## Tech stack
 
 - **Runtime:** Python 3.13, [python-telegram-bot](https://python-telegram-bot.org/) (PTB) 22.x with JobQueue
-- **Data:** SQLite via aiosqlite, Pydantic v2 models
+- **Data:** PostgreSQL via asyncpg, Pydantic v2 models
 - **HTTP:** httpx with token-bucket rate limiting
 - **Logging:** structlog (JSON in production, colored console in dev)
 - **Build:** uv, multi-stage Docker (python:3.13-slim)

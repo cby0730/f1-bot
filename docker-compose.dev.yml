@@ -1,0 +1,15 @@
+services:
+  postgres:
+    container_name: mango_pg
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: mango
+      POSTGRES_USER: mango
+      POSTGRES_PASSWORD: mango
+    ports:
+      - "31050:5432"
+    volumes:
+      - mango_pgdata:/var/lib/postgresql/data
+
+volumes:
+  mango_pgdata:

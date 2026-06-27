@@ -141,6 +141,11 @@ def next_overview_keyboard(current_round: int, upcoming_rounds: list[int]) -> In
     rows.append(practice_row)
     rows.append(competitive_row)
 
+    # 🔔 Remind Me button
+    rows.append(
+        [InlineKeyboardButton("🔔 Remind Me", callback_data=f"notify:pick:{current_round}")]
+    )
+
     return InlineKeyboardMarkup(rows)
 
 

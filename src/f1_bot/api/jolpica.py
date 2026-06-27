@@ -22,8 +22,8 @@ log = structlog.get_logger(__name__)
 def _parse_circuit(raw: dict) -> Circuit:
     loc = raw.get("Location", {})
     return Circuit(
-        circuit_id=raw["circuitId"],
-        name=raw["circuitName"],
+        circuit_id=raw.get("circuitId", "unknown"),
+        name=raw.get("circuitName", ""),
         locality=loc.get("locality", ""),
         country=loc.get("country", ""),
         lat=float(loc["lat"]) if "lat" in loc else None,
@@ -34,7 +34,7 @@ def _parse_circuit(raw: dict) -> Circuit:
 
 def _parse_driver(raw: dict) -> Driver:
     return Driver(
-        driver_id=raw["driverId"],
+        driver_id=raw.get("driverId", "unknown"),
         permanent_number=raw.get("permanentNumber"),
         code=raw.get("code"),
         given_name=raw.get("givenName", ""),
@@ -47,8 +47,8 @@ def _parse_driver(raw: dict) -> Driver:
 
 def _parse_constructor(raw: dict) -> Constructor:
     return Constructor(
-        constructor_id=raw["constructorId"],
-        name=raw["name"],
+        constructor_id=raw.get("constructorId", "unknown"),
+        name=raw.get("name", ""),
         nationality=raw.get("nationality"),
         url=raw.get("url"),
     )
@@ -70,7 +70,11 @@ class JolpicaClient(BaseAPIClient):
 
     async def get_current_schedule(self) -> list[Race]:
         data = await self.get("/current.json")
-        races_raw = data["MRData"]["RaceTable"]["Races"]
+        try:
+            races_raw = data["MRData"]["RaceTable"]["Races"]
+        except (KeyError, TypeError) as e:
+            log.warning("jolpica_malformed_response", method="get_current_schedule", error=str(e))
+            return []
         races = []
         for r in races_raw:
             race_date = date.fromisoformat(r["date"])
@@ -99,7 +103,11 @@ class JolpicaClient(BaseAPIClient):
 
     async def get_driver_standings(self, season: str = "current") -> list[DriverStanding]:
         data = await self.get(f"/{season}/driverstandings.json")
-        standings_lists = data["MRData"]["StandingsTable"]["StandingsLists"]
+        try:
+            standings_lists = data["MRData"]["StandingsTable"]["StandingsLists"]
+        except (KeyError, TypeError) as e:
+            log.warning("jolpica_malformed_response", method="get_driver_standings", error=str(e))
+            return []
         if not standings_lists:
             return []
         standings = []
@@ -117,7 +125,13 @@ class JolpicaClient(BaseAPIClient):
 
     async def get_constructor_standings(self, season: str = "current") -> list[ConstructorStanding]:
         data = await self.get(f"/{season}/constructorstandings.json")
-        standings_lists = data["MRData"]["StandingsTable"]["StandingsLists"]
+        try:
+            standings_lists = data["MRData"]["StandingsTable"]["StandingsLists"]
+        except (KeyError, TypeError) as e:
+            log.warning(
+                "jolpica_malformed_response", method="get_constructor_standings", error=str(e)
+            )
+            return []
         if not standings_lists:
             return []
         standings = []
@@ -136,7 +150,11 @@ class JolpicaClient(BaseAPIClient):
         self, season: str = "current", round_num: str = "last"
     ) -> tuple[Race | None, list[RaceResult]]:
         data = await self.get(f"/{season}/{round_num}/results.json")
-        races_raw = data["MRData"]["RaceTable"]["Races"]
+        try:
+            races_raw = data["MRData"]["RaceTable"]["Races"]
+        except (KeyError, TypeError) as e:
+            log.warning("jolpica_malformed_response", method="get_race_results", error=str(e))
+            return None, []
         if not races_raw:
             return None, []
         r = races_raw[0]
@@ -171,7 +189,11 @@ class JolpicaClient(BaseAPIClient):
         self, season: str = "current", round_num: str = "last"
     ) -> tuple[Race | None, list[QualifyingResult]]:
         data = await self.get(f"/{season}/{round_num}/qualifying.json")
-        races_raw = data["MRData"]["RaceTable"]["Races"]
+        try:
+            races_raw = data["MRData"]["RaceTable"]["Races"]
+        except (KeyError, TypeError) as e:
+            log.warning("jolpica_malformed_response", method="get_qualifying_results", error=str(e))
+            return None, []
         if not races_raw:
             return None, []
         r = races_raw[0]
@@ -200,7 +222,11 @@ class JolpicaClient(BaseAPIClient):
         self, season: str = "current", round_num: str = "last"
     ) -> tuple[Race | None, list[SprintResult]]:
         data = await self.get(f"/{season}/{round_num}/sprint.json")
-        races_raw = data["MRData"]["RaceTable"]["Races"]
+        try:
+            races_raw = data["MRData"]["RaceTable"]["Races"]
+        except (KeyError, TypeError) as e:
+            log.warning("jolpica_malformed_response", method="get_sprint_results", error=str(e))
+            return None, []
         if not races_raw:
             return None, []
         r = races_raw[0]
@@ -231,7 +257,11 @@ class JolpicaClient(BaseAPIClient):
         self, season: str = "current", round_num: str = "last"
     ) -> list[PitStop]:
         data = await self.get(f"/{season}/{round_num}/pitstops.json")
-        races_raw = data["MRData"]["RaceTable"]["Races"]
+        try:
+            races_raw = data["MRData"]["RaceTable"]["Races"]
+        except (KeyError, TypeError) as e:
+            log.warning("jolpica_malformed_response", method="get_pit_stops", error=str(e))
+            return []
         if not races_raw:
             return []
         stops = []
@@ -258,13 +288,18 @@ class JolpicaClient(BaseAPIClient):
         # A typical race has ~1346 entries (20 drivers × ~67 laps), requiring ~14 pages.
         all_laps: list[LapTime] = []
         offset = 0
+        total = 0
         while True:
             data = await self.get(
                 f"/{season}/{round_num}/laps.json",
                 params={"limit": 100, "offset": offset},
             )
-            total = int(data["MRData"]["total"])
-            races_raw = data["MRData"]["RaceTable"]["Races"]
+            try:
+                total = int(data["MRData"]["total"])
+                races_raw = data["MRData"]["RaceTable"]["Races"]
+            except (KeyError, TypeError) as e:
+                log.warning("jolpica_malformed_response", method="get_lap_timings", error=str(e))
+                break
             if not races_raw:
                 break
             for lap_raw in races_raw[0].get("Laps", []):
@@ -288,8 +323,18 @@ class JolpicaClient(BaseAPIClient):
 
     async def get_drivers(self, season: str = "current") -> list[Driver]:
         data = await self.get(f"/{season}/drivers.json")
-        return [_parse_driver(d) for d in data["MRData"]["DriverTable"]["Drivers"]]
+        try:
+            drivers_raw = data["MRData"]["DriverTable"]["Drivers"]
+        except (KeyError, TypeError) as e:
+            log.warning("jolpica_malformed_response", method="get_drivers", error=str(e))
+            return []
+        return [_parse_driver(d) for d in drivers_raw]
 
     async def get_circuits(self, season: str = "current") -> list[Circuit]:
         data = await self.get(f"/{season}/circuits.json")
-        return [_parse_circuit(c) for c in data["MRData"]["CircuitTable"]["Circuits"]]
+        try:
+            circuits_raw = data["MRData"]["CircuitTable"]["Circuits"]
+        except (KeyError, TypeError) as e:
+            log.warning("jolpica_malformed_response", method="get_circuits", error=str(e))
+            return []
+        return [_parse_circuit(c) for c in circuits_raw]

@@ -1,27 +1,33 @@
+from __future__ import annotations
+
+from collections import OrderedDict
 from datetime import UTC, datetime
 
 import structlog
 
 from f1_bot.models.constructor import ConstructorStanding
 from f1_bot.models.driver import DriverStanding
+from f1_bot.models.notification import NotificationSubscription
 from f1_bot.models.race import Race
 from f1_bot.models.user import UserPreference
-from f1_bot.storage.sqlite_store import SQLiteStore
+from f1_bot.storage.postgres_store import PostgresStore
 
 log = structlog.get_logger(__name__)
 
+_MAX_LAPS_CACHE = 30
+
 
 class Repository:
-    """Unified data access: pure SQLite store."""
+    """Unified data access: PostgreSQL store."""
 
-    def __init__(self, sqlite: SQLiteStore) -> None:
-        self.sqlite = sqlite
-        self._laps_cache = {}
+    def __init__(self, store: PostgresStore) -> None:
+        self._store = store
+        self._laps_cache: OrderedDict = OrderedDict()
 
     # --- Schedule ---
 
     async def get_schedule(self, season: int) -> list[Race]:
-        rows = await self.sqlite.get_races(season)
+        rows = await self._store.get_races(season)
         if rows:
             return [Race.model_validate(r) for r in rows]
         return []
@@ -39,7 +45,7 @@ class Repository:
 
     async def save_schedule(self, season: int, races: list[Race]) -> None:
         races_json = [r.model_dump(mode="json") for r in races]
-        await self.sqlite.save_races(season, races_json)
+        await self._store.save_races(season, races_json)
 
     async def get_next_race(self, season: int) -> Race | None:
         races = await self.get_schedule(season)
@@ -103,7 +109,7 @@ class Repository:
     # --- Standings ---
 
     async def get_driver_standings(self, season: int) -> list[DriverStanding]:
-        rows = await self.sqlite.get_driver_standings(season)
+        rows = await self._store.get_driver_standings(season)
         if rows:
             return [DriverStanding.model_validate(s) for s in rows]
         return []
@@ -112,10 +118,10 @@ class Repository:
         self, season: int, standings: list[DriverStanding], round_after: int = 0, ttl: int = 21600
     ) -> None:
         data = [s.model_dump(mode="json") for s in standings]
-        await self.sqlite.save_driver_standings(season, round_after, data)
+        await self._store.save_driver_standings(season, round_after, data)
 
     async def get_constructor_standings(self, season: int) -> list[ConstructorStanding]:
-        rows = await self.sqlite.get_constructor_standings(season)
+        rows = await self._store.get_constructor_standings(season)
         if rows:
             return [ConstructorStanding.model_validate(s) for s in rows]
         return []
@@ -128,41 +134,41 @@ class Repository:
         ttl: int = 21600,
     ) -> None:
         data = [s.model_dump(mode="json") for s in standings]
-        await self.sqlite.save_constructor_standings(season, round_after, data)
+        await self._store.save_constructor_standings(season, round_after, data)
 
     # --- Results ---
 
     async def get_race_results(self, season: int, round_num: int) -> list | None:
-        return await self.sqlite.get_results(season, round_num, "race")
+        return await self._store.get_results(season, round_num, "race")
 
     async def save_race_results(
         self, season: int, round_num: int, results: list, ttl: int = 86400
     ) -> None:
         data = [r.model_dump(mode="json") if hasattr(r, "model_dump") else r for r in results]
-        await self.sqlite.save_results(season, round_num, "race", data)
+        await self._store.save_results(season, round_num, "race", data)
 
     async def get_qualifying_results(self, season: int, round_num: int) -> list | None:
-        return await self.sqlite.get_results(season, round_num, "qualifying")
+        return await self._store.get_results(season, round_num, "qualifying")
 
     async def save_qualifying_results(
         self, season: int, round_num: int, results: list, ttl: int = 86400
     ) -> None:
         data = [r.model_dump(mode="json") if hasattr(r, "model_dump") else r for r in results]
-        await self.sqlite.save_results(season, round_num, "qualifying", data)
+        await self._store.save_results(season, round_num, "qualifying", data)
 
     async def get_sprint_results(self, season: int, round_num: int) -> list | None:
-        return await self.sqlite.get_results(season, round_num, "sprint")
+        return await self._store.get_results(season, round_num, "sprint")
 
     async def save_sprint_results(
         self, season: int, round_num: int, results: list, ttl: int = 86400
     ) -> None:
         data = [r.model_dump(mode="json") if hasattr(r, "model_dump") else r for r in results]
-        await self.sqlite.save_results(season, round_num, "sprint", data)
+        await self._store.save_results(season, round_num, "sprint", data)
 
     async def get_session_results(
         self, season: int, round_num: int, session_key: str | int
     ) -> list | None:
-        return await self.sqlite.get_results(season, round_num, f"session:{session_key}")
+        return await self._store.get_results(season, round_num, f"session:{session_key}")
 
     async def save_session_results(
         self,
@@ -173,26 +179,29 @@ class Repository:
         ttl: int = 86400,
     ) -> None:
         data = [r.model_dump(mode="json") if hasattr(r, "model_dump") else r for r in results]
-        await self.sqlite.save_results(season, round_num, f"session:{session_key}", data)
+        await self._store.save_results(season, round_num, f"session:{session_key}", data)
 
     # --- Lap Timings ---
 
     async def get_lap_timings(self, season: int, round_num: int) -> list:
         key = (season, round_num)
         if key in self._laps_cache:
+            self._laps_cache.move_to_end(key)
             return self._laps_cache[key]
         from f1_bot.models.results import LapTime
 
-        rows = await self.sqlite.get_lap_timings(season, round_num)
+        rows = await self._store.get_lap_timings(season, round_num)
         if rows:
             result = [LapTime.model_validate(r) for r in rows]
             self._laps_cache[key] = result
+            if len(self._laps_cache) > _MAX_LAPS_CACHE:
+                self._laps_cache.popitem(last=False)
             return result
         return []
 
     async def save_lap_timings(self, season: int, round_num: int, timings: list) -> None:
         data = [t.model_dump(mode="json") if hasattr(t, "model_dump") else t for t in timings]
-        await self.sqlite.save_lap_timings(season, round_num, data)
+        await self._store.save_lap_timings(season, round_num, data)
         key = (season, round_num)
         if key in self._laps_cache:
             del self._laps_cache[key]
@@ -200,19 +209,19 @@ class Repository:
     # --- Pit Stops ---
 
     async def get_pit_stops(self, season: int, round_num: int) -> list[dict] | None:
-        return await self.sqlite.get_pit_stops(season, round_num)
+        return await self._store.get_pit_stops(season, round_num)
 
     async def save_pit_stops(self, season: int, round_num: int, stops: list) -> None:
         data = [s.model_dump(mode="json") if hasattr(s, "model_dump") else s for s in stops]
-        await self.sqlite.save_pit_stops(season, round_num, data)
+        await self._store.save_pit_stops(season, round_num, data)
 
     # --- User Preferences ---
 
     async def get_user_preference(self, telegram_id: int) -> UserPreference | None:
-        return await self.sqlite.get_user_preference(telegram_id)
+        return await self._store.get_user_preference(telegram_id)
 
     async def upsert_user_preference(self, pref: UserPreference) -> None:
-        await self.sqlite.upsert_user_preference(pref)
+        await self._store.upsert_user_preference(pref)
 
     async def get_user_timezone(self, telegram_id: int) -> str:
         pref = await self.get_user_preference(telegram_id)
@@ -222,13 +231,13 @@ class Repository:
 
     async def save_drivers(self, season: int, drivers: list) -> None:
         data = [d.model_dump(mode="json") if hasattr(d, "model_dump") else d for d in drivers]
-        await self.sqlite.save_drivers(data)
+        await self._store.save_drivers(data)
 
     async def get_drivers_map(self, season: int) -> dict:
         """Return {permanent_number(int): Driver} map from cached drivers."""
         from f1_bot.models.driver import Driver
 
-        rows = await self.sqlite.get_drivers()
+        rows = await self._store.get_drivers()
         drivers = [Driver.model_validate(r) for r in rows]
         # Sort so that openf1 drivers come first, then jolpica drivers,
         # ensuring jolpica drivers overwrite openf1 drivers for the same permanent_number key.
@@ -244,7 +253,7 @@ class Repository:
         """Return {driver_id(str): Driver} map from cached drivers."""
         from f1_bot.models.driver import Driver
 
-        rows = await self.sqlite.get_drivers()
+        rows = await self._store.get_drivers()
         drivers = [Driver.model_validate(r) for r in rows]
 
         # Build lookup for jolpica drivers by number
@@ -281,33 +290,78 @@ class Repository:
 
     async def save_circuits(self, season: int, circuits: list) -> None:
         data = [c.model_dump(mode="json") if hasattr(c, "model_dump") else c for c in circuits]
-        await self.sqlite.save_circuits(data)
+        await self._store.save_circuits(data)
 
     # --- Sync Metadata ---
 
     async def get_sync_metadata(self, entity: str) -> str | None:
-        return await self.sqlite.get_sync_metadata(entity)
+        return await self._store.get_sync_metadata(entity)
 
     async def set_sync_metadata(self, entity: str) -> None:
-        await self.sqlite.set_sync_metadata(entity)
+        await self._store.set_sync_metadata(entity)
 
     # --- Schedule Audit ---
 
     async def log_schedule_change(
         self, season: int, round_num: int, field: str, old_value: str | None, new_value: str | None
     ) -> None:
-        await self.sqlite.log_schedule_change(season, round_num, field, old_value, new_value)
+        await self._store.log_schedule_change(season, round_num, field, old_value, new_value)
 
     # --- Results queries for unified /results ---
 
     async def get_all_result_types(self, season: int, round_num: int) -> list[str]:
         """Return all result types stored for a given season/round."""
-        return await self.sqlite.get_all_result_types(season, round_num)
+        return await self._store.get_all_result_types(season, round_num)
 
     async def get_last_result_round(self, season: int) -> int | None:
         """Return the highest round with any result data."""
-        return await self.sqlite.get_last_result_round(season)
+        return await self._store.get_last_result_round(season)
 
     async def get_all_results_by_type_prefix(self, type_prefix: str) -> list[dict]:
         """Return list of dicts with keys: season, round, type, data_json."""
-        return await self.sqlite.get_all_results_by_type_prefix(type_prefix)
+        return await self._store.get_all_results_by_type_prefix(type_prefix)
+
+    async def get_results_by_type(
+        self, season: int, round_num: int, result_type: str
+    ) -> list[dict] | None:
+        """Return raw results for any type key (e.g. 'session:fp1:12345')."""
+        return await self._store.get_results(season, round_num, result_type)
+
+    # --- Notifications ---
+
+    async def subscribe_notification(self, sub: NotificationSubscription) -> int:
+        return await self._store.save_notification(sub)
+
+    async def unsubscribe_notification(
+        self, telegram_id: int, season: int, round_num: int, session_key: str, minutes_before: int
+    ) -> bool:
+        return await self._store.delete_notification(
+            telegram_id, season, round_num, session_key, minutes_before
+        )
+
+    async def get_user_notifications(
+        self, telegram_id: int, season: int
+    ) -> list[NotificationSubscription]:
+        return await self._store.get_user_notifications(telegram_id, season)
+
+    async def get_pending_notifications(self, now: datetime) -> list[NotificationSubscription]:
+        return await self._store.get_pending_notifications(now)
+
+    async def mark_notifications_sent(self, ids: list[int]) -> None:
+        await self._store.mark_notifications_sent(ids)
+
+    async def has_notification(
+        self, telegram_id: int, season: int, round_num: int, session_key: str, minutes_before: int
+    ) -> bool:
+        return await self._store.has_notification(
+            telegram_id, season, round_num, session_key, minutes_before
+        )
+
+    async def remove_dead_user(self, telegram_id: int) -> None:
+        await self._store.delete_notifications_for_user(telegram_id)
+
+    async def get_next_fire_at(self) -> datetime | None:
+        return await self._store.get_next_fire_at()
+
+    async def delete_all_user_notifications(self, telegram_id: int) -> int:
+        return await self._store.delete_notifications_for_user(telegram_id)

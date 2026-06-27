@@ -1,7 +1,7 @@
 """
-Full-stack smoke test: Jolpica API → sync function → SQLiteStore → Repository.
+Full-stack smoke test: Jolpica API → sync function → PostgresStore → Repository.
 
-Uses real HTTP calls to api.jolpi.ca and real SQLite (tmp_path).
+Uses real HTTP calls to api.jolpi.ca and real Postgres (mango_pg container).
 This exercises the actual persistence and schema logic.
 
 Run with:
@@ -11,34 +11,51 @@ Run with:
 """
 
 import datetime
+import os
 
 import pytest
 import pytest_asyncio
 
 from f1_bot.api.jolpica import JolpicaClient
 from f1_bot.scheduler.jobs import sync_results_window, sync_schedule, sync_standings
+from f1_bot.storage.postgres_store import PostgresStore
 from f1_bot.storage.repository import Repository
-from f1_bot.storage.sqlite_store import SQLiteStore
 from f1_bot.utils.rate_limiter import RateLimiter
 
 pytestmark = pytest.mark.integration
 
+_TEST_DATABASE_URL = os.environ.get(
+    "F1BOT_DATABASE_URL", "postgresql://mango:mango@localhost:31050/mango"
+)
+
 
 @pytest_asyncio.fixture
-async def stack(tmp_path):
+async def stack():
     """Set up Repository + JolpicaClient; tear down after the test."""
-    sqlite = SQLiteStore(str(tmp_path / "smoke.db"))
-    await sqlite.init()
+    store = PostgresStore(_TEST_DATABASE_URL, min_pool=2, max_pool=5)
+    try:
+        await store.init()
+    except Exception:
+        pytest.skip("Postgres not available")
     jolpica = JolpicaClient(
         base_url="https://api.jolpi.ca/ergast/f1",
         rate_limiter=RateLimiter(per_second=2.0),
     )
-    repo = Repository(sqlite)
+    repo = Repository(store)
 
     yield repo, jolpica
 
     await jolpica.close()
-    await sqlite.close()
+    # Clean all tables
+    async with store._pool.acquire() as conn:
+        await conn.execute(
+            """DO $$ DECLARE t TEXT;
+            BEGIN FOR t IN
+                SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+            LOOP EXECUTE 'TRUNCATE TABLE ' || quote_ident(t) || ' CASCADE';
+            END LOOP; END $$;"""
+        )
+    await store.close()
 
 
 async def test_schedule_flows_through_stack(stack):

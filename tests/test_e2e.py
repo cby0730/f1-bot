@@ -2,10 +2,11 @@
 Comprehensive offline E2E test suite for f1-bot.
 Contains 26 scenarios implementing full coverage of all bot features.
 All external calls (Jolpica, OpenF1, and Telegram Bot API) are fully mocked via pytest-httpx.
-SQLite is fully isolated using pytest's tmp_path.
+Postgres is used via the mango_pg dev container.
 """
 
 import json
+import os
 import urllib.parse
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
@@ -14,7 +15,11 @@ import pytest
 from telegram import Update
 
 from f1_bot.config import Settings
-from f1_bot.main import build_app
+
+_TEST_DATABASE_URL = os.environ.get(
+    "F1BOT_DATABASE_URL", "postgresql://mango:mango@localhost:31050/mango"
+)
+from f1_bot.main import build_app  # noqa: E402
 
 # Define Bot Details for Mocking
 TELEGRAM_TOKEN = "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
@@ -72,7 +77,7 @@ def e2e_settings(tmp_path):
     """Returns application settings configured for offline E2E testing."""
     return Settings(
         TELEGRAM_BOT_TOKEN=TELEGRAM_TOKEN,
-        sqlite_path=str(tmp_path / "e2e_f1bot.db"),
+        database_url=_TEST_DATABASE_URL,
         jolpica_base_url="https://api.jolpi.ca/ergast/f1",
         openf1_base_url="https://api.openf1.org/v1",
         jolpica_rate_per_second=100.0,
@@ -189,6 +194,16 @@ async def e2e_app(e2e_settings, httpx_mock):
 
     await app.stop()
     await app.shutdown()
+    # Clean all tables after E2E test
+    store = app.bot_data["store"]
+    async with store._pool.acquire() as conn:
+        await conn.execute(
+            """DO $$ DECLARE t TEXT;
+            BEGIN FOR t IN
+                SELECT tablename FROM pg_tables WHERE schemaname = 'public'
+            LOOP EXECUTE 'TRUNCATE TABLE ' || quote_ident(t) || ' CASCADE';
+            END LOOP; END $$;"""
+        )
 
 
 def make_tg_update(
@@ -346,8 +361,8 @@ async def test_scenario_05_countdown_no_upcoming_races(e2e_app, httpx_mock):
         json=make_mock_schedule(24, current_year=2020),
     )
     repo = e2e_app.bot_data["repo"]
-    await repo.sqlite._conn.execute("DELETE FROM races")
-    await repo.sqlite._conn.commit()
+    async with repo._store._pool.acquire() as conn:
+        await conn.execute("DELETE FROM races")
 
     # Fetch 2020 schedule from mocked API and save to database
     races = await e2e_app.bot_data["jolpica"].get_current_schedule()
@@ -421,10 +436,8 @@ async def test_scenario_09_next_utc_default(e2e_app, httpx_mock):
     """Scenario 9: /next command output defaults to UTC."""
     # Reset user timezone to default / delete preference
     repo = e2e_app.bot_data["repo"]
-    await repo.sqlite._conn.execute(
-        "DELETE FROM user_preferences WHERE telegram_id=?", (MOCK_USER_ID,)
-    )
-    await repo.sqlite._conn.commit()
+    async with repo._store._pool.acquire() as conn:
+        await conn.execute("DELETE FROM user_preferences WHERE telegram_id=$1", MOCK_USER_ID)
 
     update = make_tg_update(e2e_app, "/next")
     await e2e_app.process_update(update)
