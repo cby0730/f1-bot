@@ -30,14 +30,9 @@ COPY --from=builder /app/.venv /app/.venv
 # Copy source
 COPY --from=builder /app/src /app/src
 
-# SQLite data volume
-RUN mkdir -p /data && chown -R botuser:botuser /data
-VOLUME ["/data"]
-
 ENV PATH="/app/.venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    F1BOT_SQLITE_PATH=/data/f1bot.db
+    PYTHONDONTWRITEBYTECODE=1
 
 USER botuser
 

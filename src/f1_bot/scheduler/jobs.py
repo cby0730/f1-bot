@@ -192,6 +192,8 @@ async def _enrich_and_save_openf1_drivers(
         drivers_to_save = []
         d_map = {}
         for d in openf1_drivers:
+            if "driver_number" not in d:
+                continue
             d_id = make_openf1_driver_id(d)
             d_map[d["driver_number"]] = d_id
 

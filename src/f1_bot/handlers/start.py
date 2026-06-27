@@ -26,6 +26,9 @@ _HELP_TEXT = """
 *Info*
 /driver [name] — Driver profile
 /circuit [name] — Circuit info
+
+*Notifications*
+/remind — Manage your session reminders
 """.strip()
 
 _WELCOME = (

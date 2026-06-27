@@ -363,3 +363,56 @@ async def test_get_lap_timings_empty_races_returns_empty(httpx_mock):
     laps = await client.get_lap_timings()
     await client.close()
     assert laps == []
+
+
+# --- Malformed response handling (Fix 2 + Fix 3) ---
+
+
+async def test_get_current_schedule_malformed_response_returns_empty(httpx_mock):
+    """When API response has unexpected structure, return empty list instead of crashing."""
+    httpx_mock.add_response(json={"MRData": {}})
+    client = _client()
+    races = await client.get_current_schedule()
+    await client.close()
+    assert races == []
+
+
+async def test_get_race_results_missing_mrdata_returns_none(httpx_mock):
+    """Completely missing MRData wrapper returns (None, [])."""
+    httpx_mock.add_response(json={})
+    client = _client()
+    race, results = await client.get_race_results("2024", "1")
+    await client.close()
+    assert race is None
+    assert results == []
+
+
+async def test_parse_circuit_missing_circuit_id_uses_fallback(httpx_mock):
+    """When circuitId is absent, parser uses 'unknown' fallback."""
+    httpx_mock.add_response(
+        json={
+            "MRData": {
+                "CircuitTable": {
+                    "Circuits": [{"Location": {"locality": "Test", "country": "Testland"}}]
+                }
+            }
+        }
+    )
+    client = _client()
+    circuits = await client.get_circuits()
+    await client.close()
+    assert len(circuits) == 1
+    assert circuits[0].circuit_id == "unknown"
+    assert circuits[0].name == ""
+
+
+# --- get_lap_timings malformed response ---
+
+
+async def test_get_lap_timings_malformed_first_page_no_crash(httpx_mock):
+    """When first page is malformed (missing MRData keys), return empty list without crash."""
+    httpx_mock.add_response(json={"MRData": {}})
+    client = _client()
+    laps = await client.get_lap_timings()
+    await client.close()
+    assert laps == []

@@ -1,13 +1,27 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: f1bot
+      POSTGRES_USER: f1bot
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "f1bot"]
+      interval: 5s
+      retries: 5
+
   bot:
     image: f1-bot:prod
     build: .
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     env_file: .env
     environment:
-      F1BOT_SQLITE_PATH: /data/f1bot.db
-    volumes:
-      - sqlite_data:/data
+      F1BOT_DATABASE_URL: postgresql://f1bot:${POSTGRES_PASSWORD}@postgres:5432/f1bot
 
 volumes:
-  sqlite_data:
+  pgdata:

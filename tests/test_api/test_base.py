@@ -7,9 +7,11 @@ import pytest
 from pytest_httpx import HTTPXMock
 
 from f1_bot.api.base import (
+    APIClientError,
     APIRateLimitError,
     APIServerError,
     BaseAPIClient,
+    F1BotAPIError,
 )
 from f1_bot.utils.rate_limiter import RateLimiter
 
@@ -28,11 +30,20 @@ async def test_successful_get(httpx_mock: HTTPXMock):
     await client.close()
 
 
-async def test_404_raises_http_status_error(httpx_mock: HTTPXMock):
-    """4xx responses surface as httpx.HTTPStatusError via raise_for_status()."""
+async def test_404_raises_api_client_error(httpx_mock: HTTPXMock):
+    """4xx responses are caught and re-raised as APIClientError."""
     httpx_mock.add_response(status_code=404)
     client = _make_client()
-    with pytest.raises(httpx.HTTPStatusError):
+    with pytest.raises(APIClientError):
+        await client.get("/test")
+    await client.close()
+
+
+async def test_api_client_error_is_subclass_of_f1bot_api_error(httpx_mock: HTTPXMock):
+    """APIClientError inherits from F1BotAPIError for unified exception handling."""
+    httpx_mock.add_response(status_code=404)
+    client = _make_client()
+    with pytest.raises(F1BotAPIError):
         await client.get("/test")
     await client.close()
 

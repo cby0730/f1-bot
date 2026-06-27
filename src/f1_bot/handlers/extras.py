@@ -206,8 +206,8 @@ async def _extras_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
     try:
         if prefix == "drv":
+            standings = await repo.get_driver_standings(season)
             if action == "list":
-                standings = await repo.get_driver_standings(season)
                 if not standings:
                     await query.answer()
                     await query.edit_message_text(
@@ -224,7 +224,6 @@ async def _extras_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     parse_mode=ParseMode.MARKDOWN,
                 )
             elif action == "detail" and target_id:
-                standings = await repo.get_driver_standings(season)
                 standing = next((s for s in standings if s.driver.driver_id == target_id), None)
                 if standing:
                     driver = standing.driver

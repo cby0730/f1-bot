@@ -5,7 +5,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 from telegram import InlineKeyboardMarkup
 
-from f1_bot.handlers.race_data import _laps_callback, laps_handler, pitstops_handler
+from f1_bot.handlers.race_data import (
+    _laps_callback,
+    _pitstops_callback,
+    laps_handler,
+    pitstops_handler,
+)
 from f1_bot.models.race import Circuit, Race
 
 
@@ -75,7 +80,7 @@ async def test_pitstops_handler_no_data_no_schedule():
 
 
 async def test_pitstops_handler_with_data_shows_stops():
-    """When SQLite has pit stop data, it is displayed."""
+    """When Postgres has pit stop data, it is displayed."""
     races = [_race(5)]
     repo = MagicMock()
     repo.get_schedule = AsyncMock(return_value=races)
@@ -99,7 +104,7 @@ async def test_pitstops_handler_with_data_shows_stops():
 
 
 async def test_pitstops_handler_no_stops_shows_no_data():
-    """When SQLite has no pit stops for the round, shows no-data."""
+    """When Postgres has no pit stops for the round, shows no-data."""
     races = [_race(5)]
     repo = MagicMock()
     repo.get_schedule = AsyncMock(return_value=races)
@@ -522,3 +527,118 @@ async def test_laps_callback_invalid_round_value_error():
     assert update.callback_query.answer.call_count == 1
     update.callback_query.answer.assert_called_with(text="Invalid selection", show_alert=True)
     update.callback_query.edit_message_text.assert_not_called()
+
+
+# --- Fix 7: Truncated callback data guards ---
+
+
+async def test_laps_callback_truncated_lap_mode_data():
+    """'lap:5:l' (missing lap_num) should show 'Invalid selection' alert."""
+    from f1_bot.handlers.race_data import _laps_callback
+
+    races = [_race(5)]
+    repo = MagicMock()
+    repo.get_schedule = AsyncMock(return_value=races)
+    repo.get_schedule_bounds = AsyncMock(return_value=_bounds(races))
+    repo.get_drivers_map = AsyncMock(return_value={})
+    repo.get_lap_timings = AsyncMock(
+        return_value=[{"driver_id": "ham", "lap_number": 1, "time": "1:30.0"}]
+    )
+
+    update = MagicMock()
+    update.callback_query.data = "lap:5:l"  # missing lap number (parts[3])
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
+
+    ctx = _context(repo)
+    await _laps_callback(update, ctx)
+
+    update.callback_query.answer.assert_called_with(text="Invalid selection", show_alert=True)
+
+
+async def test_laps_callback_non_integer_page():
+    """'lap:5:d:VER:abc' (non-integer page) should show 'Invalid selection' alert."""
+    from f1_bot.handlers.race_data import _laps_callback
+
+    races = [_race(5)]
+    repo = MagicMock()
+    repo.get_schedule = AsyncMock(return_value=races)
+    repo.get_schedule_bounds = AsyncMock(return_value=_bounds(races))
+    repo.get_drivers_map = AsyncMock(return_value={})
+    repo.get_lap_timings = AsyncMock(
+        return_value=[{"driver_id": "VER", "lap_number": 1, "time": "1:30.0"}]
+    )
+
+    update = MagicMock()
+    update.callback_query.data = "lap:5:d:VER:abc"  # non-integer page
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
+
+    ctx = _context(repo)
+    await _laps_callback(update, ctx)
+
+    update.callback_query.answer.assert_called_with(text="Invalid selection", show_alert=True)
+
+
+# --- None bounds guard ---
+
+
+async def test_pitstops_callback_with_none_last_completed_round():
+    """bounds with None last_completed_round should not crash."""
+    races = [_race(5)]
+    repo = MagicMock()
+    repo.get_schedule = AsyncMock(return_value=races)
+    bounds = _bounds(races)
+    bounds["last_completed_round"] = None
+    repo.get_schedule_bounds = AsyncMock(return_value=bounds)
+    repo.get_pit_stops = AsyncMock(
+        return_value=[{"driver_id": "HAM", "lap": 20, "stop_number": 1, "duration": 24.5}]
+    )
+
+    update = MagicMock()
+    update.callback_query.data = "pit:5"
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
+
+    await _pitstops_callback(update, _context(repo))
+    update.callback_query.answer.assert_called()
+
+
+async def test_laps_callback_with_none_last_completed_round():
+    """bounds with None last_completed_round should not crash _laps_callback."""
+    races = [_race(5)]
+    repo = MagicMock()
+    repo.get_schedule = AsyncMock(return_value=races)
+    bounds = _bounds(races)
+    bounds["last_completed_round"] = None
+    repo.get_schedule_bounds = AsyncMock(return_value=bounds)
+    repo.get_drivers_map = AsyncMock(return_value={})
+    repo.get_lap_timings = AsyncMock(return_value=[])
+
+    update = MagicMock()
+    update.callback_query.data = "lap:5:s"
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
+
+    await _laps_callback(update, _context(repo))
+    update.callback_query.answer.assert_called()
+
+
+# --- StopIteration guard ---
+
+
+async def test_laps_handler_missing_round_in_schedule():
+    """When resolve_default_round returns a round not in the schedule, show no-data gracefully."""
+    races = [_race(5)]
+    repo = MagicMock()
+    repo.get_schedule = AsyncMock(return_value=races)
+    bounds = _bounds(races)
+    bounds["last_completed_round"] = 3
+    repo.get_schedule_bounds = AsyncMock(return_value=bounds)
+    repo.get_drivers_map = AsyncMock(return_value={})
+
+    update = _update()
+    await laps_handler(update, _context(repo))
+
+    text = update.effective_message.reply_text.await_args.args[0]
+    assert "no" in text.lower() or "⚠" in text

@@ -1,3 +1,4 @@
+from collections import defaultdict
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -6,6 +7,7 @@ from f1_bot.formatting.timezone import combine_race_dt, format_dt
 from f1_bot.formatting.timezone import format_countdown as _countdown_str
 from f1_bot.models.constructor import ConstructorStanding
 from f1_bot.models.driver import Driver, DriverStanding
+from f1_bot.models.notification import TIMING_PRESETS
 from f1_bot.models.race import Race
 from f1_bot.models.results import (
     LapTime,
@@ -15,7 +17,7 @@ from f1_bot.models.results import (
     SessionResult,
     SprintResult,
 )
-from f1_bot.utils.sessions import SessionEntry
+from f1_bot.utils.sessions import SESSION_LABELS, SessionEntry
 
 
 def _esc(text: str) -> str:
@@ -516,3 +518,39 @@ def format_circuit_info(circuit, recent_races: list | None = None) -> str:
 
 def no_data_message(what: str = "data") -> str:
     return f"⚠️ No {what} available yet. Try again after the next refresh."
+
+
+# ---------- Notifications ----------
+
+
+def format_notification_message(race: "Race | None", session_key: str, minutes_before: int) -> str:
+    """Format the push notification message sent to users."""
+    label = SESSION_LABELS.get(session_key, session_key)
+    if race:
+        name = _esc(race.name)
+        return f"🔔 *{name}* — {_esc(label)} starts in *{minutes_before} minutes*!"
+    return f"🔔 {_esc(label)} starts in *{minutes_before} minutes*!"
+
+
+def format_reminders_list(subscriptions: list, races: list["Race"], user_tz: str) -> str:
+    """Format the /remind list grouped by round."""
+    if not subscriptions:
+        return "🔔 You have no active reminders.\n\nUse /next and tap 🔔 to set one."
+
+    race_map = {r.round: r for r in races}
+    by_round: dict[int, list] = defaultdict(list)
+    for sub in subscriptions:
+        by_round[sub.round].append(sub)
+
+    lines = ["🔔 *Your Active Reminders*\n"]
+    for rnd in sorted(by_round):
+        race = race_map.get(rnd)
+        race_name = _esc(race.name) if race else f"Round {rnd}"
+        lines.append(f"*R{rnd} — {race_name}*")
+        for sub in sorted(by_round[rnd], key=lambda s: s.fire_at):
+            label = SESSION_LABELS.get(sub.session_key, sub.session_key)
+            time_label = TIMING_PRESETS.get(sub.minutes_before, f"{sub.minutes_before}min")
+            lines.append(f"  • {label} — {time_label} before")
+        lines.append("")
+
+    return "\n".join(lines).strip()

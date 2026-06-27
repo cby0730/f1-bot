@@ -1,6 +1,16 @@
 from telegram.ext import Application
 
-from f1_bot.handlers import errors, extras, race_data, results, schedule, standings, start, timezone
+from f1_bot.handlers import (
+    errors,
+    extras,
+    notifications,
+    race_data,
+    results,
+    schedule,
+    standings,
+    start,
+    timezone,
+)
 
 
 def register_all_handlers(app: Application) -> None:
@@ -11,4 +21,5 @@ def register_all_handlers(app: Application) -> None:
     race_data.register(app)
     extras.register(app)
     timezone.register(app)
+    notifications.register(app)
     app.add_error_handler(errors.error_handler)

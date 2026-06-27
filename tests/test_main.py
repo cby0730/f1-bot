@@ -10,19 +10,26 @@ async def test_post_init_sets_commands():
     app = MagicMock()
     app.bot_data = {
         "settings": MagicMock(),
-        "sqlite": AsyncMock(),
+        "store": AsyncMock(),
         "jolpica": AsyncMock(),
         "openf1": AsyncMock(),
         "repo": AsyncMock(),
     }
     app.bot = AsyncMock()
+    app.job_queue = MagicMock()
 
-    with patch("f1_bot.main.startup_sync", new_callable=AsyncMock) as mock_sync:
+    with (
+        patch("f1_bot.main.startup_sync", new_callable=AsyncMock) as mock_sync,
+        patch(
+            "f1_bot.scheduler.notification_sender.schedule_next_notification",
+            new_callable=AsyncMock,
+        ),
+    ):
         await _post_init(app)
         mock_sync.assert_awaited_once()
 
-    # Verify SQLite DB initialization is called
-    app.bot_data["sqlite"].init.assert_awaited_once()
+    # Verify DB initialization is called
+    app.bot_data["store"].init.assert_awaited_once()
 
     # Verify set_my_commands is called to register autocomplete commands
     app.bot.set_my_commands.assert_awaited_once()
@@ -31,7 +38,7 @@ async def test_post_init_sets_commands():
     args, _ = app.bot.set_my_commands.call_args
     commands = args[0]
 
-    assert len(commands) == 12
+    assert len(commands) == 13
 
     # Assert specific commands exist in the list
     cmd_names = {c.command for c in commands}
@@ -48,21 +55,22 @@ async def test_post_init_sets_commands():
         "laps",
         "driver",
         "circuit",
+        "remind",
     }
     assert cmd_names == expected_commands
 
 
 async def test_post_shutdown_closes_resources():
-    """Verify that _post_shutdown closes SQLiteStore, JolpicaClient, and OpenF1Client."""
+    """Verify that _post_shutdown closes PostgresStore, JolpicaClient, and OpenF1Client."""
     from f1_bot.main import _post_shutdown
 
     app = MagicMock()
     app.bot_data = {
-        "sqlite": AsyncMock(),
+        "store": AsyncMock(),
         "jolpica": AsyncMock(),
         "openf1": AsyncMock(),
     }
     await _post_shutdown(app)
     app.bot_data["jolpica"].close.assert_awaited_once()
     app.bot_data["openf1"].close.assert_awaited_once()
-    app.bot_data["sqlite"].close.assert_awaited_once()
+    app.bot_data["store"].close.assert_awaited_once()

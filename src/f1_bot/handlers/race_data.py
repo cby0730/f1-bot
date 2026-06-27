@@ -56,13 +56,16 @@ async def pitstops_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         return
 
     repo = context.bot_data["repo"]
-    race = next(r for r in races if r.round == rnd)
+    race = next((r for r in races if r.round == rnd), None)
+    if not race:
+        await update.effective_message.reply_text(no_data_message("pit stop data"))
+        return
     stops = await _get_pitstops(repo, season, rnd)
     if not stops:
         await update.effective_message.reply_text(no_data_message("pit stop data"))
         return
 
-    completed = list(range(1, bounds["last_completed_round"] + 1))
+    completed = list(range(1, (bounds.get("last_completed_round") or 0) + 1))
     await update.effective_message.reply_text(
         format_pitstops(race, stops, rnd),
         parse_mode=ParseMode.MARKDOWN,
@@ -93,7 +96,7 @@ async def _pitstops_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
     try:
         stops = await _get_pitstops(repo, season, rnd)
-        completed = list(range(1, bounds["last_completed_round"] + 1))
+        completed = list(range(1, (bounds.get("last_completed_round") or 0) + 1))
         text = format_pitstops(race, stops, rnd) if stops else no_data_message("pit stop data")
         await query.edit_message_text(
             text,
@@ -210,7 +213,10 @@ async def laps_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     repo = context.bot_data["repo"]
-    race = next(r for r in races if r.round == rnd)
+    race = next((r for r in races if r.round == rnd), None)
+    if not race:
+        await update.effective_message.reply_text(no_data_message("lap data"))
+        return
     laps = await _get_laps(repo, season, rnd)
     if not laps:
         await update.effective_message.reply_text(no_data_message("lap data"))
@@ -218,7 +224,7 @@ async def laps_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
 
     drivers_map = await repo.get_drivers_map(season)
 
-    completed = list(range(1, bounds["last_completed_round"] + 1))
+    completed = list(range(1, (bounds.get("last_completed_round") or 0) + 1))
     await update.effective_message.reply_text(
         format_laps_summary(race, laps, drivers_map),
         parse_mode=ParseMode.MARKDOWN,
@@ -253,7 +259,7 @@ async def _laps_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     repo = context.bot_data["repo"]
     race = next((r for r in races if r.round == rnd), None)
-    completed = list(range(1, bounds["last_completed_round"] + 1))
+    completed = list(range(1, (bounds.get("last_completed_round") or 0) + 1))
     drivers_map = await repo.get_drivers_map(season)
 
     try:
@@ -269,7 +275,14 @@ async def _laps_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         elif mode == "l":
             # Per-lap
-            lap_num = int(parts[3])
+            if len(parts) < 4:
+                await query.answer(text="Invalid selection", show_alert=True)
+                return
+            try:
+                lap_num = int(parts[3])
+            except ValueError:
+                await query.answer(text="Invalid selection", show_alert=True)
+                return
             total_laps = max(lap.lap_number for lap in laps)
             lap_num = max(1, min(lap_num, total_laps))
             text = format_laps_by_lap(race, laps, lap_num, total_laps, drivers_map)
@@ -283,8 +296,15 @@ async def _laps_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         elif mode == "d":
             # Per-driver
+            if len(parts) < 5:
+                await query.answer(text="Invalid selection", show_alert=True)
+                return
             driver_id = parts[3]
-            page = int(parts[4])
+            try:
+                page = int(parts[4])
+            except ValueError:
+                await query.answer(text="Invalid selection", show_alert=True)
+                return
             driver_laps = [lap for lap in laps if lap.driver_id == driver_id]
             if not driver_laps:
                 await query.answer(text=f"No data for driver {driver_id}", show_alert=True)

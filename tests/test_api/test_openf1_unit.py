@@ -213,3 +213,108 @@ async def test_get_meetings_parses_gmt_offset(httpx_mock):
     await client.close()
     assert meetings[0].meeting_key == 100
     assert meetings[0].gmt_offset == "02:00:00"
+
+
+# --- Missing required key handling (Fix 4) ---
+
+
+async def test_get_meetings_skips_record_without_meeting_key(httpx_mock):
+    """Records missing required 'meeting_key' should be skipped, not crash."""
+    httpx_mock.add_response(
+        json=[
+            {"meeting_name": "Incomplete"},  # no meeting_key
+            {
+                "meeting_key": 200,
+                "meeting_name": "Valid GP",
+                "year": 2024,
+            },
+        ]
+    )
+    client = _client()
+    meetings = await client.get_meetings(year=2024)
+    await client.close()
+    assert len(meetings) == 1
+    assert meetings[0].meeting_key == 200
+
+
+async def test_get_session_results_skips_record_without_driver_number(httpx_mock):
+    """Records missing 'driver_number' should be skipped."""
+    httpx_mock.add_response(
+        json=[
+            {"position": 1, "duration": 90.0},  # no driver_number
+            {"driver_number": 44, "position": 2, "duration": 91.0},
+        ]
+    )
+    client = _client()
+    results = await client.get_session_results(session_key=9001)
+    await client.close()
+    assert len(results) == 1
+    assert results[0].driver_number == 44
+
+
+# --- Malformed record skipping ---
+
+
+async def test_get_race_control_skips_record_without_session_key(httpx_mock):
+    """Records missing required 'session_key' should be skipped."""
+    httpx_mock.add_response(
+        json=[
+            {"category": "Flag", "message": "incomplete"},
+            {
+                "session_key": 9001,
+                "category": "Flag",
+                "message": "GREEN FLAG",
+                "date": "2024-05-26T13:00:00",
+            },
+        ]
+    )
+    client = _client()
+    messages = await client.get_race_control(session_key=9001)
+    await client.close()
+    assert len(messages) == 1
+    assert messages[0].session_key == 9001
+
+
+async def test_get_pit_skips_record_without_driver_number(httpx_mock):
+    """Records missing 'driver_number' should be skipped."""
+    httpx_mock.add_response(
+        json=[
+            {"lap_number": 10, "pit_duration": 24.0},
+            {"driver_number": 44, "lap_number": 20, "pit_duration": 23.5},
+        ]
+    )
+    client = _client()
+    stops = await client.get_pit(session_key=9001)
+    await client.close()
+    assert len(stops) == 1
+    assert stops[0].driver_id == "44"
+
+
+async def test_get_laps_skips_record_without_driver_number(httpx_mock):
+    """Records missing 'driver_number' should be skipped."""
+    httpx_mock.add_response(
+        json=[
+            {"lap_number": 1, "lap_duration": 92.0},
+            {"driver_number": 1, "lap_number": 1, "lap_duration": 91.5},
+        ]
+    )
+    client = _client()
+    laps = await client.get_laps(session_key=9001)
+    await client.close()
+    assert len(laps) == 1
+    assert laps[0].driver_id == "1"
+
+
+async def test_get_weather_skips_record_without_session_key(httpx_mock):
+    """Records missing 'session_key' should be skipped."""
+    httpx_mock.add_response(
+        json=[
+            {"air_temperature": 25.0},
+            {"session_key": 9001, "air_temperature": 28.0},
+        ]
+    )
+    client = _client()
+    weather = await client.get_weather(session_key=9001)
+    await client.close()
+    assert len(weather) == 1
+    assert weather[0].session_key == 9001

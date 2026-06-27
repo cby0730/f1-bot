@@ -70,7 +70,7 @@ async def _get_session_result(repo, season: int, rnd: int, session_key: str):
     for t in all_types:
         parts = t.split(":")
         if len(parts) == 3 and parts[0] == "session" and parts[1] == session_key:
-            cached = await repo.sqlite.get_results(season, rnd, t)
+            cached = await repo.get_results_by_type(season, rnd, t)
             if cached:
                 return [SessionResult.model_validate(r) for r in cached]
     return []
@@ -298,7 +298,10 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                     await query.answer(text=msg, show_alert=True)
                     return
                 rnd = navigable[-1]
-                race = next(r for r in races if r.round == rnd)
+                race = next((r for r in races if r.round == rnd), None)
+                if not race:
+                    await query.answer(text="Round not found", show_alert=True)
+                    return
 
         text = await _format_results_for_session(repo, season, rnd, race, session_key, drivers_map)
         if not text:
@@ -327,14 +330,15 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 
 async def _format_all_results(repo, season: int, rnd: int, race, drivers_map: dict) -> str | None:
     """Format all available session results for a round into a combined message."""
-    # Stage 1: Try formatting all sessions with all 20 drivers
     all_keys = ("fp1", "fp2", "fp3", "sprint_qualifying", "sprint", "qualifying", "race")
-    sections = []
-    for key in all_keys:
-        text = await _format_results_for_session(repo, season, rnd, race, key, drivers_map)
-        if text:
-            sections.append(text)
 
+    # Pre-fetch all session texts once (avoids re-querying in Stage 2)
+    texts: dict[str, str | None] = {}
+    for key in all_keys:
+        texts[key] = await _format_results_for_session(repo, season, rnd, race, key, drivers_map)
+
+    # Stage 1: All sessions, full results
+    sections = [texts[k] for k in all_keys if texts[k]]
     if not sections:
         return None
 
@@ -342,13 +346,9 @@ async def _format_all_results(repo, season: int, rnd: int, race, drivers_map: di
     if len(combined_text) <= 4096:
         return combined_text
 
-    # Stage 2: Filter out FP1-FP3, formatting only competitive sessions with all 20 drivers
+    # Stage 2: Competitive sessions only (reuse pre-fetched texts)
     comp_keys = ("sprint_qualifying", "sprint", "qualifying", "race")
-    comp_sections = []
-    for key in comp_keys:
-        text = await _format_results_for_session(repo, season, rnd, race, key, drivers_map)
-        if text:
-            comp_sections.append(text)
+    comp_sections = [texts[k] for k in comp_keys if texts[k]]
 
     if not comp_sections:
         return None
@@ -358,7 +358,7 @@ async def _format_all_results(repo, season: int, rnd: int, race, drivers_map: di
     if len(filtered_text) + len(note) <= 4096:
         return filtered_text + note
 
-    # Stage 3: Extreme case: Truncate competitive sessions to top 10
+    # Stage 3: Truncate competitive sessions to top 10 (requires re-format)
     truncated_sections = []
     for key in comp_keys:
         text = await _format_results_for_session(
