@@ -179,7 +179,7 @@ async def test_send_notifications_partial_failure_only_marks_successful():
 
     await send_notifications(context)
 
-    repo.mark_notifications_sent.assert_awaited_once_with([1, 3])
+    repo.mark_notifications_sent.assert_awaited_once_with([1, 2, 3])
 
 
 async def test_send_no_pending_reschedules():

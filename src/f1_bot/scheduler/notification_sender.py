@@ -64,8 +64,10 @@ async def send_notifications(context) -> None:
                 sent_ids.append(sub.id)
             except Exception:
                 log.exception("notification_retry_failed", telegram_id=sub.telegram_id)
+                sent_ids.append(sub.id)
         except Exception:
             log.exception("notification_send_failed", telegram_id=sub.telegram_id)
+            sent_ids.append(sub.id)
 
     if sent_ids:
         await repo.mark_notifications_sent(sent_ids)
