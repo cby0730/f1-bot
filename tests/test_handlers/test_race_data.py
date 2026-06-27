@@ -80,7 +80,7 @@ async def test_pitstops_handler_no_data_no_schedule():
 
 
 async def test_pitstops_handler_with_data_shows_stops():
-    """When SQLite has pit stop data, it is displayed."""
+    """When Postgres has pit stop data, it is displayed."""
     races = [_race(5)]
     repo = MagicMock()
     repo.get_schedule = AsyncMock(return_value=races)
@@ -104,7 +104,7 @@ async def test_pitstops_handler_with_data_shows_stops():
 
 
 async def test_pitstops_handler_no_stops_shows_no_data():
-    """When SQLite has no pit stops for the round, shows no-data."""
+    """When Postgres has no pit stops for the round, shows no-data."""
     races = [_race(5)]
     repo = MagicMock()
     repo.get_schedule = AsyncMock(return_value=races)

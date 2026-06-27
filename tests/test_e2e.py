@@ -471,7 +471,7 @@ async def test_scenario_10_next_custom_timezone(e2e_app, httpx_mock):
 
 @pytest.mark.asyncio
 async def test_scenario_11_results_shows_race_results_from_db(e2e_app, httpx_mock):
-    """Scenario 11: /results shows race results pre-populated in SQLite."""
+    """Scenario 11: /results shows race results pre-populated in Postgres."""
     repo = e2e_app.bot_data["repo"]
     from f1_bot.models.constructor import Constructor
     from f1_bot.models.driver import Driver
@@ -760,7 +760,7 @@ async def test_scenario_21_results_back_button(e2e_app, httpx_mock):
 
 @pytest.mark.asyncio
 async def test_scenario_22_pitstops_from_db(e2e_app, httpx_mock):
-    """Scenario 22: /pitstops shows pit stop data from SQLite."""
+    """Scenario 22: /pitstops shows pit stop data from Postgres."""
     repo = e2e_app.bot_data["repo"]
     from f1_bot.models.results import PitStop
 
@@ -778,7 +778,7 @@ async def test_scenario_22_pitstops_from_db(e2e_app, httpx_mock):
 
 @pytest.mark.asyncio
 async def test_scenario_23_laps_from_db(e2e_app, httpx_mock):
-    """Scenario 23: /laps shows lap data from SQLite."""
+    """Scenario 23: /laps shows lap data from Postgres."""
     repo = e2e_app.bot_data["repo"]
     from f1_bot.models.results import LapTime
 

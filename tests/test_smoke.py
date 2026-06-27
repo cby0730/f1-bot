@@ -59,7 +59,7 @@ async def stack():
 
 
 async def test_schedule_flows_through_stack(stack):
-    """sync_schedule writes to SQLite; Repository.get_schedule reads it back."""
+    """sync_schedule writes to Postgres; Repository.get_schedule reads it back."""
     repo, jolpica = stack
     season = datetime.date.today().year
 

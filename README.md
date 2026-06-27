@@ -40,7 +40,7 @@ Startup / Scheduler → Jolpica + OpenF1 APIs → PostgreSQL
 
 - **SQL-only handlers:** All handler reads go through `Repository` → PostgreSQL. No API calls from handlers.
 - **Startup sync:** `startup_sync()` in `_post_init` fetches schedule, standings, results, pit stops, laps, and session data before the bot starts accepting commands.
-- **Unified polling:** All scheduler jobs share a 1-hour interval (`_POLL_INTERVAL` in `scheduler/manager.py`).
+- **Unified hourly sync:** A single `hourly_sync` job replaces the old 6 staggered jobs. All sync work runs sequentially in one cycle (`_POLL_INTERVAL` = 1 hour in `scheduler/manager.py`).
 - **OpenF1 for laps:** Lap timing data (including sector times) comes from OpenF1, not Jolpica.
 - **PostgreSQL storage:** All data is stored in PostgreSQL via asyncpg. Write operations use explicit transactions for atomicity.
 - **Notification system:** Users subscribe to session reminders via inline keyboard flow. A background `notification_sender` schedules PTB `run_once` jobs based on the earliest pending `fire_at` in the database, auto-rescheduling after each delivery.
@@ -55,7 +55,7 @@ Startup / Scheduler → Jolpica + OpenF1 APIs → PostgreSQL
 src/f1_bot/
 ├── api/            # HTTP clients (Jolpica, OpenF1) with rate limiting
 ├── formatting/     # Message formatting, emoji helpers, timezone display
-├── handlers/       # Telegram command & callback handlers (read-only from SQLite)
+├── handlers/       # Telegram command & callback handlers (read-only from PostgreSQL)
 ├── models/         # Pydantic v2 models (frozen)
 ├── scheduler/      # Background sync jobs and job manager
 ├── storage/        # PostgreSQL store + Repository read layer
@@ -112,10 +112,10 @@ uv run -m f1_bot
 # Start dev PostgreSQL (required for tests)
 docker compose -f docker-compose.dev.yml up -d
 
-# Unit tests only (~411 tests, no network required)
+# Unit tests only (~400 tests, no network required)
 uv run pytest -m "not integration"
 
-# Integration tests (real API calls, requires internet)
+# Integration tests (real API calls, requires internet, ~22 tests)
 uv run pytest -m integration -v
 
 # Single test file
