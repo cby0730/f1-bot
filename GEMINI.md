@@ -11,6 +11,7 @@ uv run pytest -m integration -v           # integration tests (real HTTP, ~22 te
 uv run pytest tests/test_smoke.py -v      # full-stack smoke test
 uv run pytest tests/test_handlers/test_race_data.py -v  # single test file
 uv run ruff check src/ tests/             # lint
+uv run ruff format src/ tests/            # auto-format
 ```
 
 ## Architecture
@@ -54,7 +55,14 @@ Startup / Scheduler → JolpicaClient + OpenF1Client → PostgreSQL
 | `notify:pick:{round}` | Notification session picker |
 | `notify:sess:{session_key}:{round}` | Notification timing presets |
 | `notify:set:{minutes}:{session_key}:{round}` | Toggle subscription on/off |
+| `notify:list:{round}` | List user's reminders for a round |
+| `notify:del:{id}:{round}` | Delete a single reminder |
+| `notify:back` | Return to reminder overview |
 | `notify:clearall:{action}` | Clear all reminders (confirm/yes/cancel) |
+| `drv:detail:{driver_id}` / `drv:list` | Driver profile navigation |
+| `circ:detail:{circuit_id}` / `circ:list` | Circuit info navigation |
+| `tz:region:{region}` / `tz:set:{timezone}` | Timezone picker navigation |
+| `standings:wdc` / `standings:wcc` | Standings WDC/WCC toggle |
 
 ## Key files
 
@@ -78,6 +86,7 @@ Startup / Scheduler → JolpicaClient + OpenF1Client → PostgreSQL
 | `src/f1_bot/models/notification.py` | `NotificationSubscription` model + `TIMING_PRESETS` (15/30/60/180 min) |
 | `src/f1_bot/scheduler/notification_sender.py` | `schedule_next_notification()` + `send_notifications()` — background delivery via PTB JobQueue |
 | `src/f1_bot/handlers/errors.py` | Custom error handler formatting for Telegram command validation / network errors |
+| `src/f1_bot/models/live.py` | OpenF1 live data models (`LivePosition`, `LiveInterval`, `RaceControlMessage`, `WeatherData`) — infrastructure for future live features, currently unused by handlers |
 | `tests/conftest.py` | `pg_store`, `repo` fixtures (dev PostgreSQL) |
 
 ## Known gotchas
@@ -107,6 +116,20 @@ set fields on frozen Pydantic models during test setup (e.g., attaching a `sprin
 
 **Telegram proxy & timeout settings:** The bot supports `TELEGRAM_PROXY`, `TELEGRAM_CONNECT_TIMEOUT`, and `TELEGRAM_READ_TIMEOUT` configured directly from the Pydantic Settings class. PTB creates **two separate httpx clients** — `.request()` for API calls and `.get_updates_request()` for long-polling. Both must be configured with the same proxy/timeout; missing `get_updates_request` silently breaks polling. The proxy is also passed to `JolpicaClient` and `OpenF1Client` via `BaseAPIClient(proxy=...)`.
 
+**PTB_TIMEDELTA environment variable:** The bot runs with `PTB_TIMEDELTA=1` to opt-in to python-telegram-bot's new timedelta-based error handling API, which silences PTBDeprecationWarning warnings. Set before any PTB import — done at the top of `main.py`.
+
+**Shared state via `app.bot_data`:** All shared dependencies (settings, store, repo, jolpica, openf1, notification_limiter) live in `app.bot_data`, not in globals. Every handler and job accesses them through `context.bot_data`.
+
+**JSONB storage pattern:** Most PostgresStore tables store their full model as `data_json JSONB` alongside a few extracted columns (for primary keys and common filters). This avoids schema migrations when models change.
+
+**`BadRequest` silent swallow:** Throughout handlers, `except BadRequest: pass` is common — it handles the case where `edit_message_text` is called with unchanged text (Telegram raises `BadRequest` in that case). Do not remove these.
+
+**Results "All" mode truncation:** When showing all sessions for a round, text can exceed Telegram's 4096-char limit. A 3-stage fallback applies: (1) all sessions full, (2) competitive sessions only, (3) top 10 with truncation note.
+
+**Notification 20-reminder cap:** Users are limited to 20 active reminders. Checked in the handler before saving.
+
+**Schedule audit log:** `save_schedule` in PostgresStore compares old vs. new data and logs changes to `schedule_audit_log`, enabling tracking of F1 schedule changes.
+
 **Laps In-Memory Caching:** `Repository.get_lap_timings()` returns and caches `list[LapTime]` objects (LRU, max 30 entries). This cache prevents CPU-heavy validation overhead on pagination clicks. Ensure new sync saves (e.g. `save_lap_timings()`) invalidate the cache for that round.
 
 **PostgreSQL Transactions:** Write operations use explicit `conn.transaction()` context managers via asyncpg. The store uses a connection pool (`asyncpg.create_pool`).
@@ -130,6 +153,7 @@ set fields on frozen Pydantic models during test setup (e.g., attaching a `sprin
 - Mocking HTTP: use `pytest-httpx` (`httpx_mock` fixture) for unit tests
 - Scheduler tests: import private constants (`_LIVE_WINDOW_MARGIN`, `_RESULTS_WINDOW`) directly for boundary assertions
 - Relative-date fixtures: For testing time-windowed sync functions where `now` is computed internally, use `date.today() - timedelta(days=N)` instead of patching
+- Pre-commit hooks: ruff lint+format, gitleaks (secrets), hadolint (Dockerfile), pip-audit (SCA), trailing-whitespace/end-of-file-fixer
 
 ## APIs
 
