@@ -21,7 +21,6 @@ from f1_bot.utils.sessions import session_entries
 
 log = structlog.get_logger(__name__)
 
-_OPENF1_THROTTLE = 3.5  # seconds between OpenF1 requests
 _LIVE_WINDOW_MARGIN = datetime.timedelta(minutes=30)
 _RESULTS_WINDOW = datetime.timedelta(days=30)
 
@@ -76,9 +75,9 @@ async def sync_results_window(jolpica, repo, races: list, full: bool = False) ->
 
     now = datetime.datetime.now(tz=datetime.UTC)
     cutoff = datetime.datetime.min.replace(tzinfo=datetime.UTC) if full else (now - _RESULTS_WINDOW)
-    season = datetime.date.today().year
 
     for race in races:
+        season = race.season
         race_dt = combine_race_dt(race.date, race.time)
         if race_dt < cutoff:
             continue  # outside sync window
@@ -172,9 +171,9 @@ async def sync_pitstops_window(jolpica, repo, races: list, full: bool = False) -
     """Sync pitstops for completed races within sync window."""
     now = datetime.datetime.now(tz=datetime.UTC)
     cutoff = datetime.datetime.min.replace(tzinfo=datetime.UTC) if full else (now - _RESULTS_WINDOW)
-    season = datetime.date.today().year
 
     for race in races:
+        season = race.season
         race_dt = combine_race_dt(race.date, race.time)
         if race_dt > now or race_dt < cutoff:
             continue
@@ -292,7 +291,6 @@ async def run_driver_id_backfill_migration(openf1, repo) -> None:
             await _enrich_and_save_openf1_drivers(openf1, repo, season, session_key, results_list)
 
             await repo.save_session_results(season, rnd, save_key, results_list)
-            await asyncio.sleep(0.1)
 
         await repo.set_sync_metadata(migration_key)
         log.info("database_migration_backfill_complete")
@@ -300,15 +298,13 @@ async def run_driver_id_backfill_migration(openf1, repo) -> None:
         log.error("database_migration_backfill_failed", error=str(e))
 
 
-async def sync_openf1_session_results(
-    openf1, jolpica, repo, races: list, full: bool = False
-) -> None:
+async def sync_openf1_session_results(openf1, repo, races: list, full: bool = False) -> None:
     """Sync FP1/FP2/FP3/SQ session results from OpenF1."""
     from f1_bot.utils.sessions import match_openf1_session
 
     now = datetime.datetime.now(tz=datetime.UTC)
     cutoff = datetime.datetime.min.replace(tzinfo=datetime.UTC) if full else (now - _RESULTS_WINDOW)
-    season = datetime.date.today().year
+    season = races[0].season if races else datetime.date.today().year
 
     # Fetch all OpenF1 sessions for the year once
     try:
@@ -347,13 +343,12 @@ async def sync_openf1_session_results(
             results = await openf1.get_session_results(session_key=openf1_session.session_key)
             if results:
                 await _enrich_and_save_openf1_drivers(
-                    openf1, repo, season, openf1_session.session_key, results
+                    openf1, repo, race.season, openf1_session.session_key, results
                 )
                 await repo.save_session_results(
-                    season, race.round, f"{entry.key}:{openf1_session.session_key}", results
+                    race.season, race.round, f"{entry.key}:{openf1_session.session_key}", results
                 )
                 log.info("openf1_session_synced", session=entry.key, round=race.round)
-            await asyncio.sleep(_OPENF1_THROTTLE)
         except Exception as e:
             log.warning(
                 "openf1_session_sync_failed", session=entry.key, round=race.round, error=str(e)
@@ -366,7 +361,7 @@ async def sync_openf1_laps(openf1, repo, races: list, full: bool = False) -> Non
 
     now = datetime.datetime.now(tz=datetime.UTC)
     cutoff = datetime.datetime.min.replace(tzinfo=datetime.UTC) if full else (now - _RESULTS_WINDOW)
-    season = datetime.date.today().year
+    season = races[0].season if races else datetime.date.today().year
 
     try:
         openf1_sessions = await openf1.get_sessions(year=season)
@@ -393,9 +388,8 @@ async def sync_openf1_laps(openf1, repo, races: list, full: bool = False) -> Non
         try:
             laps = await openf1.get_laps(session_key=openf1_session.session_key)
             if laps:
-                await repo.save_lap_timings(season, race.round, laps)
+                await repo.save_lap_timings(race.season, race.round, laps)
                 log.info("openf1_laps_synced", round=race.round, count=len(laps))
-            await asyncio.sleep(_OPENF1_THROTTLE)
         except Exception as e:
             log.warning("openf1_laps_sync_failed", round=race.round, error=str(e))
 
@@ -414,18 +408,35 @@ async def startup_sync(jolpica, openf1, repo) -> None:
 
     races = await sync_schedule(jolpica, repo)
     if not races:
-        log.warning("startup_sync_no_schedule")
-        return
+        season = datetime.date.today().year
+        races = await repo.get_schedule(season)
+        if not races:
+            log.warning("startup_sync_no_schedule")
 
-    await sync_results_window(jolpica, repo, races, full=True)
-    await sync_standings(jolpica, repo)
-    await sync_drivers_and_circuits(jolpica, repo)
-    await sync_pitstops_window(jolpica, repo, races, full=True)
-    await sync_openf1_session_results(openf1, jolpica, repo, races, full=True)
-    await sync_openf1_laps(openf1, repo, races, full=True)
+    async def jolpica_group() -> None:
+        if races:
+            await sync_results_window(jolpica, repo, races, full=True)
+            await sync_pitstops_window(jolpica, repo, races, full=True)
+        await sync_standings(jolpica, repo)
+        await sync_drivers_and_circuits(jolpica, repo)
 
-    await repo.set_sync_metadata("startup")
-    log.info("startup_sync_complete")
+    async def openf1_group() -> None:
+        if races:
+            await sync_openf1_session_results(openf1, repo, races, full=True)
+            await sync_openf1_laps(openf1, repo, races, full=True)
+
+    results = await asyncio.gather(jolpica_group(), openf1_group(), return_exceptions=True)
+    failed = False
+    for r in results:
+        if isinstance(r, Exception):
+            log.error("startup_sync_group_failed", error=str(r), exc_info=r)
+            failed = True
+
+    if not failed:
+        await repo.set_sync_metadata("startup")
+        log.info("startup_sync_complete")
+    else:
+        log.warning("startup_sync_incomplete_due_to_failures")
 
 
 async def hourly_sync(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -442,14 +453,27 @@ async def hourly_sync(context: ContextTypes.DEFAULT_TYPE) -> None:
         season = datetime.date.today().year
         races = await repo.get_schedule(season)
 
-    if races:
-        await sync_results_window(jolpica, repo, races)
-        await sync_pitstops_window(jolpica, repo, races)
-        await sync_openf1_session_results(openf1, jolpica, repo, races)
-        await sync_openf1_laps(openf1, repo, races)
+    async def jolpica_group() -> None:
+        if races:
+            await sync_results_window(jolpica, repo, races)
+            await sync_pitstops_window(jolpica, repo, races)
+        await sync_standings(jolpica, repo)
+        await sync_drivers_and_circuits(jolpica, repo)
 
-    await sync_standings(jolpica, repo)
-    await sync_drivers_and_circuits(jolpica, repo)
+    async def openf1_group() -> None:
+        if races:
+            await sync_openf1_session_results(openf1, repo, races)
+            await sync_openf1_laps(openf1, repo, races)
 
-    await repo.set_sync_metadata("hourly")
-    log.info("hourly_sync_complete")
+    results = await asyncio.gather(jolpica_group(), openf1_group(), return_exceptions=True)
+    failed = False
+    for r in results:
+        if isinstance(r, Exception):
+            log.error("hourly_sync_group_failed", error=str(r), exc_info=r)
+            failed = True
+
+    if not failed:
+        await repo.set_sync_metadata("hourly")
+        log.info("hourly_sync_complete")
+    else:
+        log.warning("hourly_sync_incomplete_due_to_failures")

@@ -12,6 +12,7 @@ from f1_bot.scheduler.jobs import (
     _LIVE_WINDOW_MARGIN,
     _is_in_live_window,
     hourly_sync,
+    startup_sync,
     sync_drivers_and_circuits,
     sync_openf1_laps,
     sync_openf1_session_results,
@@ -394,7 +395,7 @@ class TestSyncPitstopsWindow:
         # Only round 5 synced
         assert repo.save_pit_stops.await_count == 1
         args = repo.save_pit_stops.await_args_list[0].args
-        assert args[0] == date.today().year
+        assert args[0] == 2025
         assert args[1] == 5
 
     async def test_error_isolation(self):
@@ -443,11 +444,10 @@ class TestSyncOpenF1SessionResults:
         openf1 = MagicMock()
         openf1.get_sessions = AsyncMock(return_value=[])
         openf1.get_session_results = AsyncMock(return_value=[])
-        jolpica = MagicMock()
         repo = MagicMock()
         repo.save_session_results = AsyncMock()
 
-        await sync_openf1_session_results(openf1, jolpica, repo, [race], full=True)
+        await sync_openf1_session_results(openf1, repo, [race], full=True)
 
         # Should not have fetched results for the live session
         openf1.get_session_results.assert_not_awaited()
@@ -470,13 +470,12 @@ class TestSyncOpenF1SessionResults:
         openf1 = MagicMock()
         openf1.get_sessions = AsyncMock(return_value=[openf1_session_1, openf1_session_2])
         openf1.get_session_results = AsyncMock(side_effect=[Exception("fail"), [MagicMock()]])
-        jolpica = MagicMock()
         repo = MagicMock()
         repo.save_session_results = AsyncMock()
 
         with patch("f1_bot.utils.sessions.match_openf1_session") as mock_match:
             mock_match.side_effect = [openf1_session_1, openf1_session_2]
-            await sync_openf1_session_results(openf1, jolpica, repo, [race], full=True)
+            await sync_openf1_session_results(openf1, repo, [race], full=True)
 
         # Second session should still be saved
         assert repo.save_session_results.await_count == 1
@@ -518,7 +517,7 @@ class TestSyncOpenF1SessionResults:
 
         with patch("f1_bot.utils.sessions.match_openf1_session") as mock_match:
             mock_match.return_value = openf1_session
-            await sync_openf1_session_results(openf1, None, repo, [race], full=True)
+            await sync_openf1_session_results(openf1, repo, [race], full=True)
 
         # Verify that drivers were saved
         repo.save_drivers.assert_awaited_once()
@@ -608,17 +607,177 @@ class TestHourlySync:
             return_value={"last_completed_round": 3}
         )
 
-        with patch(
-            "f1_bot.scheduler.jobs.sync_schedule", new_callable=AsyncMock, return_value=[]
-        ) as mock_sched:
-            with patch(
-                "f1_bot.scheduler.jobs.sync_standings", new_callable=AsyncMock
-            ) as mock_stand:
-                with patch(
-                    "f1_bot.scheduler.jobs.sync_drivers_and_circuits", new_callable=AsyncMock
-                ) as mock_dc:
-                    await hourly_sync(context)
+        with (
+            patch(
+                "f1_bot.scheduler.jobs.sync_schedule", new_callable=AsyncMock, return_value=[]
+            ) as mock_sched,
+            patch("f1_bot.scheduler.jobs.sync_standings", new_callable=AsyncMock) as mock_stand,
+            patch(
+                "f1_bot.scheduler.jobs.sync_drivers_and_circuits", new_callable=AsyncMock
+            ) as mock_dc,
+            patch("f1_bot.scheduler.jobs.sync_results_window", new_callable=AsyncMock),
+            patch("f1_bot.scheduler.jobs.sync_pitstops_window", new_callable=AsyncMock),
+            patch("f1_bot.scheduler.jobs.sync_openf1_session_results", new_callable=AsyncMock),
+            patch("f1_bot.scheduler.jobs.sync_openf1_laps", new_callable=AsyncMock),
+        ):
+            await hourly_sync(context)
 
         mock_sched.assert_awaited_once_with(context.bot_data["jolpica"], context.bot_data["repo"])
         mock_stand.assert_awaited_once()
         mock_dc.assert_awaited_once()
+
+    async def test_hourly_jolpica_failure_does_not_block_openf1(self):
+        """hourly_sync 中 Jolpica 組失敗不影響 OpenF1 組。"""
+        context = MagicMock()
+        context.bot_data = {"jolpica": MagicMock(), "openf1": MagicMock(), "repo": MagicMock()}
+        context.bot_data["repo"].set_sync_metadata = AsyncMock()
+        race = _sample_race()
+
+        with (
+            patch(
+                "f1_bot.scheduler.jobs.sync_schedule", new_callable=AsyncMock, return_value=[race]
+            ),
+            patch(
+                "f1_bot.scheduler.jobs.sync_results_window",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("jolpica down"),
+            ),
+            patch("f1_bot.scheduler.jobs.sync_pitstops_window", new_callable=AsyncMock),
+            patch("f1_bot.scheduler.jobs.sync_standings", new_callable=AsyncMock),
+            patch("f1_bot.scheduler.jobs.sync_drivers_and_circuits", new_callable=AsyncMock),
+            patch(
+                "f1_bot.scheduler.jobs.sync_openf1_session_results", new_callable=AsyncMock
+            ) as mock_sess,
+            patch("f1_bot.scheduler.jobs.sync_openf1_laps", new_callable=AsyncMock) as mock_laps,
+        ):
+            await hourly_sync(context)  # 不應 raise
+
+        mock_sess.assert_awaited_once()
+        mock_laps.assert_awaited_once()
+        context.bot_data["repo"].set_sync_metadata.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# startup_sync
+# ---------------------------------------------------------------------------
+
+
+class TestStartupSync:
+    """Verify startup_sync orchestration with concurrent gather."""
+
+    async def test_calls_all_sync_functions(self):
+        """startup_sync 正常路徑：所有 6 個 sync 子函數都被調用。"""
+        jolpica, openf1, repo = MagicMock(), MagicMock(), MagicMock()
+        repo.set_sync_metadata = AsyncMock()
+        race = _sample_race()
+
+        with (
+            patch("f1_bot.scheduler.jobs.run_driver_id_backfill_migration", new_callable=AsyncMock),
+            patch(
+                "f1_bot.scheduler.jobs.sync_schedule", new_callable=AsyncMock, return_value=[race]
+            ) as mock_sched,
+            patch("f1_bot.scheduler.jobs.sync_results_window", new_callable=AsyncMock) as mock_res,
+            patch("f1_bot.scheduler.jobs.sync_standings", new_callable=AsyncMock) as mock_stand,
+            patch(
+                "f1_bot.scheduler.jobs.sync_drivers_and_circuits", new_callable=AsyncMock
+            ) as mock_dc,
+            patch("f1_bot.scheduler.jobs.sync_pitstops_window", new_callable=AsyncMock) as mock_pit,
+            patch(
+                "f1_bot.scheduler.jobs.sync_openf1_session_results", new_callable=AsyncMock
+            ) as mock_sess,
+            patch("f1_bot.scheduler.jobs.sync_openf1_laps", new_callable=AsyncMock) as mock_laps,
+        ):
+            await startup_sync(jolpica, openf1, repo)
+
+        mock_sched.assert_awaited_once()
+        mock_res.assert_awaited_once()
+        mock_stand.assert_awaited_once()
+        mock_dc.assert_awaited_once()
+        mock_pit.assert_awaited_once()
+        mock_sess.assert_awaited_once()
+        mock_laps.assert_awaited_once()
+        repo.set_sync_metadata.assert_awaited_once_with("startup")
+
+    async def test_jolpica_group_failure_does_not_block_openf1(self):
+        """Jolpica 組內部拋出例外時，OpenF1 組仍然完整執行。"""
+        jolpica, openf1, repo = MagicMock(), MagicMock(), MagicMock()
+        repo.set_sync_metadata = AsyncMock()
+        race = _sample_race()
+
+        with (
+            patch("f1_bot.scheduler.jobs.run_driver_id_backfill_migration", new_callable=AsyncMock),
+            patch(
+                "f1_bot.scheduler.jobs.sync_schedule", new_callable=AsyncMock, return_value=[race]
+            ),
+            patch(
+                "f1_bot.scheduler.jobs.sync_results_window",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("jolpica down"),
+            ),
+            patch("f1_bot.scheduler.jobs.sync_standings", new_callable=AsyncMock),
+            patch("f1_bot.scheduler.jobs.sync_drivers_and_circuits", new_callable=AsyncMock),
+            patch("f1_bot.scheduler.jobs.sync_pitstops_window", new_callable=AsyncMock),
+            patch(
+                "f1_bot.scheduler.jobs.sync_openf1_session_results", new_callable=AsyncMock
+            ) as mock_sess,
+            patch("f1_bot.scheduler.jobs.sync_openf1_laps", new_callable=AsyncMock) as mock_laps,
+        ):
+            await startup_sync(jolpica, openf1, repo)  # 不應 raise
+
+        mock_sess.assert_awaited_once()
+        mock_laps.assert_awaited_once()
+        repo.set_sync_metadata.assert_not_awaited()
+
+    async def test_openf1_group_failure_does_not_block_jolpica(self):
+        """OpenF1 組內部拋出例外時，Jolpica 組仍然完整執行。"""
+        jolpica, openf1, repo = MagicMock(), MagicMock(), MagicMock()
+        repo.set_sync_metadata = AsyncMock()
+        race = _sample_race()
+
+        with (
+            patch("f1_bot.scheduler.jobs.run_driver_id_backfill_migration", new_callable=AsyncMock),
+            patch(
+                "f1_bot.scheduler.jobs.sync_schedule", new_callable=AsyncMock, return_value=[race]
+            ),
+            patch("f1_bot.scheduler.jobs.sync_results_window", new_callable=AsyncMock) as mock_res,
+            patch("f1_bot.scheduler.jobs.sync_standings", new_callable=AsyncMock) as mock_stand,
+            patch(
+                "f1_bot.scheduler.jobs.sync_drivers_and_circuits", new_callable=AsyncMock
+            ) as mock_dc,
+            patch("f1_bot.scheduler.jobs.sync_pitstops_window", new_callable=AsyncMock) as mock_pit,
+            patch(
+                "f1_bot.scheduler.jobs.sync_openf1_session_results",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("openf1 down"),
+            ),
+            patch("f1_bot.scheduler.jobs.sync_openf1_laps", new_callable=AsyncMock),
+        ):
+            await startup_sync(jolpica, openf1, repo)  # 不應 raise
+
+        mock_res.assert_awaited_once()
+        mock_stand.assert_awaited_once()
+        mock_dc.assert_awaited_once()
+        mock_pit.assert_awaited_once()
+        repo.set_sync_metadata.assert_not_awaited()
+
+    async def test_startup_sync_uses_db_fallback_when_schedule_fails(self):
+        """When sync_schedule returns empty, startup_sync falls back to DB cache."""
+        jolpica, openf1, repo = MagicMock(), MagicMock(), MagicMock()
+        repo.set_sync_metadata = AsyncMock()
+        race = _sample_race()
+        repo.get_schedule = AsyncMock(return_value=[race])
+
+        with (
+            patch("f1_bot.scheduler.jobs.run_driver_id_backfill_migration", new_callable=AsyncMock),
+            patch("f1_bot.scheduler.jobs.sync_schedule", new_callable=AsyncMock, return_value=[]),
+            patch("f1_bot.scheduler.jobs.sync_results_window", new_callable=AsyncMock) as mock_res,
+            patch("f1_bot.scheduler.jobs.sync_pitstops_window", new_callable=AsyncMock),
+            patch("f1_bot.scheduler.jobs.sync_standings", new_callable=AsyncMock),
+            patch("f1_bot.scheduler.jobs.sync_drivers_and_circuits", new_callable=AsyncMock),
+            patch("f1_bot.scheduler.jobs.sync_openf1_session_results", new_callable=AsyncMock),
+            patch("f1_bot.scheduler.jobs.sync_openf1_laps", new_callable=AsyncMock),
+        ):
+            await startup_sync(jolpica, openf1, repo)
+
+        repo.get_schedule.assert_awaited_once()
+        mock_res.assert_awaited_once()  # fallback races still used for results sync

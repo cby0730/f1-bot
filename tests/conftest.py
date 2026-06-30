@@ -1,6 +1,8 @@
 """Shared fixtures for all test modules."""
 
-import os
+import os  # noqa: I001
+
+os.environ["PTB_TIMEDELTA"] = "1"
 
 import pytest
 import pytest_asyncio

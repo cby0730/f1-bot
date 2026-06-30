@@ -1,3 +1,7 @@
+import os  # noqa: I001
+
+os.environ["PTB_TIMEDELTA"] = "1"
+
 import structlog
 from telegram.ext import Application
 from telegram.request import HTTPXRequest

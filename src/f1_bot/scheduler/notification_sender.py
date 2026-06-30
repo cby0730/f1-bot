@@ -60,7 +60,12 @@ async def send_notifications(context) -> None:
             sent_ids.append(sub.id)
         except RetryAfter as e:
             log.warning("rate_limited", retry_after=e.retry_after)
-            await asyncio.sleep(e.retry_after)
+            delay = (
+                e.retry_after.total_seconds()
+                if hasattr(e.retry_after, "total_seconds")
+                else e.retry_after
+            )
+            await asyncio.sleep(delay)
             try:
                 await bot.send_message(
                     chat_id=sub.telegram_id, text=msg, parse_mode=ParseMode.MARKDOWN
