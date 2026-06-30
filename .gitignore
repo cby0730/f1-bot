@@ -36,3 +36,31 @@ package-lock.json
 
 # Serena
 .serena/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDEs and editors
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environments and local settings
+.env.*
+env/
+ENV/
+*.pem
+*.key
+secrets.toml
+
+# Logs
+*.log
+pip-log.txt
