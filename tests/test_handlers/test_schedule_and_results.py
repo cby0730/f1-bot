@@ -170,11 +170,21 @@ async def test_next_handler_callback_data_format():
 
 
 async def test_results_handler_shows_last_completed_round():
+    r_prev = Race(
+        season=date.today().year,
+        round=14,
+        name="Dutch Grand Prix",
+        circuit=_circuit(),
+        date=_past_date(20),
+        time=time(13, 0),
+        fp1=RaceSession(name="FP1", date=_past_date(22), time=time(11, 30)),
+        qualifying=RaceSession(name="Qualifying", date=_past_date(21), time=time(14, 0)),
+    )
     r1 = _past_race()
     r1.round = 15
     repo = MagicMock()
-    repo.get_schedule = AsyncMock(return_value=[r1])
-    repo.get_schedule_bounds = AsyncMock(return_value=_bounds([r1]))
+    repo.get_schedule = AsyncMock(return_value=[r_prev, r1])
+    repo.get_schedule_bounds = AsyncMock(return_value=_bounds([r_prev, r1]))
     repo.get_race_results = AsyncMock(
         return_value=[
             {
@@ -426,11 +436,48 @@ async def test_get_completed_rounds_for_session():
         qualifying=RaceSession(name="Qualifying", date=date(2026, 3, 31), time=time(14, 0)),
     )
     races = [r1, r2, r3]
-    bounds = {"last_completed_round": 3}
 
-    assert _get_completed_rounds_for_session(races, bounds, "fp3") == [1, 3]
-    assert _get_completed_rounds_for_session(races, bounds, "sprint") == [2]
-    assert _get_completed_rounds_for_session(races, bounds, "race") == [1, 2, 3]
+    assert _get_completed_rounds_for_session(races, "fp3") == [1, 3]
+    assert _get_completed_rounds_for_session(races, "sprint") == [2]
+    assert _get_completed_rounds_for_session(races, "race") == [1, 2, 3]
+
+
+async def test_get_completed_rounds_qualifying_before_race():
+    """Round with completed qualifying but pending race is navigable."""
+    from f1_bot.handlers.results import _get_completed_rounds_for_session
+
+    c = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
+    today = date.today()
+    # R1: fully completed (past)
+    r1 = Race(
+        season=2026,
+        round=1,
+        name="Race 1",
+        circuit=c,
+        date=today - timedelta(days=14),
+        time=time(13, 0),
+        fp1=RaceSession(name="FP1", date=today - timedelta(days=16), time=time(11, 30)),
+        qualifying=RaceSession(name="Q", date=today - timedelta(days=15), time=time(14, 0)),
+    )
+    # R2: qualifying done yesterday, race tomorrow
+    r2 = Race(
+        season=2026,
+        round=2,
+        name="Race 2",
+        circuit=c,
+        date=today + timedelta(days=1),
+        time=time(13, 0),
+        fp1=RaceSession(name="FP1", date=today - timedelta(days=2), time=time(11, 30)),
+        qualifying=RaceSession(name="Q", date=today - timedelta(days=1), time=time(14, 0)),
+    )
+    races = [r1, r2]
+
+    # qualifying completed for both rounds
+    assert _get_completed_rounds_for_session(races, "qualifying") == [1, 2]
+    # "all" includes R2 because FP1 and Q are completed
+    assert _get_completed_rounds_for_session(races, "all") == [1, 2]
+    # race only completed for R1
+    assert _get_completed_rounds_for_session(races, "race") == [1]
 
 
 def test_results_filtered_keyboard_custom_denominator():
@@ -548,7 +595,7 @@ async def test_results_callback_auto_jump_session(monkeypatch):
     args, kwargs = update.callback_query.edit_message_text.call_args
     markup = kwargs["reply_markup"]
     nav_row = markup.inline_keyboard[0]
-    assert nav_row[0].text == "R7/8"
+    assert nav_row[0].text == "R7/7"
 
 
 async def test_results_callback_fp2_fallback_routing():
@@ -591,7 +638,7 @@ async def test_results_callback_fp2_fallback_routing():
 
     assert update.callback_query.answer.call_count == 1
     update.callback_query.answer.assert_called_with(
-        text="No FP2 data yet this season 🏎", show_alert=True
+        text="No FP2 data yet this season", show_alert=True
     )
     update.callback_query.edit_message_text.assert_not_called()
 

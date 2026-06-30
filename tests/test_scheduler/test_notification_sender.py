@@ -3,7 +3,7 @@
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
-from telegram.error import Forbidden
+from telegram.error import Forbidden, RetryAfter
 
 from f1_bot.models.notification import NotificationSubscription
 from f1_bot.scheduler.notification_sender import schedule_next_notification, send_notifications
@@ -128,7 +128,7 @@ async def test_send_notifications_handles_forbidden():
 
 
 async def test_send_notifications_partial_failure_only_marks_successful():
-    """When some sends fail, only successful + forbidden IDs are marked sent."""
+    """When some sends fail, only successful IDs are marked sent; failed IDs survive for retry."""
     now = datetime.now(UTC)
     subs = [
         NotificationSubscription(
@@ -179,7 +179,8 @@ async def test_send_notifications_partial_failure_only_marks_successful():
 
     await send_notifications(context)
 
-    repo.mark_notifications_sent.assert_awaited_once_with([1, 2, 3])
+    # id=2 failed with transient error — must NOT be deleted, will retry next cycle
+    repo.mark_notifications_sent.assert_awaited_once_with([1, 3])
 
 
 async def test_send_no_pending_reschedules():
@@ -232,3 +233,78 @@ async def test_send_with_rate_limiter():
     await send_notifications(context)
 
     limiter.acquire.assert_awaited_once()
+
+
+async def test_send_retry_after_second_failure_not_marked():
+    """When RetryAfter retry also fails, notification survives for next cycle."""
+    now = datetime.now(UTC)
+    sub = NotificationSubscription(
+        id=7,
+        telegram_id=100,
+        season=2026,
+        round=10,
+        session_key="race",
+        minutes_before=30,
+        fire_at=now,
+    )
+
+    repo = AsyncMock()
+    repo.get_pending_notifications = AsyncMock(return_value=[sub])
+    repo.mark_notifications_sent = AsyncMock()
+    repo.get_schedule = AsyncMock(return_value=[])
+    repo.get_next_fire_at = AsyncMock(return_value=None)
+
+    bot = AsyncMock()
+    bot.send_message = AsyncMock(
+        side_effect=[RetryAfter(retry_after=1), Exception("still failing")]
+    )
+
+    jq = MagicMock()
+    jq.get_jobs_by_name = MagicMock(return_value=[])
+
+    context = MagicMock()
+    context.bot_data = {"repo": repo}
+    context.bot = bot
+    context.job_queue = jq
+
+    await send_notifications(context)
+
+    # Failed notification must NOT be deleted — row survives for retry
+    repo.mark_notifications_sent.assert_not_awaited()
+
+
+async def test_send_schedule_cache_avoids_duplicate_queries():
+    """Schedule is fetched once per season, not once per notification."""
+    now = datetime.now(UTC)
+    subs = [
+        NotificationSubscription(
+            id=i,
+            telegram_id=100 + i,
+            season=2026,
+            round=10,
+            session_key="race",
+            minutes_before=30,
+            fire_at=now,
+        )
+        for i in range(1, 4)
+    ]
+
+    repo = AsyncMock()
+    repo.get_pending_notifications = AsyncMock(return_value=subs)
+    repo.mark_notifications_sent = AsyncMock()
+    repo.get_schedule = AsyncMock(return_value=[])
+    repo.get_next_fire_at = AsyncMock(return_value=None)
+
+    bot = AsyncMock()
+    jq = MagicMock()
+    jq.get_jobs_by_name = MagicMock(return_value=[])
+
+    context = MagicMock()
+    context.bot_data = {"repo": repo}
+    context.bot = bot
+    context.job_queue = jq
+
+    await send_notifications(context)
+
+    # 3 notifications, all season=2026 — schedule fetched only once
+    repo.get_schedule.assert_awaited_once_with(2026)

@@ -3,7 +3,15 @@
 from datetime import UTC, date, datetime, time, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from f1_bot.handlers.notifications import _notify_pick, _notify_sess, _notify_set, _remind_command
+from f1_bot.handlers.notifications import (
+    MAX_REMINDERS,
+    _build_remind_view,
+    _notify_del,
+    _notify_pick,
+    _notify_sess,
+    _notify_set,
+    _remind_command,
+)
 from f1_bot.models.notification import NotificationSubscription
 from f1_bot.models.race import Circuit, Race, RaceSession
 
@@ -63,7 +71,7 @@ async def test_remind_empty(repo):
 
 
 async def test_remind_with_subscriptions(repo):
-    """When reminders exist, /remind shows grouped list."""
+    """Single-round auto-skips to State B with delete buttons."""
     race = _make_race()
     await repo.save_schedule(2026, [race])
 
@@ -87,10 +95,12 @@ async def test_remind_with_subscriptions(repo):
 
     await _remind_command(update, context)
 
-    text = update.effective_message.reply_text.call_args[0][0]
-    assert "Active Reminders" in text
-    assert "Race" in text
-    assert "30min" in text
+    call_args = update.effective_message.reply_text.call_args
+    text = call_args[0][0]
+    assert "R16" in text
+    markup = call_args.kwargs.get("reply_markup") or call_args[1].get("reply_markup")
+    buttons = [btn.text for row in markup.inline_keyboard for btn in row]
+    assert any("Race" in b and "30min" in b for b in buttons)
 
 
 async def test_notify_pick_shows_sessions():
@@ -214,6 +224,179 @@ async def test_notify_set_unsubscribes(repo):
     update.callback_query.answer.assert_awaited_once()
     answer_text = update.callback_query.answer.call_args[0][0]
     assert "Reminder removed" in answer_text
+
+
+async def test_build_remind_view_single_round_auto_skip(repo):
+    """Single round skips State A and shows State B directly (no Back button)."""
+    race = _make_race(round_num=10)
+    await repo.save_schedule(2026, [race])
+
+    fire_at = datetime.now(UTC) + timedelta(hours=1)
+    for sk, mins in [("race", 30), ("qualifying", 60)]:
+        await repo.subscribe_notification(
+            NotificationSubscription(
+                telegram_id=100,
+                season=2026,
+                round=10,
+                session_key=sk,
+                minutes_before=mins,
+                fire_at=fire_at,
+            )
+        )
+
+    text, kb = await _build_remind_view(repo, 100)
+
+    assert "R10" in text
+    buttons = [btn.text for row in kb.inline_keyboard for btn in row]
+    assert any("🗑" in b for b in buttons)
+    cb_data = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+    assert all(d.startswith("notify:del:") for d in cb_data)
+    assert not any("Back" in b for b in buttons)
+
+
+async def test_build_remind_view_multi_round_state_a(repo):
+    """Multiple rounds show State A overview with per-round buttons."""
+    races = [_make_race(round_num=10), _make_race(round_num=11, days_ahead=17)]
+    await repo.save_schedule(2026, races)
+
+    fire_at = datetime.now(UTC) + timedelta(hours=1)
+    for rnd in [10, 11]:
+        await repo.subscribe_notification(
+            NotificationSubscription(
+                telegram_id=100,
+                season=2026,
+                round=rnd,
+                session_key="race",
+                minutes_before=30,
+                fire_at=fire_at,
+            )
+        )
+
+    text, kb = await _build_remind_view(repo, 100)
+
+    assert "Active Reminders" in text
+    cb_data = [btn.callback_data for row in kb.inline_keyboard for btn in row]
+    assert any(d.startswith("notify:list:") for d in cb_data)
+    assert any("clearall" in d for d in cb_data)
+
+
+async def test_notify_del_removes_and_rerenders(repo):
+    """Deleting a reminder re-renders State B for the same round."""
+    race = _make_race(round_num=10)
+    await repo.save_schedule(2026, [race])
+
+    fire_at = datetime.now(UTC) + timedelta(hours=1)
+    sub1 = NotificationSubscription(
+        telegram_id=100,
+        season=2026,
+        round=10,
+        session_key="race",
+        minutes_before=30,
+        fire_at=fire_at,
+    )
+    sub2 = NotificationSubscription(
+        telegram_id=100,
+        season=2026,
+        round=10,
+        session_key="qualifying",
+        minutes_before=60,
+        fire_at=fire_at,
+    )
+    sub1_id = await repo.subscribe_notification(sub1)
+    await repo.subscribe_notification(sub2)
+
+    update = _make_update(f"notify:del:{sub1_id}:10", user_id=100)
+    jq = MagicMock()
+    jq.get_jobs_by_name = MagicMock(return_value=[])
+    jq.run_once = MagicMock()
+    context = _make_context(repo=repo, jq=jq)
+
+    await _notify_del(update, context)
+
+    update.callback_query.answer.assert_awaited_once()
+    assert "removed" in update.callback_query.answer.call_args[0][0].lower()
+    call_kwargs = update.callback_query.edit_message_text.call_args
+    markup = call_kwargs.kwargs.get("reply_markup") or call_kwargs[1].get("reply_markup")
+    buttons = [btn.text for row in markup.inline_keyboard for btn in row]
+    assert any("Qualifying" in b for b in buttons)
+    assert not any("Race — 30min" in b for b in buttons)
+
+
+async def test_notify_del_last_shows_empty(repo):
+    """Deleting the last reminder shows the empty message."""
+    race = _make_race(round_num=10)
+    await repo.save_schedule(2026, [race])
+
+    fire_at = datetime.now(UTC) + timedelta(hours=1)
+    sub = NotificationSubscription(
+        telegram_id=100,
+        season=2026,
+        round=10,
+        session_key="race",
+        minutes_before=30,
+        fire_at=fire_at,
+    )
+    sub_id = await repo.subscribe_notification(sub)
+
+    update = _make_update(f"notify:del:{sub_id}:10", user_id=100)
+    jq = MagicMock()
+    jq.get_jobs_by_name = MagicMock(return_value=[])
+    jq.run_once = MagicMock()
+    context = _make_context(repo=repo, jq=jq)
+
+    await _notify_del(update, context)
+
+    call_kwargs = update.callback_query.edit_message_text.call_args
+    text = call_kwargs[0][0]
+    assert "no active reminders" in text.lower()
+
+
+async def test_notify_set_cap_rejects_at_limit(repo):
+    """Subscribing at MAX_REMINDERS shows an alert and does not create."""
+    race = _make_race(round_num=10)
+    await repo.save_schedule(2026, [race])
+
+    fire_at = datetime.now(UTC) + timedelta(hours=1)
+    for i in range(MAX_REMINDERS):
+        await repo.subscribe_notification(
+            NotificationSubscription(
+                telegram_id=100,
+                season=2026,
+                round=10,
+                session_key=f"session_{i}",
+                minutes_before=15 + i,
+                fire_at=fire_at,
+            )
+        )
+
+    update = _make_update("notify:set:30:race:10", user_id=100)
+    context = _make_context(repo=repo)
+
+    await _notify_set(update, context)
+
+    update.callback_query.answer.assert_awaited_once()
+    answer_text = update.callback_query.answer.call_args[0][0]
+    assert "Limit reached" in answer_text
+    assert update.callback_query.answer.call_args.kwargs.get("show_alert") is True
+
+
+async def test_delete_notification_by_id_ownership_guard(pg_store):
+    """Cannot delete another user's notification by ID."""
+    sub = NotificationSubscription(
+        telegram_id=100,
+        season=2026,
+        round=10,
+        session_key="race",
+        minutes_before=30,
+        fire_at=datetime.now(UTC) + timedelta(hours=1),
+    )
+    sub_id = await pg_store.save_notification(sub)
+
+    deleted = await pg_store.delete_notification_by_id(sub_id, telegram_id=999)
+    assert deleted is False
+
+    deleted = await pg_store.delete_notification_by_id(sub_id, telegram_id=100)
+    assert deleted is True
 
 
 async def test_bell_button_in_next_overview_keyboard():

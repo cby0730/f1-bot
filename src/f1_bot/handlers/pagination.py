@@ -287,53 +287,6 @@ def results_filtered_keyboard(
     return InlineKeyboardMarkup(rows)
 
 
-# Also keep the old session_result_keyboard for backward compat handling
-def session_result_keyboard(
-    current_key: str,
-    current_round: int,
-    navigable_rounds: list[int],
-) -> InlineKeyboardMarkup:
-    """Legacy 3-row keyboard for /sessionresult — kept for backward compat."""
-    _P = [("fp1", "FP1"), ("fp2", "FP2"), ("fp3", "FP3")]
-    _C = [("sprint_qualifying", "SQ"), ("sprint", "SPR"), ("qualifying", "Q"), ("race", "Race")]
-
-    def _btn(key: str, label: str) -> InlineKeyboardButton:
-        display = f"·{label}·" if key == current_key else label
-        return InlineKeyboardButton(display, callback_data=f"sr:{key}:{current_round}")
-
-    practice_row = [_btn(key, label) for key, label in _P]
-    competitive_row = [_btn(key, label) for key, label in _C]
-
-    total = len(navigable_rounds)
-    nav_row: list[InlineKeyboardButton] = []
-    if total > 0:
-        try:
-            idx = navigable_rounds.index(current_round)
-        except ValueError:
-            idx = total - 1
-        if idx > 0:
-            prev_round = navigable_rounds[idx - 1]
-            nav_row.append(
-                InlineKeyboardButton("◀", callback_data=f"sr:{current_key}:{prev_round}")
-            )
-        nav_row.append(
-            InlineKeyboardButton(
-                f"R{current_round}/{navigable_rounds[-1]}",
-                callback_data=f"sr:{current_key}:{current_round}",
-            )
-        )
-        if idx < total - 1:
-            next_round = navigable_rounds[idx + 1]
-            nav_row.append(
-                InlineKeyboardButton("▶", callback_data=f"sr:{current_key}:{next_round}")
-            )
-
-    rows = [practice_row, competitive_row]
-    if nav_row:
-        rows.append(nav_row)
-    return InlineKeyboardMarkup(rows)
-
-
 async def load_schedule_and_bounds(context) -> tuple[list, dict, int]:
     """Load schedule from cache and compute season bounds.
 

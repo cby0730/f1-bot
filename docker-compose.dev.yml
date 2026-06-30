@@ -6,8 +6,8 @@ services:
       POSTGRES_DB: mango
       POSTGRES_USER: mango
       POSTGRES_PASSWORD: mango
-    ports:
-      - "31050:5432"
+    network_mode: host
+    command: ["postgres", "-c", "port=31055"]
     volumes:
       - mango_pgdata:/var/lib/postgresql/data
 

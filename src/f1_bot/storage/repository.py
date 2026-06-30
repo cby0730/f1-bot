@@ -59,8 +59,6 @@ class Repository:
         reference_dt: datetime | None = None,
         races: list[Race] | None = None,
     ) -> dict:
-        from datetime import datetime
-
         from f1_bot.formatting.timezone import combine_race_dt
 
         if reference_dt is None:
@@ -115,7 +113,7 @@ class Repository:
         return []
 
     async def save_driver_standings(
-        self, season: int, standings: list[DriverStanding], round_after: int = 0, ttl: int = 21600
+        self, season: int, standings: list[DriverStanding], round_after: int = 0
     ) -> None:
         data = [s.model_dump(mode="json") for s in standings]
         await self._store.save_driver_standings(season, round_after, data)
@@ -131,7 +129,6 @@ class Repository:
         season: int,
         standings: list[ConstructorStanding],
         round_after: int = 0,
-        ttl: int = 21600,
     ) -> None:
         data = [s.model_dump(mode="json") for s in standings]
         await self._store.save_constructor_standings(season, round_after, data)
@@ -141,28 +138,22 @@ class Repository:
     async def get_race_results(self, season: int, round_num: int) -> list | None:
         return await self._store.get_results(season, round_num, "race")
 
-    async def save_race_results(
-        self, season: int, round_num: int, results: list, ttl: int = 86400
-    ) -> None:
-        data = [r.model_dump(mode="json") if hasattr(r, "model_dump") else r for r in results]
+    async def save_race_results(self, season: int, round_num: int, results: list) -> None:
+        data = [r.model_dump(mode="json") for r in results]
         await self._store.save_results(season, round_num, "race", data)
 
     async def get_qualifying_results(self, season: int, round_num: int) -> list | None:
         return await self._store.get_results(season, round_num, "qualifying")
 
-    async def save_qualifying_results(
-        self, season: int, round_num: int, results: list, ttl: int = 86400
-    ) -> None:
-        data = [r.model_dump(mode="json") if hasattr(r, "model_dump") else r for r in results]
+    async def save_qualifying_results(self, season: int, round_num: int, results: list) -> None:
+        data = [r.model_dump(mode="json") for r in results]
         await self._store.save_results(season, round_num, "qualifying", data)
 
     async def get_sprint_results(self, season: int, round_num: int) -> list | None:
         return await self._store.get_results(season, round_num, "sprint")
 
-    async def save_sprint_results(
-        self, season: int, round_num: int, results: list, ttl: int = 86400
-    ) -> None:
-        data = [r.model_dump(mode="json") if hasattr(r, "model_dump") else r for r in results]
+    async def save_sprint_results(self, season: int, round_num: int, results: list) -> None:
+        data = [r.model_dump(mode="json") for r in results]
         await self._store.save_results(season, round_num, "sprint", data)
 
     async def get_session_results(
@@ -176,9 +167,8 @@ class Repository:
         round_num: int,
         session_key: str | int,
         results: list,
-        ttl: int = 86400,
     ) -> None:
-        data = [r.model_dump(mode="json") if hasattr(r, "model_dump") else r for r in results]
+        data = [r.model_dump(mode="json") for r in results]
         await self._store.save_results(season, round_num, f"session:{session_key}", data)
 
     # --- Lap Timings ---
@@ -200,7 +190,7 @@ class Repository:
         return []
 
     async def save_lap_timings(self, season: int, round_num: int, timings: list) -> None:
-        data = [t.model_dump(mode="json") if hasattr(t, "model_dump") else t for t in timings]
+        data = [t.model_dump(mode="json") for t in timings]
         await self._store.save_lap_timings(season, round_num, data)
         key = (season, round_num)
         if key in self._laps_cache:
@@ -212,7 +202,7 @@ class Repository:
         return await self._store.get_pit_stops(season, round_num)
 
     async def save_pit_stops(self, season: int, round_num: int, stops: list) -> None:
-        data = [s.model_dump(mode="json") if hasattr(s, "model_dump") else s for s in stops]
+        data = [s.model_dump(mode="json") for s in stops]
         await self._store.save_pit_stops(season, round_num, data)
 
     # --- User Preferences ---
@@ -230,7 +220,7 @@ class Repository:
     # --- Drivers / Circuits ---
 
     async def save_drivers(self, season: int, drivers: list) -> None:
-        data = [d.model_dump(mode="json") if hasattr(d, "model_dump") else d for d in drivers]
+        data = [d.model_dump(mode="json") for d in drivers]
         await self._store.save_drivers(data)
 
     async def get_drivers_map(self, season: int) -> dict:
@@ -289,7 +279,7 @@ class Repository:
         return result
 
     async def save_circuits(self, season: int, circuits: list) -> None:
-        data = [c.model_dump(mode="json") if hasattr(c, "model_dump") else c for c in circuits]
+        data = [c.model_dump(mode="json") for c in circuits]
         await self._store.save_circuits(data)
 
     # --- Sync Metadata ---
@@ -338,6 +328,9 @@ class Repository:
         return await self._store.delete_notification(
             telegram_id, season, round_num, session_key, minutes_before
         )
+
+    async def unsubscribe_notification_by_id(self, notification_id: int, telegram_id: int) -> bool:
+        return await self._store.delete_notification_by_id(notification_id, telegram_id)
 
     async def get_user_notifications(
         self, telegram_id: int, season: int

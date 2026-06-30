@@ -35,14 +35,19 @@ class APIRateLimitError(F1BotAPIError):
 class BaseAPIClient:
     """Async HTTP client with rate limiting, 429 handling, and structured logging."""
 
-    def __init__(self, base_url: str, rate_limiter: RateLimiter) -> None:
+    def __init__(
+        self, base_url: str, rate_limiter: RateLimiter, *, proxy: str | None = None
+    ) -> None:
         self._base_url = base_url.rstrip("/")
         self._rate_limiter = rate_limiter
-        self._client = httpx.AsyncClient(
-            base_url=self._base_url,
-            timeout=httpx.Timeout(30.0, connect=10.0),
-            headers={"User-Agent": "f1-bot/0.0.6 (github.com/billy/f1-bot)"},
-        )
+        client_kwargs: dict = {
+            "base_url": self._base_url,
+            "timeout": httpx.Timeout(30.0, connect=10.0),
+            "headers": {"User-Agent": "f1-bot/0.0.6 (github.com/billy/f1-bot)"},
+        }
+        if proxy:
+            client_kwargs["proxy"] = proxy
+        self._client = httpx.AsyncClient(**client_kwargs)
 
     async def close(self) -> None:
         await self._client.aclose()
@@ -81,5 +86,4 @@ class BaseAPIClient:
             log.warning("api_client_error", path=path, status=response.status_code)
             raise APIClientError(f"{path} returned {response.status_code}")
 
-        response.raise_for_status()
         return response.json()

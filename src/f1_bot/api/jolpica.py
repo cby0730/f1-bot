@@ -62,11 +62,24 @@ def _parse_session(raw: dict | None, name: str) -> RaceSession | None:
     return RaceSession(name=name, date=session_date, time=session_time)
 
 
+def _parse_race(r: dict) -> Race:
+    return Race(
+        season=int(r["season"]),
+        round=int(r["round"]),
+        name=r["raceName"],
+        circuit=_parse_circuit(r["Circuit"]),
+        date=date.fromisoformat(r["date"]),
+        time=dt_time.fromisoformat(r["time"].rstrip("Z")) if r.get("time") else None,
+    )
+
+
 class JolpicaClient(BaseAPIClient):
     """Client for the Jolpica-F1 API (Ergast successor)."""
 
-    def __init__(self, base_url: str, rate_limiter: RateLimiter) -> None:
-        super().__init__(base_url, rate_limiter)
+    def __init__(
+        self, base_url: str, rate_limiter: RateLimiter, *, proxy: str | None = None
+    ) -> None:
+        super().__init__(base_url, rate_limiter, proxy=proxy)
 
     async def get_current_schedule(self) -> list[Race]:
         data = await self.get("/current.json")
@@ -158,14 +171,7 @@ class JolpicaClient(BaseAPIClient):
         if not races_raw:
             return None, []
         r = races_raw[0]
-        race = Race(
-            season=int(r["season"]),
-            round=int(r["round"]),
-            name=r["raceName"],
-            circuit=_parse_circuit(r["Circuit"]),
-            date=date.fromisoformat(r["date"]),
-            time=dt_time.fromisoformat(r["time"].rstrip("Z")) if r.get("time") else None,
-        )
+        race = _parse_race(r)
         results = []
         for res in r.get("Results", []):
             fl = res.get("FastestLap", {})
@@ -197,13 +203,7 @@ class JolpicaClient(BaseAPIClient):
         if not races_raw:
             return None, []
         r = races_raw[0]
-        race = Race(
-            season=int(r["season"]),
-            round=int(r["round"]),
-            name=r["raceName"],
-            circuit=_parse_circuit(r["Circuit"]),
-            date=date.fromisoformat(r["date"]),
-        )
+        race = _parse_race(r)
         results = []
         for res in r.get("QualifyingResults", []):
             results.append(
@@ -230,13 +230,7 @@ class JolpicaClient(BaseAPIClient):
         if not races_raw:
             return None, []
         r = races_raw[0]
-        race = Race(
-            season=int(r["season"]),
-            round=int(r["round"]),
-            name=r["raceName"],
-            circuit=_parse_circuit(r["Circuit"]),
-            date=date.fromisoformat(r["date"]),
-        )
+        race = _parse_race(r)
         results = []
         for res in r.get("SprintResults", []):
             results.append(

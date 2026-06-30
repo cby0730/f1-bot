@@ -137,7 +137,7 @@ uv run ruff check src/ tests/
 |---|---|---|---|
 | `TELEGRAM_BOT_TOKEN` | Yes | — | From @BotFather |
 | `POSTGRES_PASSWORD` | Yes (Docker) | — | PostgreSQL password (used by docker-compose) |
-| `F1BOT_DATABASE_URL` | No | `postgresql://...@localhost:31050/...` | PostgreSQL connection URL (auto-set in Docker) |
+| `F1BOT_DATABASE_URL` | No | `postgresql://...@localhost:31055/...` | PostgreSQL connection URL (auto-set in Docker) |
 | `TELEGRAM_PROXY` | No | — | Proxy URL for Telegram client (e.g., `socks5://127.0.0.1:7890`) |
 | `TELEGRAM_CONNECT_TIMEOUT` | No | `20.0` | Connection timeout for Telegram client in seconds |
 | `TELEGRAM_READ_TIMEOUT` | No | `20.0` | Read timeout for Telegram client in seconds |

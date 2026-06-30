@@ -40,12 +40,16 @@ async def send_notifications(context) -> None:
     from f1_bot.formatting.messages import format_notification_message
 
     sent_ids: list[int] = []
+    failed_count = 0
+    schedule_cache: dict[int, list] = {}
 
     for sub in pending:
         if rate_limiter:
             await rate_limiter.acquire()
         try:
-            races = await repo.get_schedule(sub.season)
+            if sub.season not in schedule_cache:
+                schedule_cache[sub.season] = await repo.get_schedule(sub.season)
+            races = schedule_cache[sub.season]
             race = next((r for r in races if r.round == sub.round), None)
             msg = format_notification_message(race, sub.session_key, sub.minutes_before)
             await bot.send_message(chat_id=sub.telegram_id, text=msg, parse_mode=ParseMode.MARKDOWN)
@@ -56,7 +60,12 @@ async def send_notifications(context) -> None:
             sent_ids.append(sub.id)
         except RetryAfter as e:
             log.warning("rate_limited", retry_after=e.retry_after)
-            await asyncio.sleep(e.retry_after)
+            delay = (
+                e.retry_after.total_seconds()
+                if hasattr(e.retry_after, "total_seconds")
+                else e.retry_after
+            )
+            await asyncio.sleep(delay)
             try:
                 await bot.send_message(
                     chat_id=sub.telegram_id, text=msg, parse_mode=ParseMode.MARKDOWN
@@ -64,10 +73,13 @@ async def send_notifications(context) -> None:
                 sent_ids.append(sub.id)
             except Exception:
                 log.exception("notification_retry_failed", telegram_id=sub.telegram_id)
-                sent_ids.append(sub.id)
+                failed_count += 1
         except Exception:
             log.exception("notification_send_failed", telegram_id=sub.telegram_id)
-            sent_ids.append(sub.id)
+            failed_count += 1
+
+    if failed_count:
+        log.warning("notifications_deferred", failed=failed_count)
 
     if sent_ids:
         await repo.mark_notifications_sent(sent_ids)

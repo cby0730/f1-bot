@@ -32,7 +32,6 @@ def setup_logging(log_level: str = "INFO", log_format: str = "auto") -> None:
         processors=[
             structlog.stdlib.filter_by_level,
             structlog.contextvars.merge_contextvars,
-            structlog.processors.add_log_level,
             structlog.stdlib.add_logger_name,
             structlog.stdlib.add_log_level,
             add_taiwan_timestamp,

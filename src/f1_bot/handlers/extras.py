@@ -2,6 +2,7 @@
 
 import datetime
 
+import structlog
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
@@ -14,6 +15,8 @@ from f1_bot.formatting.messages import (
     no_data_message,
 )
 from f1_bot.utils.fuzzy_match import match_circuit, match_driver
+
+log = structlog.get_logger(__name__)
 
 
 def _driver_menu_keyboard(drivers: list) -> InlineKeyboardMarkup:
@@ -286,6 +289,7 @@ async def _extras_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     parse_mode=ParseMode.MARKDOWN,
                 )
     except Exception:
+        log.exception("extras_callback_failed")
         try:
             await query.answer(text="An error occurred", show_alert=True)
         except Exception:  # noqa: S110

@@ -42,9 +42,9 @@ class RateLimiter:
 
                 if sleep_for <= 0:
                     # All clear — record and return while still holding the lock
-                    self._last_call = time.monotonic()
+                    self._last_call = now
                     if self._per_period is not None:
-                        self._period_calls.append(time.monotonic())
+                        self._period_calls.append(now)
                     return
 
             # Lock released; sleep outside the lock then re-check state

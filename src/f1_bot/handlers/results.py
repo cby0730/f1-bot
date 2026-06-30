@@ -8,6 +8,8 @@ State B (filtered): show results for specific session type with round navigation
 All reads are SQL-only — no direct API calls from handlers.
 """
 
+from datetime import UTC, datetime
+
 import structlog
 from telegram import Update
 from telegram.constants import ParseMode
@@ -32,7 +34,12 @@ from f1_bot.models.results import (
     SessionResult,
     SprintResult,
 )
-from f1_bot.utils.sessions import find_race_session, find_recent_completed_session
+from f1_bot.utils.sessions import (
+    SESSION_LABELS,
+    find_race_session,
+    find_recent_completed_session,
+    session_entries,
+)
 
 log = structlog.get_logger(__name__)
 
@@ -76,11 +83,6 @@ async def _get_session_result(repo, season: int, rnd: int, session_key: str):
     return []
 
 
-async def _get_drivers_map(repo, season: int) -> dict:
-    """Get driver map from cached drivers (SQL-only)."""
-    return await repo.get_drivers_by_id_map(season)
-
-
 async def _format_results_for_session(
     repo, season: int, rnd: int, race, session_key: str, drivers_map: dict, top_n: int | None = None
 ) -> str | None:
@@ -106,11 +108,6 @@ async def _format_results_for_session(
     return None
 
 
-def _get_anchor_round(bounds: dict) -> int | None:
-    """Determine the anchor round: latest round with any completed session data."""
-    return bounds.get("last_completed_round")
-
-
 async def _find_default_session(repo, races: list, season: int, rnd: int) -> str | None:
     """Find the default session to display for State A.
 
@@ -130,17 +127,20 @@ async def _find_default_session(repo, races: list, season: int, rnd: int) -> str
     return None
 
 
-def _get_completed_rounds_for_session(races: list, bounds: dict, session_key: str) -> list[int]:
-    """Get list of completed round numbers that have the specified session."""
-    last_completed = bounds.get("last_completed_round") or 0
-    if session_key in ("all", "race", "qualifying"):
-        return list(range(1, last_completed + 1))
-
+def _get_completed_rounds_for_session(races: list, session_key: str) -> list[int]:
+    """Get list of round numbers that have at least one completed session of the given type."""
+    now = datetime.now(UTC)
+    if session_key == "all":
+        return sorted(
+            r.round
+            for r in races
+            if any(e.starts_at and e.starts_at <= now for e in session_entries([r]))
+        )
     rounds = []
     for r in races:
-        if r.round <= last_completed:
-            if find_race_session([r], r.round, session_key) is not None:
-                rounds.append(r.round)
+        entry = find_race_session([r], r.round, session_key)
+        if entry and entry.starts_at and entry.starts_at <= now:
+            rounds.append(r.round)
     return sorted(rounds)
 
 
@@ -157,7 +157,7 @@ async def results_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await update.effective_message.reply_text(no_data_message("schedule"))
         return
 
-    rnd = _get_anchor_round(bounds)
+    rnd = bounds.get("last_completed_round")
     if rnd is None:
         # Try the latest round with any result data
         rnd = await context.bot_data["repo"].get_last_result_round(season)
@@ -171,7 +171,7 @@ async def results_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await update.effective_message.reply_text(no_data_message("results"))
         return
 
-    drivers_map = await _get_drivers_map(repo, season)
+    drivers_map = await repo.get_drivers_by_id_map(season)
     default_session = await _find_default_session(repo, races, season, rnd)
 
     if default_session:
@@ -184,9 +184,7 @@ async def results_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     if not text:
         text = no_data_message("results")
 
-    last_completed = bounds.get("last_completed_round") or 0
-    max_round = max(last_completed, rnd or 0)
-    completed = list(range(1, max_round + 1))
+    completed = _get_completed_rounds_for_session(races, "all")
 
     await update.effective_message.reply_text(
         text,
@@ -236,7 +234,7 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await query.answer(text="Round not found", show_alert=True)
         return
 
-    drivers_map = await _get_drivers_map(repo, season)
+    drivers_map = await repo.get_drivers_by_id_map(season)
 
     if mode == "back":
         # Return to State A (overview) for the same round
@@ -249,9 +247,7 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if not text:
             text = no_data_message("results")
 
-        last_completed = bounds.get("last_completed_round") or 0
-        max_round = max(last_completed, rnd or 0)
-        completed = list(range(1, max_round + 1))
+        completed = _get_completed_rounds_for_session(races, "all")
 
         try:
             await query.edit_message_text(
@@ -270,7 +266,7 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         # Check if "all" — show combined results
         if session_key == "all":
             text = await _format_all_results(repo, season, rnd, race, drivers_map)
-            completed = list(range(1, (bounds.get("last_completed_round") or 0) + 1))
+            completed = _get_completed_rounds_for_session(races, "all")
             try:
                 await query.edit_message_text(
                     text or no_data_message("results"),
@@ -286,15 +282,10 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if session_key in ("fp2", "fp3", "sprint_qualifying", "sprint"):
             entry = find_race_session([race], rnd, session_key)
             if entry is None:
-                navigable = _get_completed_rounds_for_session(races, bounds, session_key)
+                navigable = _get_completed_rounds_for_session(races, session_key)
                 if not navigable:
-                    label_map = {
-                        "fp2": "No FP2 data yet this season 🏎",
-                        "fp3": "No FP3 data yet this season 🏎",
-                        "sprint_qualifying": "No Sprint Qualifying data yet this season",
-                        "sprint": "No Sprint data yet this season",
-                    }
-                    msg = label_map.get(session_key, f"No {session_key} data yet this season")
+                    label = SESSION_LABELS.get(session_key, session_key)
+                    msg = f"No {label} data yet this season"
                     await query.answer(text=msg, show_alert=True)
                     return
                 rnd = navigable[-1]
@@ -307,15 +298,12 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if not text:
             text = no_data_message(f"{session_key} results")
 
-        last_completed = bounds.get("last_completed_round") or 0
-        completed = _get_completed_rounds_for_session(races, bounds, session_key)
+        completed = _get_completed_rounds_for_session(races, session_key)
         try:
             await query.edit_message_text(
                 text,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=results_filtered_keyboard(
-                    rnd, completed, session_key, last_completed_round=last_completed
-                ),
+                reply_markup=results_filtered_keyboard(rnd, completed, session_key),
             )
         except BadRequest:
             pass

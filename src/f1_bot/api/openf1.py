@@ -17,8 +17,10 @@ log = structlog.get_logger(__name__)
 class OpenF1Client(BaseAPIClient):
     """Client for the OpenF1 API — live timing, sessions, and timezone offsets."""
 
-    def __init__(self, base_url: str, rate_limiter: RateLimiter) -> None:
-        super().__init__(base_url, rate_limiter)
+    def __init__(
+        self, base_url: str, rate_limiter: RateLimiter, *, proxy: str | None = None
+    ) -> None:
+        super().__init__(base_url, rate_limiter, proxy=proxy)
 
     async def get_meetings(self, **filters) -> list[Meeting]:
         data = await self.get("/meetings", params=filters or None)
@@ -85,14 +87,14 @@ class OpenF1Client(BaseAPIClient):
         for i in data:
             if not all(k in i for k in ("session_key", "driver_number")):
                 continue
+            gap = i.get("gap_to_leader")
+            ivl = i.get("interval")
             intervals.append(
                 LiveInterval(
                     session_key=i["session_key"],
                     driver_number=i["driver_number"],
-                    gap_to_leader=str(i["gap_to_leader"])
-                    if i.get("gap_to_leader") is not None
-                    else None,
-                    interval=str(i["interval"]) if i.get("interval") is not None else None,
+                    gap_to_leader=str(gap) if gap is not None else None,
+                    interval=str(ivl) if ivl is not None else None,
                     date=i.get("date"),
                 )
             )
@@ -195,9 +197,9 @@ class OpenF1Client(BaseAPIClient):
                     duration=r.get("duration"),
                     gap_to_leader=r.get("gap_to_leader"),
                     number_of_laps=r.get("number_of_laps"),
-                    dnf=bool(r.get("dnf", False)),
-                    dns=bool(r.get("dns", False)),
-                    dsq=bool(r.get("dsq", False)),
+                    dnf=r.get("dnf", False),
+                    dns=r.get("dns", False),
+                    dsq=r.get("dsq", False),
                 )
             )
         return results
