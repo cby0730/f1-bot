@@ -1,4 +1,3 @@
-from collections import defaultdict
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -7,7 +6,6 @@ from f1_bot.formatting.timezone import combine_race_dt, format_dt
 from f1_bot.formatting.timezone import format_countdown as _countdown_str
 from f1_bot.models.constructor import ConstructorStanding
 from f1_bot.models.driver import Driver, DriverStanding
-from f1_bot.models.notification import TIMING_PRESETS
 from f1_bot.models.race import Race
 from f1_bot.models.results import (
     LapTime,
@@ -243,6 +241,24 @@ def format_pitstops(race: Race | None, stops: list[PitStop], round_num: int) -> 
 _LAPS_PAGE_SIZE = 20
 
 
+def _resolve_driver_label(driver_id: str, drivers: dict[int, Driver] | None) -> str:
+    """Resolve a driver_id to a short display label (code or family name)."""
+    try:
+        num = int(driver_id)
+        if drivers and num in drivers:
+            d = drivers[num]
+            return d.code or d.family_name
+    except ValueError:
+        pass
+    return driver_id
+
+
+def _ms_to_str(ms: int) -> str:
+    m, rem = divmod(ms, 60000)
+    s = rem / 1000
+    return f"{m}:{s:06.3f}"
+
+
 def _parse_lap_time_ms(time_str: str | None) -> int | None:
     """Convert 'M:SS.mmm' to milliseconds for comparison."""
     if not time_str:
@@ -287,24 +303,11 @@ def format_laps_summary(
         best_ms = min(valid)
         avg_ms = sum(valid) // len(valid)
 
-        def ms_to_str(ms: int) -> str:
-            m, rem = divmod(ms, 60000)
-            s = rem / 1000
-            return f"{m}:{s:06.3f}"
-
-        rows.append((driver_id, ms_to_str(best_ms), ms_to_str(avg_ms), len(driver_laps), best_ms))
+        rows.append((driver_id, _ms_to_str(best_ms), _ms_to_str(avg_ms), len(driver_laps), best_ms))
 
     rows.sort(key=lambda r: r[4])
     for driver_id, best, avg, count, _ in rows:
-        label = driver_id
-        try:
-            num = int(driver_id)
-            if drivers and num in drivers:
-                d = drivers[num]
-                label = d.code or d.family_name
-        except ValueError:
-            pass
-
+        label = _resolve_driver_label(driver_id, drivers)
         lines.append(f"🏎 *{_esc(label)}*: Best `{best}` | Avg `{avg}` | {count} laps")
     return "\n".join(lines)
 
@@ -376,13 +379,7 @@ def format_laps_by_lap(
             s3 = _fmt_sector(entry.duration_sector_3)
             lap_t = _fmt_lap_duration(entry.lap_duration, entry.time)
 
-            label = entry.driver_id
-            try:
-                num = int(entry.driver_id)
-                if drivers and num in drivers:
-                    label = drivers[num].code or entry.driver_id
-            except ValueError:
-                pass
+            label = _resolve_driver_label(entry.driver_id, drivers)
 
             lines.append(f"`{pos:>3} {label:<4} {s1}│{s2}│{s3}│{lap_t}`")
     else:
@@ -390,13 +387,7 @@ def format_laps_by_lap(
             pos = f"P{entry.position}" if entry.position else "—"
             time_str = _fmt_lap_duration(entry.lap_duration, entry.time)
 
-            label = entry.driver_id
-            try:
-                num = int(entry.driver_id)
-                if drivers and num in drivers:
-                    label = drivers[num].code or entry.driver_id
-            except ValueError:
-                pass
+            label = _resolve_driver_label(entry.driver_id, drivers)
 
             lines.append(f"`{pos:>4}`  {_esc(label):<6} `{time_str}`")
 
@@ -470,8 +461,6 @@ def format_laps_driver_picker(race: Race | None) -> str:
 
 
 def format_driver_profile(driver, standing=None) -> str:
-    from f1_bot.formatting.emoji import flag_icon
-
     flag = flag_icon(driver.nationality or "")
     number = f"#{driver.permanent_number}" if driver.permanent_number else ""
     code = f" ({driver.code})" if driver.code else ""
@@ -530,27 +519,3 @@ def format_notification_message(race: "Race | None", session_key: str, minutes_b
         name = _esc(race.name)
         return f"🔔 *{name}* — {_esc(label)} starts in *{minutes_before} minutes*!"
     return f"🔔 {_esc(label)} starts in *{minutes_before} minutes*!"
-
-
-def format_reminders_list(subscriptions: list, races: list["Race"], user_tz: str) -> str:
-    """Format the /remind list grouped by round."""
-    if not subscriptions:
-        return "🔔 You have no active reminders.\n\nUse /next and tap 🔔 to set one."
-
-    race_map = {r.round: r for r in races}
-    by_round: dict[int, list] = defaultdict(list)
-    for sub in subscriptions:
-        by_round[sub.round].append(sub)
-
-    lines = ["🔔 *Your Active Reminders*\n"]
-    for rnd in sorted(by_round):
-        race = race_map.get(rnd)
-        race_name = _esc(race.name) if race else f"Round {rnd}"
-        lines.append(f"*R{rnd} — {race_name}*")
-        for sub in sorted(by_round[rnd], key=lambda s: s.fire_at):
-            label = SESSION_LABELS.get(sub.session_key, sub.session_key)
-            time_label = TIMING_PRESETS.get(sub.minutes_before, f"{sub.minutes_before}min")
-            lines.append(f"  • {label} — {time_label} before")
-        lines.append("")
-
-    return "\n".join(lines).strip()

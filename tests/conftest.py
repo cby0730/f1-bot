@@ -9,7 +9,7 @@ from f1_bot.storage.postgres_store import PostgresStore
 from f1_bot.storage.repository import Repository
 
 _TEST_DATABASE_URL = os.environ.get(
-    "F1BOT_DATABASE_URL", "postgresql://mango:mango@localhost:31050/mango"
+    "F1BOT_DATABASE_URL", "postgresql://mango:mango@localhost:31055/mango"
 )
 
 

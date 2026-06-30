@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     telegram_read_timeout: float = Field(default=20.0, alias="TELEGRAM_READ_TIMEOUT")
 
     # Database — prefix: F1BOT_DATABASE_URL
-    database_url: str = "postgresql://mango:mango@localhost:31050/mango"
+    database_url: str = "postgresql://mango:mango@localhost:31055/mango"
 
     # Logging — prefix: F1BOT_LOG_LEVEL, F1BOT_LOG_FORMAT
     log_level: str = "INFO"

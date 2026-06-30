@@ -27,11 +27,13 @@ def _upcoming_rounds(races: list, group: str = "all") -> list[int]:
     """Return sorted list of round numbers that have at least one upcoming session in the group."""
     now = datetime.datetime.now(tz=datetime.UTC)
     entries = find_next_sessions(races, group, limit=len(races) * 7, now=now)
-    seen: list[int] = []
+    seen: set[int] = set()
+    result: list[int] = []
     for entry in entries:
         if entry.race.round not in seen:
-            seen.append(entry.race.round)
-    return seen
+            seen.add(entry.race.round)
+            result.append(entry.race.round)
+    return result
 
 
 # ---------------------------------------------------------------------------

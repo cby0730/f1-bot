@@ -11,10 +11,12 @@ Hourly sync:
 
 import asyncio
 import datetime
+import json
 
 import structlog
 from telegram.ext import ContextTypes
 
+from f1_bot.formatting.timezone import combine_race_dt
 from f1_bot.utils.sessions import session_entries
 
 log = structlog.get_logger(__name__)
@@ -22,6 +24,23 @@ log = structlog.get_logger(__name__)
 _OPENF1_THROTTLE = 3.5  # seconds between OpenF1 requests
 _LIVE_WINDOW_MARGIN = datetime.timedelta(minutes=30)
 _RESULTS_WINDOW = datetime.timedelta(days=30)
+
+
+def _earliest_session_start(race) -> datetime.datetime | None:
+    """Return the earliest session start time for a race weekend."""
+    times = []
+    for session in (
+        race.fp1,
+        race.fp2,
+        race.fp3,
+        race.qualifying,
+        race.sprint_qualifying,
+        race.sprint,
+    ):
+        if session and session.date:
+            times.append(combine_race_dt(session.date, session.time))
+    times.append(combine_race_dt(race.date, race.time))
+    return min(times) if times else None
 
 
 # ---------------------------------------------------------------------------
@@ -50,52 +69,73 @@ async def sync_schedule(jolpica, repo) -> list:
 async def sync_results_window(jolpica, repo, races: list, full: bool = False) -> None:
     """Sync race/qualifying/sprint results for rounds within the past-1-month window.
 
+    Each session type is fetched independently based on its own start time.
     If full=True, syncs all completed rounds (used for startup).
     """
+    from f1_bot.utils.sessions import find_race_session
+
     now = datetime.datetime.now(tz=datetime.UTC)
     cutoff = datetime.datetime.min.replace(tzinfo=datetime.UTC) if full else (now - _RESULTS_WINDOW)
     season = datetime.date.today().year
 
     for race in races:
-        from f1_bot.formatting.timezone import combine_race_dt
-
         race_dt = combine_race_dt(race.date, race.time)
-        if race_dt > now:
-            continue  # future race, no results yet
         if race_dt < cutoff:
             continue  # outside sync window
 
+        # If the entire weekend hasn't started yet, skip
+        earliest = _earliest_session_start(race)
+        if earliest is not None and earliest > now:
+            continue
+
         rnd = race.round
-        try:
-            # Race results
-            _, results = await jolpica.get_race_results(str(season), str(rnd))
-            if results:
-                await repo.save_race_results(season, rnd, results)
 
-            # Qualifying results
-            _, q_results = await jolpica.get_qualifying_results(str(season), str(rnd))
-            if q_results:
-                await repo.save_qualifying_results(season, rnd, q_results)
+        # Race: only after race completes
+        if race_dt <= now:
+            try:
+                _, results = await jolpica.get_race_results(str(season), str(rnd))
+                if results:
+                    await repo.save_race_results(season, rnd, results)
+            except Exception as e:
+                log.warning("race_results_sync_failed", season=season, round=rnd, error=str(e))
 
-            # Sprint results (only for sprint rounds)
-            if race.sprint is not None:
-                _, s_results = await jolpica.get_sprint_results(str(season), str(rnd))
-                if s_results:
-                    await repo.save_sprint_results(season, rnd, s_results)
+        # Qualifying: after qualifying completes
+        q_entry = find_race_session([race], rnd, "qualifying")
+        if q_entry and q_entry.starts_at and q_entry.starts_at <= now:
+            try:
+                _, q_results = await jolpica.get_qualifying_results(str(season), str(rnd))
+                if q_results:
+                    await repo.save_qualifying_results(season, rnd, q_results)
+            except Exception as e:
+                log.warning(
+                    "qualifying_results_sync_failed", season=season, round=rnd, error=str(e)
+                )
 
-            log.info("results_synced", season=season, round=rnd)
-        except Exception as e:
-            log.warning("results_sync_failed", season=season, round=rnd, error=str(e))
+        # Sprint: after sprint completes
+        if race.sprint is not None:
+            s_entry = find_race_session([race], rnd, "sprint")
+            if s_entry and s_entry.starts_at and s_entry.starts_at <= now:
+                try:
+                    _, s_results = await jolpica.get_sprint_results(str(season), str(rnd))
+                    if s_results:
+                        await repo.save_sprint_results(season, rnd, s_results)
+                except Exception as e:
+                    log.warning(
+                        "sprint_results_sync_failed", season=season, round=rnd, error=str(e)
+                    )
+
+        log.info("results_synced", season=season, round=rnd)
 
 
 async def sync_standings(jolpica, repo) -> None:
     """Sync driver and constructor standings."""
     season = datetime.date.today().year
+    bounds = await repo.get_schedule_bounds(season)
+    round_after = bounds.get("last_completed_round") or 0
+
     try:
         standings = await jolpica.get_driver_standings()
         if standings:
-            bounds = await repo.get_schedule_bounds(season)
-            round_after = bounds.get("last_completed_round") or 0
             await repo.save_driver_standings(season, standings, round_after=round_after)
             log.info("driver_standings_synced", count=len(standings))
     except Exception as e:
@@ -104,8 +144,6 @@ async def sync_standings(jolpica, repo) -> None:
     try:
         standings = await jolpica.get_constructor_standings()
         if standings:
-            bounds = await repo.get_schedule_bounds(season)
-            round_after = bounds.get("last_completed_round") or 0
             await repo.save_constructor_standings(season, standings, round_after=round_after)
             log.info("constructor_standings_synced", count=len(standings))
     except Exception as e:
@@ -114,18 +152,18 @@ async def sync_standings(jolpica, repo) -> None:
 
 async def sync_drivers_and_circuits(jolpica, repo) -> None:
     """Sync drivers and circuits lists."""
-    season = str(datetime.date.today().year)
+    season = datetime.date.today().year
     try:
-        drivers = await jolpica.get_drivers(season)
+        drivers = await jolpica.get_drivers(str(season))
         if drivers:
-            await repo.save_drivers(int(season), drivers)
+            await repo.save_drivers(season, drivers)
     except Exception as e:
         log.warning("drivers_sync_failed", error=str(e))
 
     try:
-        circuits = await jolpica.get_circuits(season)
+        circuits = await jolpica.get_circuits(str(season))
         if circuits:
-            await repo.save_circuits(int(season), circuits)
+            await repo.save_circuits(season, circuits)
     except Exception as e:
         log.warning("circuits_sync_failed", error=str(e))
 
@@ -137,8 +175,6 @@ async def sync_pitstops_window(jolpica, repo, races: list, full: bool = False) -
     season = datetime.date.today().year
 
     for race in races:
-        from f1_bot.formatting.timezone import combine_race_dt
-
         race_dt = combine_race_dt(race.date, race.time)
         if race_dt > now or race_dt < cutoff:
             continue
@@ -249,8 +285,6 @@ async def run_driver_id_backfill_migration(openf1, repo) -> None:
             else:
                 continue
 
-            import json
-
             from f1_bot.models.results import SessionResult
 
             results_list = [SessionResult.model_validate(r) for r in json.loads(row["data_json"])]
@@ -341,18 +375,15 @@ async def sync_openf1_laps(openf1, repo, races: list, full: bool = False) -> Non
         return
 
     for race in races:
-        from f1_bot.formatting.timezone import combine_race_dt
-
         race_dt = combine_race_dt(race.date, race.time)
         if race_dt > now or race_dt < cutoff:
             continue
 
-        if _is_in_live_window(type("Entry", (), {"starts_at": race_dt})(), now):
-            continue
-
-        # Find matching OpenF1 race session
         race_entry = find_race_session([race], race.round, "race")
         if race_entry is None:
+            continue
+
+        if _is_in_live_window(race_entry, now):
             continue
 
         openf1_session = match_openf1_session(race_entry, openf1_sessions)

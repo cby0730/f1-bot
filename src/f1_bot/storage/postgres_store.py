@@ -11,6 +11,11 @@ from f1_bot.models.user import UserPreference
 
 log = structlog.get_logger(__name__)
 
+
+def _now_iso() -> str:
+    return datetime.now(UTC).replace(tzinfo=None).isoformat()
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS races (
     season INTEGER NOT NULL,
@@ -153,7 +158,7 @@ class PostgresStore:
     # --- Schedule ---
 
     async def save_races(self, season: int, races_json: list[dict]) -> None:
-        now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        now = _now_iso()
         async with self._pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute("DELETE FROM races WHERE season=$1", season)
@@ -187,7 +192,7 @@ class PostgresStore:
     # --- Standings ---
 
     async def save_driver_standings(self, season: int, round_after: int, data: list[dict]) -> None:
-        now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        now = _now_iso()
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """INSERT INTO standings_drivers (season, round_after, data_json, updated_at)
@@ -211,7 +216,7 @@ class PostgresStore:
     async def save_constructor_standings(
         self, season: int, round_after: int, data: list[dict]
     ) -> None:
-        now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        now = _now_iso()
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """INSERT INTO standings_constructors (season, round_after, data_json, updated_at)
@@ -237,7 +242,7 @@ class PostgresStore:
     async def save_results(
         self, season: int, round_num: int, result_type: str, data: list[dict]
     ) -> None:
-        now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        now = _now_iso()
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """INSERT INTO results (season, round, type, data_json, updated_at)
@@ -289,7 +294,7 @@ class PostgresStore:
         )
 
     async def upsert_user_preference(self, pref: UserPreference) -> None:
-        now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        now = _now_iso()
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """INSERT INTO user_preferences (telegram_id, timezone, created_at, updated_at)
@@ -305,7 +310,7 @@ class PostgresStore:
     # --- Lap Timings ---
 
     async def save_lap_timings(self, season: int, round_num: int, data: list[dict]) -> None:
-        now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        now = _now_iso()
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """INSERT INTO lap_timings (season, round, data_json, updated_at)
@@ -330,7 +335,7 @@ class PostgresStore:
     # --- Pit Stops ---
 
     async def save_pit_stops(self, season: int, round_num: int, data: list[dict]) -> None:
-        now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        now = _now_iso()
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """INSERT INTO pit_stops (season, round, data_json, updated_at)
@@ -357,7 +362,7 @@ class PostgresStore:
     async def log_schedule_change(
         self, season: int, round_num: int, field: str, old_value: str | None, new_value: str | None
     ) -> None:
-        now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        now = _now_iso()
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """INSERT INTO schedule_audit_log
@@ -381,7 +386,7 @@ class PostgresStore:
         return row["last_synced_at"] if row else None
 
     async def set_sync_metadata(self, entity: str) -> None:
-        now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        now = _now_iso()
         async with self._pool.acquire() as conn:
             await conn.execute(
                 """INSERT INTO sync_metadata (entity, last_synced_at)
@@ -393,7 +398,7 @@ class PostgresStore:
             )
 
     async def save_drivers(self, drivers_json: list[dict]) -> None:
-        now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        now = _now_iso()
         async with self._pool.acquire() as conn:
             async with conn.transaction():
                 for d in drivers_json:
@@ -413,7 +418,7 @@ class PostgresStore:
         return [json.loads(r["data_json"]) for r in rows]
 
     async def save_circuits(self, circuits_json: list[dict]) -> None:
-        now = datetime.now(UTC).replace(tzinfo=None).isoformat()
+        now = _now_iso()
         async with self._pool.acquire() as conn:
             async with conn.transaction():
                 for c in circuits_json:
@@ -453,6 +458,20 @@ class PostgresStore:
         return [dict(r) for r in rows]
 
     # --- Notification Subscriptions ---
+
+    @staticmethod
+    def _row_to_notification(r) -> NotificationSubscription:
+        return NotificationSubscription(
+            id=r["id"],
+            telegram_id=r["telegram_id"],
+            season=r["season"],
+            round=r["round"],
+            session_key=r["session_key"],
+            minutes_before=r["minutes_before"],
+            notified=r["notified"],
+            fire_at=r["fire_at"],
+            created_at=r["created_at"],
+        )
 
     async def save_notification(self, sub: NotificationSubscription) -> int:
         async with self._pool.acquire() as conn:
@@ -502,20 +521,7 @@ class PostgresStore:
                 telegram_id,
                 season,
             )
-        return [
-            NotificationSubscription(
-                id=r["id"],
-                telegram_id=r["telegram_id"],
-                season=r["season"],
-                round=r["round"],
-                session_key=r["session_key"],
-                minutes_before=r["minutes_before"],
-                notified=r["notified"],
-                fire_at=r["fire_at"],
-                created_at=r["created_at"],
-            )
-            for r in rows
-        ]
+        return [self._row_to_notification(r) for r in rows]
 
     async def get_pending_notifications(
         self,
@@ -530,20 +536,7 @@ class PostgresStore:
                    ORDER BY fire_at""",
                 now,
             )
-        return [
-            NotificationSubscription(
-                id=r["id"],
-                telegram_id=r["telegram_id"],
-                season=r["season"],
-                round=r["round"],
-                session_key=r["session_key"],
-                minutes_before=r["minutes_before"],
-                notified=r["notified"],
-                fire_at=r["fire_at"],
-                created_at=r["created_at"],
-            )
-            for r in rows
-        ]
+        return [self._row_to_notification(r) for r in rows]
 
     async def mark_notifications_sent(self, ids: list[int]) -> None:
         # DELETE (not UPDATE SET notified=TRUE) to prevent row accumulation.
@@ -573,6 +566,15 @@ class PostgresStore:
             )
         return row is not None
 
+    async def delete_notification_by_id(self, notification_id: int, telegram_id: int) -> bool:
+        async with self._pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM notification_subscriptions WHERE id=$1 AND telegram_id=$2",
+                notification_id,
+                telegram_id,
+            )
+        return result.split()[-1] != "0"
+
     async def delete_notifications_for_user(self, telegram_id: int) -> int:
         async with self._pool.acquire() as conn:
             result = await conn.execute(
@@ -587,28 +589,3 @@ class PostgresStore:
                 "SELECT MIN(fire_at) as next_fire FROM notification_subscriptions WHERE notified=FALSE"
             )
         return row["next_fire"] if row and row["next_fire"] is not None else None
-
-    async def recompute_fire_times(
-        self, season: int, round_num: int, session_times: dict[str, datetime]
-    ) -> None:
-        """Recompute fire_at for all non-notified subscriptions in a round based on updated session times."""
-        from datetime import timedelta
-
-        async with self._pool.acquire() as conn:
-            async with conn.transaction():
-                rows = await conn.fetch(
-                    """SELECT id, session_key, minutes_before
-                       FROM notification_subscriptions
-                       WHERE season=$1 AND round=$2 AND notified=FALSE""",
-                    season,
-                    round_num,
-                )
-                for r in rows:
-                    session_dt = session_times.get(r["session_key"])
-                    if session_dt:
-                        new_fire = session_dt - timedelta(minutes=r["minutes_before"])
-                        await conn.execute(
-                            "UPDATE notification_subscriptions SET fire_at=$1 WHERE id=$2",
-                            new_fire,
-                            r["id"],
-                        )

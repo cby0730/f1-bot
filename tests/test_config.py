@@ -9,9 +9,9 @@ from f1_bot.config import Settings
 def test_settings_defaults(monkeypatch):
     """All non-required fields have usable defaults."""
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
-    s = Settings()
+    s = Settings(_env_file=None)
     assert s.telegram_bot_token == "test-token"
-    assert s.database_url == "postgresql://mango:mango@localhost:31050/mango"
+    assert s.database_url == "postgresql://mango:mango@localhost:31055/mango"
     assert s.log_level == "INFO"
     assert s.log_format == "auto"
 
@@ -39,8 +39,8 @@ def test_settings_telegram_network(monkeypatch):
     """Test defaults and environment variable overrides for Telegram network settings."""
     monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "test-token")
 
-    # Defaults
-    s1 = Settings()
+    # Defaults (skip .env to avoid picking up real proxy config)
+    s1 = Settings(_env_file=None)
     assert s1.telegram_proxy is None
     assert s1.telegram_connect_timeout == 20.0
     assert s1.telegram_read_timeout == 20.0
@@ -50,7 +50,7 @@ def test_settings_telegram_network(monkeypatch):
     monkeypatch.setenv("TELEGRAM_CONNECT_TIMEOUT", "15.5")
     monkeypatch.setenv("TELEGRAM_READ_TIMEOUT", "30.0")
 
-    s2 = Settings()
+    s2 = Settings(_env_file=None)
     assert s2.telegram_proxy == "socks5://127.0.0.1:1080"
     assert s2.telegram_connect_timeout == 15.5
     assert s2.telegram_read_timeout == 30.0

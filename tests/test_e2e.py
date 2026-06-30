@@ -17,7 +17,7 @@ from telegram import Update
 from f1_bot.config import Settings
 
 _TEST_DATABASE_URL = os.environ.get(
-    "F1BOT_DATABASE_URL", "postgresql://mango:mango@localhost:31050/mango"
+    "F1BOT_DATABASE_URL", "postgresql://mango:mango@localhost:31055/mango"
 )
 from f1_bot.main import build_app  # noqa: E402
 

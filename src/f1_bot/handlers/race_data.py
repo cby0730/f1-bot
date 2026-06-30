@@ -11,6 +11,7 @@ from telegram.error import BadRequest
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
 from f1_bot.formatting.messages import (
+    _LAPS_PAGE_SIZE,
     format_laps_by_driver,
     format_laps_by_lap,
     format_laps_driver_picker,
@@ -27,8 +28,6 @@ from f1_bot.models.driver import Driver
 from f1_bot.models.results import LapTime, PitStop
 
 log = structlog.get_logger(__name__)
-
-_LAPS_PAGE_SIZE = 20
 
 
 # ---------------------------------------------------------------------------

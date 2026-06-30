@@ -109,6 +109,7 @@ async def test_sync_standings_survives_exception():
     jolpica.get_driver_standings = AsyncMock(side_effect=RuntimeError("timeout"))
     jolpica.get_constructor_standings = AsyncMock(side_effect=RuntimeError("timeout"))
     repo = MagicMock()
+    repo.get_schedule_bounds = AsyncMock(return_value={"last_completed_round": 5})
     repo.save_driver_standings = AsyncMock()
     repo.save_constructor_standings = AsyncMock()
 
@@ -308,6 +309,66 @@ class TestSyncResultsWindow:
         await sync_results_window(jolpica, repo, [race], full=False)
 
         jolpica.get_sprint_results.assert_awaited_once()
+
+    async def test_qualifying_synced_before_race_completes(self):
+        """Qualifying results are fetched when Q is done but race is tomorrow."""
+        today = date.today()
+        # Build race manually: race is tomorrow, qualifying was yesterday
+        race = Race(
+            season=2025,
+            round=5,
+            name="Race 5",
+            circuit=_circuit(),
+            date=today + timedelta(days=1),
+            time=time(13, 0),
+            qualifying=RaceSession(
+                name="Qualifying", date=today - timedelta(days=1), time=time(14, 0)
+            ),
+        )
+        jolpica = MagicMock()
+        jolpica.get_race_results = AsyncMock(return_value=(None, []))
+        jolpica.get_qualifying_results = AsyncMock(return_value=(None, [MagicMock()]))
+        repo = MagicMock()
+        repo.save_race_results = AsyncMock()
+        repo.save_qualifying_results = AsyncMock()
+
+        await sync_results_window(jolpica, repo, [race], full=False)
+
+        # Race not done yet — should not be called
+        jolpica.get_race_results.assert_not_awaited()
+        # Qualifying was yesterday — should be fetched and saved
+        jolpica.get_qualifying_results.assert_awaited_once()
+        repo.save_qualifying_results.assert_awaited_once()
+
+    async def test_qualifying_failure_does_not_block_race(self):
+        """If qualifying fetch fails, race results still sync."""
+        today = date.today()
+        race = _make_race(5, today - timedelta(days=3))
+        jolpica = MagicMock()
+        jolpica.get_qualifying_results = AsyncMock(side_effect=Exception("timeout"))
+        jolpica.get_race_results = AsyncMock(return_value=(None, [MagicMock()]))
+        repo = MagicMock()
+        repo.save_race_results = AsyncMock()
+        repo.save_qualifying_results = AsyncMock()
+
+        await sync_results_window(jolpica, repo, [race], full=False)
+
+        # Race results still saved despite qualifying failure
+        repo.save_race_results.assert_awaited_once()
+
+    async def test_entire_weekend_in_future_skipped(self):
+        """If earliest session hasn't started, no API calls made."""
+        today = date.today()
+        race = _make_race(5, today + timedelta(days=10))
+        jolpica = MagicMock()
+        jolpica.get_race_results = AsyncMock(return_value=(None, []))
+        jolpica.get_qualifying_results = AsyncMock(return_value=(None, []))
+        repo = MagicMock()
+
+        await sync_results_window(jolpica, repo, [race], full=False)
+
+        jolpica.get_race_results.assert_not_awaited()
+        jolpica.get_qualifying_results.assert_not_awaited()
 
 
 # ---------------------------------------------------------------------------

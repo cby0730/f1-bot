@@ -105,7 +105,7 @@ set fields on frozen Pydantic models during test setup (e.g., attaching a `sprin
 
 **Driver ID Mapping:** OpenF1 driver profiles use a composite ID `openf1_<driver_number>_<last_name>`. These are mapped to Jolpica's driver objects when querying results using `Repository.get_drivers_by_id_map()`.
 
-**Telegram proxy & timeout settings:** The bot supports `TELEGRAM_PROXY`, `TELEGRAM_CONNECT_TIMEOUT`, and `TELEGRAM_READ_TIMEOUT` configured directly from the Pydantic Settings class and passed to python-telegram-bot's custom request runner.
+**Telegram proxy & timeout settings:** The bot supports `TELEGRAM_PROXY`, `TELEGRAM_CONNECT_TIMEOUT`, and `TELEGRAM_READ_TIMEOUT` configured directly from the Pydantic Settings class. PTB creates **two separate httpx clients** — `.request()` for API calls and `.get_updates_request()` for long-polling. Both must be configured with the same proxy/timeout; missing `get_updates_request` silently breaks polling. The proxy is also passed to `JolpicaClient` and `OpenF1Client` via `BaseAPIClient(proxy=...)`.
 
 **Laps In-Memory Caching:** `Repository.get_lap_timings()` returns and caches `list[LapTime]` objects (LRU, max 30 entries). This cache prevents CPU-heavy validation overhead on pagination clicks. Ensure new sync saves (e.g. `save_lap_timings()`) invalidate the cache for that round.
 
