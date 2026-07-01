@@ -27,6 +27,7 @@ Startup / Scheduler → JolpicaClient + OpenF1Client → PostgreSQL
 - **Startup sync:** `startup_sync()` runs in `_post_init` before the bot accepts commands. Fetches schedule, standings, results, pit stops, laps, session data. Also runs a historical driver ID backfill migration.
 - **Unified hourly sync:** A single `hourly_sync` job replaces the old 6 staggered jobs. All sync work runs sequentially in one cycle (`_POLL_INTERVAL` = 1 hour in `scheduler/manager.py`).
 - **Two-state UX:** `/next` and `/results` use a unified two-state interaction: State A (overview with session filter buttons + round navigation) → State B (filtered with round navigation + Back).
+- **Public Repository (Metadata & README only):** Hosted at `git@github.com:cby0730/f1-telegram-bot.git` (local path: `/Users/chen-bo-yo/Projects/f1-telegram-bot`). It contains only the public `README.md` and does not expose the private source code of this bot.
 
 ## Commands (13 total)
 
