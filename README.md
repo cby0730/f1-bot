@@ -144,13 +144,6 @@ uv run ruff check src/ tests/
 | `F1BOT_LOG_LEVEL` | No | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
 | `F1BOT_LOG_FORMAT` | No | `auto` | `auto` (JSON if not TTY) / `console` / `json` |
 
-## Deployment
-
-Any Linux VPS with Docker works. Free/cheap options:
-- [Oracle Cloud Free Tier](https://www.oracle.com/cloud/free/) — 1 GB RAM ARM instance, always free
-- [Hetzner](https://www.hetzner.com/cloud) — €4/month CAX11 ARM
-
-The bot uses ~100 MB RAM in steady state.
 
 ## Data sources
 
