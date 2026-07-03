@@ -17,23 +17,11 @@ from f1_bot.handlers.pagination import (
     load_schedule_and_bounds,
     next_filtered_keyboard,
     next_overview_keyboard,
+    upcoming_rounds,
 )
 from f1_bot.utils.sessions import find_next_sessions
 
 log = structlog.get_logger(__name__)
-
-
-def _upcoming_rounds(races: list, group: str = "all") -> list[int]:
-    """Return sorted list of round numbers that have at least one upcoming session in the group."""
-    now = datetime.datetime.now(tz=datetime.UTC)
-    entries = find_next_sessions(races, group, limit=len(races) * 7, now=now)
-    seen: set[int] = set()
-    result: list[int] = []
-    for entry in entries:
-        if entry.race.round not in seen:
-            seen.add(entry.race.round)
-            result.append(entry.race.round)
-    return result
 
 
 # ---------------------------------------------------------------------------
@@ -59,11 +47,11 @@ async def next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     race = upcoming[0]
-    upcoming_rounds = _upcoming_rounds(races, "all")
+    nav_rounds = upcoming_rounds(races, "all")
     await update.effective_message.reply_text(
         format_next_race(race, user_tz),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=next_overview_keyboard(race.round, upcoming_rounds),
+        reply_markup=next_overview_keyboard(race.round, nav_rounds),
     )
 
 
@@ -105,17 +93,17 @@ async def _next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if mode == "back":
         # Return to State A (overview) for the same round
-        upcoming_rounds = _upcoming_rounds(races, "all")
-        if not upcoming_rounds:
+        nav_rounds = upcoming_rounds(races, "all")
+        if not nav_rounds:
             await query.answer(text="No upcoming races", show_alert=True)
             return
 
-        if rnd not in upcoming_rounds:
-            rnd = upcoming_rounds[0]
+        if rnd not in nav_rounds:
+            rnd = nav_rounds[0]
 
         race = next((r for r in races if r.round == rnd), None)
         if race is None:
-            race = next((r for r in races if r.round == upcoming_rounds[0]), None)
+            race = next((r for r in races if r.round == nav_rounds[0]), None)
 
         if race is None:
             await query.answer(text="No upcoming races", show_alert=True)
@@ -125,7 +113,7 @@ async def _next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await query.edit_message_text(
                 format_next_race(race, user_tz),
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=next_overview_keyboard(race.round, upcoming_rounds),
+                reply_markup=next_overview_keyboard(race.round, nav_rounds),
             )
         except BadRequest:
             pass
@@ -134,20 +122,20 @@ async def _next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if mode == "filtered":
         # State B: show next upcoming session of this filter type
-        upcoming_rounds = _upcoming_rounds(races, session_filter)
-        if not upcoming_rounds:
+        nav_rounds = upcoming_rounds(races, session_filter)
+        if not nav_rounds:
             await query.answer(text=f"No upcoming {session_filter} sessions", show_alert=True)
             return
 
         # If requested round no longer has sessions, snap to first
-        if rnd not in upcoming_rounds:
-            rnd = upcoming_rounds[0]
+        if rnd not in nav_rounds:
+            rnd = nav_rounds[0]
 
         now = datetime.datetime.now(tz=datetime.UTC)
         entries = find_next_sessions(races, session_filter, limit=len(races) * 7, now=now)
         entry = next((e for e in entries if e.race.round == rnd), None)
         if entry is None:
-            rnd = upcoming_rounds[0]
+            rnd = nav_rounds[0]
             entry = next((e for e in entries if e.race.round == rnd), None)
 
         if entry is None:
@@ -158,7 +146,7 @@ async def _next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             await query.edit_message_text(
                 format_next_session(entry, user_tz),
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=next_filtered_keyboard(rnd, upcoming_rounds, session_filter),
+                reply_markup=next_filtered_keyboard(rnd, nav_rounds, session_filter),
             )
         except BadRequest:
             pass

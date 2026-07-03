@@ -1,9 +1,15 @@
 """Shared pagination utilities for inline keyboard navigation."""
 
 import datetime
+from datetime import UTC
+from datetime import datetime as dt_datetime
 
 import structlog
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+
+from f1_bot.formatting.emoji import circuit_flag_icon
+from f1_bot.formatting.messages import _esc
+from f1_bot.utils.sessions import find_next_sessions, find_race_session, session_entries
 
 log = structlog.get_logger(__name__)
 
@@ -48,7 +54,8 @@ def round_keyboard(
         prev_round = navigable_rounds[idx - 1]
         row.append(InlineKeyboardButton("◀", callback_data=f"{prefix}:{prev_round}"))
 
-    row.append(InlineKeyboardButton(position_label, callback_data=f"{prefix}:{current_round}"))
+    center_cb = f"rpk:{prefix}:{current_round}" if total > 1 else f"{prefix}:{current_round}"
+    row.append(InlineKeyboardButton(position_label, callback_data=center_cb))
 
     if idx < total - 1:
         next_round = navigable_rounds[idx + 1]
@@ -78,10 +85,9 @@ def schedule_keyboard(
         prev_round = upcoming_rounds[idx - 1]
         row.append(InlineKeyboardButton("◀", callback_data=f"{prefix}:{prev_round}"))
 
+    center_cb = f"rpk:{prefix}:{current_round}" if total > 1 else f"{prefix}:{current_round}"
     row.append(
-        InlineKeyboardButton(
-            f"R{current_round}/{upcoming_rounds[-1]}", callback_data=f"{prefix}:{current_round}"
-        )
+        InlineKeyboardButton(f"R{current_round}/{upcoming_rounds[-1]}", callback_data=center_cb)
     )
 
     if idx < total - 1:
@@ -121,7 +127,7 @@ def next_overview_keyboard(current_round: int, upcoming_rounds: list[int]) -> In
         nav_row.append(
             InlineKeyboardButton(
                 f"R{current_round}/{upcoming_rounds[-1]}",
-                callback_data=f"next:back:_:{current_round}",
+                callback_data=f"rpk:nb:{current_round}",
             )
         )
 
@@ -171,10 +177,15 @@ def next_filtered_keyboard(
                     "◀", callback_data=f"next:filtered:{session_filter}:{prev_round}"
                 )
             )
+        center_cb = (
+            f"rpk:nf:{session_filter}:{current_round}"
+            if total > 1
+            else f"next:filtered:{session_filter}:{current_round}"
+        )
         nav_row.append(
             InlineKeyboardButton(
                 f"R{current_round}/{navigable_rounds[-1]}",
-                callback_data=f"next:filtered:{session_filter}:{current_round}",
+                callback_data=center_cb,
             )
         )
         if idx < total - 1:
@@ -222,7 +233,7 @@ def results_overview_keyboard(
         nav_row.append(
             InlineKeyboardButton(
                 f"R{current_round}/{completed_rounds[-1]}",
-                callback_data=f"res:back:_:{current_round}",
+                callback_data=f"rpk:rb:{current_round}",
             )
         )
 
@@ -267,10 +278,15 @@ def results_filtered_keyboard(
                 InlineKeyboardButton("◀", callback_data=f"res:filtered:{session_key}:{prev_round}")
             )
         denom = last_completed_round if last_completed_round is not None else navigable_rounds[-1]
+        center_cb = (
+            f"rpk:rf:{session_key}:{current_round}"
+            if total > 1
+            else f"res:filtered:{session_key}:{current_round}"
+        )
         nav_row.append(
             InlineKeyboardButton(
                 f"R{current_round}/{denom}",
-                callback_data=f"res:filtered:{session_key}:{current_round}",
+                callback_data=center_cb,
             )
         )
         if idx < total - 1:
@@ -285,6 +301,96 @@ def results_filtered_keyboard(
         rows.append(nav_row)
     rows.append(back_row)
     return InlineKeyboardMarkup(rows)
+
+
+# ---------------------------------------------------------------------------
+# Round picker — grid UI for jumping to any navigable round
+# ---------------------------------------------------------------------------
+
+_PICKER_COLS = 4
+
+
+def _origin_to_callback(origin: str, round_num: int) -> str:
+    """Map a picker origin back to the callback that the original handler expects."""
+    if origin == "nb":
+        return f"next:back:_:{round_num}"
+    if origin.startswith("nf:"):
+        session_filter = origin[3:]
+        return f"next:filtered:{session_filter}:{round_num}"
+    if origin == "rb":
+        return f"res:back:_:{round_num}"
+    if origin.startswith("rf:"):
+        session_key = origin[3:]
+        return f"res:filtered:{session_key}:{round_num}"
+    if origin == "lap":
+        return f"lap:{round_num}:s"
+    return f"{origin}:{round_num}"
+
+
+def round_picker_keyboard(
+    origin: str,
+    current_round: int,
+    navigable_rounds: list[int],
+    races: list,
+) -> InlineKeyboardMarkup:
+    """Build a grid of round buttons for the picker overlay."""
+    race_map = {r.round: r for r in races}
+    rows: list[list[InlineKeyboardButton]] = []
+    row: list[InlineKeyboardButton] = []
+
+    for rnd in navigable_rounds:
+        race = race_map.get(rnd)
+        flag = circuit_flag_icon(race.circuit.country) if race else "🏴"
+        label = f"·{flag}{rnd}·" if rnd == current_round else f"{flag}{rnd}"
+        callback = _origin_to_callback(origin, rnd)
+        row.append(InlineKeyboardButton(label, callback_data=callback))
+        if len(row) == _PICKER_COLS:
+            rows.append(row)
+            row = []
+
+    if row:
+        rows.append(row)
+
+    back_callback = _origin_to_callback(origin, current_round)
+    rows.append([InlineKeyboardButton("🔙 Back", callback_data=back_callback)])
+    return InlineKeyboardMarkup(rows)
+
+
+def round_picker_text(current_round: int, races: list) -> str:
+    """Build the picker message text in legacy Markdown."""
+    race = next((r for r in races if r.round == current_round), None)
+    name = _esc(race.name) if race else "Unknown"
+    return f"🏁 *Select Round*\nCurrently viewing: R{current_round} — {name}"
+
+
+def upcoming_rounds(races: list, group: str = "all") -> list[int]:
+    """Return sorted list of round numbers that have at least one upcoming session in the group."""
+    now = dt_datetime.now(tz=datetime.UTC)
+    entries = find_next_sessions(races, group, limit=len(races) * 7, now=now)
+    seen: set[int] = set()
+    result: list[int] = []
+    for entry in entries:
+        if entry.race.round not in seen:
+            seen.add(entry.race.round)
+            result.append(entry.race.round)
+    return result
+
+
+def get_completed_rounds_for_session(races: list, session_key: str) -> list[int]:
+    """Get list of round numbers that have at least one completed session of the given type."""
+    now = dt_datetime.now(tz=UTC)
+    if session_key == "all":
+        return sorted(
+            r.round
+            for r in races
+            if any(e.starts_at and e.starts_at <= now for e in session_entries([r]))
+        )
+    rounds = []
+    for r in races:
+        entry = find_race_session([r], r.round, session_key)
+        if entry and entry.starts_at and entry.starts_at <= now:
+            rounds.append(r.round)
+    return sorted(rounds)
 
 
 async def load_schedule_and_bounds(context) -> tuple[list, dict, int]:

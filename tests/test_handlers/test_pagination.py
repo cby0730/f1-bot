@@ -1,14 +1,18 @@
 """Tests for pagination keyboard builders and resolve_default_round."""
 
 from f1_bot.handlers.pagination import (
+    _origin_to_callback,
     next_filtered_keyboard,
     next_overview_keyboard,
     resolve_default_round,
     results_filtered_keyboard,
     results_overview_keyboard,
     round_keyboard,
+    round_picker_keyboard,
+    round_picker_text,
     schedule_keyboard,
 )
+from f1_bot.models.race import Circuit, Race
 
 # ---------------------------------------------------------------------------
 # round_keyboard
@@ -148,7 +152,7 @@ class TestResultsOverviewKeyboard:
         assert pager_row[0].text == "◀"
         assert pager_row[0].callback_data == "res:back:_:2"
         assert pager_row[1].text == "R3/4"
-        assert pager_row[1].callback_data == "res:back:_:3"
+        assert pager_row[1].callback_data == "rpk:rb:3"
         assert pager_row[2].text == "▶"
         assert pager_row[2].callback_data == "res:back:_:4"
 
@@ -189,13 +193,11 @@ class TestResultsFilteredKeyboard:
     def test_state_b_has_no_filter_row(self):
         """State B should only have nav row + back row, no session filter buttons."""
         kb = results_filtered_keyboard(3, [1, 2, 3], "race")
-        all_btns = [btn for row in kb.inline_keyboard for btn in row]
-        filter_keys = {"fp1", "fp2", "fp3", "qualifying", "sprint_qualifying", "sprint", "all"}
-        for btn in all_btns:
-            parts = (btn.callback_data or "").split(":")
-            assert not any(k in parts for k in filter_keys), (
-                f"Filter button found in State B: {btn.callback_data}"
-            )
+        assert len(kb.inline_keyboard) == 2
+        nav_texts = {btn.text for btn in kb.inline_keyboard[0]}
+        assert nav_texts & {"◀", "▶"}
+        back_texts = {btn.text for btn in kb.inline_keyboard[1]}
+        assert any("Back" in t for t in back_texts)
 
     def test_state_b_nav_row_is_first(self):
         """Nav row (◀ ▶) should be the first row in State B keyboard."""
@@ -264,3 +266,117 @@ class TestResolveDefaultRound:
         bounds = {}
         assert resolve_default_round(bounds) is None
         assert resolve_default_round(bounds, sprint_only=True) is None
+
+
+# ---------------------------------------------------------------------------
+# _origin_to_callback
+# ---------------------------------------------------------------------------
+
+
+def _make_race(rnd: int, name: str = "Test GP", country: str = "UK") -> Race:
+    from datetime import date
+
+    return Race(
+        season=2025,
+        round=rnd,
+        name=name,
+        circuit=Circuit(circuit_id="test", name="Test", locality="Test", country=country),
+        date=date(2025, 6, 1),
+    )
+
+
+class TestOriginToCallback:
+    def test_pit(self):
+        assert _origin_to_callback("pit", 5) == "pit:5"
+
+    def test_lap(self):
+        assert _origin_to_callback("lap", 3) == "lap:3:s"
+
+    def test_nb(self):
+        assert _origin_to_callback("nb", 10) == "next:back:_:10"
+
+    def test_nf(self):
+        assert _origin_to_callback("nf:race", 7) == "next:filtered:race:7"
+
+    def test_rb(self):
+        assert _origin_to_callback("rb", 4) == "res:back:_:4"
+
+    def test_rf(self):
+        assert _origin_to_callback("rf:qualifying", 2) == "res:filtered:qualifying:2"
+
+    def test_rf_sprint_qualifying(self):
+        assert _origin_to_callback("rf:sprint_qualifying", 8) == "res:filtered:sprint_qualifying:8"
+
+
+# ---------------------------------------------------------------------------
+# round_picker_keyboard
+# ---------------------------------------------------------------------------
+
+
+class TestRoundPickerKeyboard:
+    def test_four_column_layout(self):
+        races = [_make_race(i) for i in range(1, 9)]
+        kb = round_picker_keyboard("pit", 3, [1, 2, 3, 4, 5, 6, 7, 8], races)
+        grid_rows = kb.inline_keyboard[:-1]
+        assert len(grid_rows) == 2
+        assert all(len(row) == 4 for row in grid_rows)
+
+    def test_partial_last_row(self):
+        races = [_make_race(i) for i in range(1, 6)]
+        kb = round_picker_keyboard("pit", 3, [1, 2, 3, 4, 5], races)
+        grid_rows = kb.inline_keyboard[:-1]
+        assert len(grid_rows) == 2
+        assert len(grid_rows[0]) == 4
+        assert len(grid_rows[1]) == 1
+
+    def test_current_round_highlighted(self):
+        races = [_make_race(1), _make_race(2), _make_race(3)]
+        kb = round_picker_keyboard("pit", 2, [1, 2, 3], races)
+        all_btns = [btn for row in kb.inline_keyboard[:-1] for btn in row]
+        highlighted = [btn for btn in all_btns if btn.text.startswith("·")]
+        assert len(highlighted) == 1
+        assert "2" in highlighted[0].text
+
+    def test_back_button_present(self):
+        races = [_make_race(1), _make_race(2)]
+        kb = round_picker_keyboard("pit", 1, [1, 2], races)
+        back_row = kb.inline_keyboard[-1]
+        assert len(back_row) == 1
+        assert "Back" in back_row[0].text
+        assert back_row[0].callback_data == "pit:1"
+
+    def test_picker_buttons_emit_original_callbacks(self):
+        races = [_make_race(i) for i in range(1, 4)]
+        kb = round_picker_keyboard("rb", 2, [1, 2, 3], races)
+        btn = kb.inline_keyboard[0][0]
+        assert btn.callback_data == "res:back:_:1"
+
+    def test_back_button_uses_current_round(self):
+        races = [_make_race(1), _make_race(2)]
+        kb = round_picker_keyboard("nf:race", 2, [1, 2], races)
+        back_btn = kb.inline_keyboard[-1][0]
+        assert back_btn.callback_data == "next:filtered:race:2"
+
+
+# ---------------------------------------------------------------------------
+# round_picker_text
+# ---------------------------------------------------------------------------
+
+
+class TestRoundPickerText:
+    def test_contains_round_and_name(self):
+        races = [_make_race(5, "British Grand Prix")]
+        text = round_picker_text(5, races)
+        assert "R5" in text
+        assert "British Grand Prix" in text
+        assert "Select Round" in text
+
+    def test_unknown_round(self):
+        text = round_picker_text(99, [])
+        assert "R99" in text
+        assert "Unknown" in text
+
+    def test_escapes_markdown_chars(self):
+        races = [_make_race(1, "Test_GP")]
+        text = round_picker_text(1, races)
+        assert "Test\\_GP" in text

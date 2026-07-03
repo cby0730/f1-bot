@@ -224,7 +224,7 @@ async def test_results_handler_shows_last_completed_round():
     assert pager_row[0].text == "◀"
     assert pager_row[0].callback_data == "res:back:_:14"
     assert pager_row[1].text == "R15/15"
-    assert pager_row[1].callback_data == "res:back:_:15"
+    assert pager_row[1].callback_data == "rpk:rb:15"
 
 
 async def test_results_handler_no_completed_round_shows_no_data():
@@ -395,8 +395,8 @@ async def test_format_all_results_dynamic_truncation(monkeypatch):
     assert "truncated to top 10" in text_extreme
 
 
-async def test_get_completed_rounds_for_session():
-    from f1_bot.handlers.results import _get_completed_rounds_for_session
+async def testget_completed_rounds_for_session():
+    from f1_bot.handlers.pagination import get_completed_rounds_for_session
 
     c = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
     r1 = Race(
@@ -437,14 +437,14 @@ async def test_get_completed_rounds_for_session():
     )
     races = [r1, r2, r3]
 
-    assert _get_completed_rounds_for_session(races, "fp3") == [1, 3]
-    assert _get_completed_rounds_for_session(races, "sprint") == [2]
-    assert _get_completed_rounds_for_session(races, "race") == [1, 2, 3]
+    assert get_completed_rounds_for_session(races, "fp3") == [1, 3]
+    assert get_completed_rounds_for_session(races, "sprint") == [2]
+    assert get_completed_rounds_for_session(races, "race") == [1, 2, 3]
 
 
 async def test_get_completed_rounds_qualifying_before_race():
     """Round with completed qualifying but pending race is navigable."""
-    from f1_bot.handlers.results import _get_completed_rounds_for_session
+    from f1_bot.handlers.pagination import get_completed_rounds_for_session
 
     c = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
     today = date.today()
@@ -473,11 +473,11 @@ async def test_get_completed_rounds_qualifying_before_race():
     races = [r1, r2]
 
     # qualifying completed for both rounds
-    assert _get_completed_rounds_for_session(races, "qualifying") == [1, 2]
+    assert get_completed_rounds_for_session(races, "qualifying") == [1, 2]
     # "all" includes R2 because FP1 and Q are completed
-    assert _get_completed_rounds_for_session(races, "all") == [1, 2]
+    assert get_completed_rounds_for_session(races, "all") == [1, 2]
     # race only completed for R1
-    assert _get_completed_rounds_for_session(races, "race") == [1]
+    assert get_completed_rounds_for_session(races, "race") == [1]
 
 
 def test_results_filtered_keyboard_custom_denominator():
