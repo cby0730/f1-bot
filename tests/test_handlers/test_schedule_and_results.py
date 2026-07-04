@@ -371,6 +371,7 @@ async def test_format_all_results_dynamic_truncation(monkeypatch):
 
     # Case 1: Short message (<= 4096)
     text = await _format_all_results(repo, 2026, 1, race, drivers_map)
+    assert text is not None
     assert "FP1: Max" in text
     assert "Race: Max" in text
     assert "omitted" not in text
@@ -378,6 +379,7 @@ async def test_format_all_results_dynamic_truncation(monkeypatch):
     # Case 2: Long message (> 4096) -> Drop practice
     mock_results["fp1"] = "A" * 4100
     text_long = await _format_all_results(repo, 2026, 1, race, drivers_map)
+    assert text_long is not None
     assert "FP2: Max" not in text_long
     assert "FP1: Max" not in text_long
     assert "SQ: Max" in text_long
@@ -389,6 +391,7 @@ async def test_format_all_results_dynamic_truncation(monkeypatch):
     mock_results["fp1"] = "A" * 4100
     mock_results["race"] = "B" * 4100
     text_extreme = await _format_all_results(repo, 2026, 1, race, drivers_map)
+    assert text_extreme is not None
     assert "FP2: Max" not in text_extreme
     assert "SQ: Max (top 10)" in text_extreme
     assert "B" * 4100 + " (top 10)" in text_extreme

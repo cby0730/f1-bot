@@ -13,8 +13,8 @@ A Telegram bot for Formula 1 information — race schedules, standings, results,
 | `/results` | Race results overview; tap session buttons to view Qualifying / Sprint / Race / FP results |
 | `/pitstops` | Pit stop data with ◀ ▶ round navigation |
 | `/laps` | Fastest laps — round navigation + By-Lap / By-Driver view toggle |
-| `/driver <name>` | Driver profile and standings (fuzzy name matching) |
-| `/circuit <name>` | Circuit info (fuzzy name matching) |
+| `/driver [name]` | Driver profile and standings (fuzzy matching; interactive grid menu if run without arguments) |
+| `/circuit [name]` | Circuit info (fuzzy matching; interactive list menu if run without arguments) |
 | `/timezone` | Set your timezone for local race times |
 | `/remind` | View and manage your session reminders |
 | `/start`, `/help` | Welcome message and command list |
@@ -39,12 +39,12 @@ Startup / Scheduler → Jolpica + OpenF1 APIs → PostgreSQL
 ### Key design decisions
 
 - **SQL-only handlers:** All handler reads go through `Repository` → PostgreSQL. No API calls from handlers.
-- **Startup sync:** `startup_sync()` in `_post_init` fetches schedule, standings, results, pit stops, laps, and session data before the bot starts accepting commands.
-- **Unified hourly sync:** A single `hourly_sync` job replaces the old 6 staggered jobs. All sync work runs sequentially in one cycle (`_POLL_INTERVAL` = 1 hour in `scheduler/manager.py`).
+- **Startup sync:** `startup_sync()` in `_post_init` runs one-time historical driver ID migrations (`run_driver_id_backfill_migration`), then syncs schedule, standings, results, pit stops, laps, and session data before the bot starts accepting commands.
+- **Unified hourly sync:** A single `hourly_sync` job replaces the old 6 staggered jobs. Runs on a 1-hour cycle. The Jolpica and OpenF1 sync branches run concurrently via `asyncio.gather()`, while tasks within each branch run sequentially.
 - **OpenF1 for laps:** Lap timing data (including sector times) comes from OpenF1, not Jolpica.
 - **PostgreSQL storage:** All data is stored in PostgreSQL via asyncpg. Write operations use explicit transactions for atomicity.
-- **Notification system:** Users subscribe to session reminders via inline keyboard flow. A background `notification_sender` schedules PTB `run_once` jobs based on the earliest pending `fire_at` in the database, auto-rescheduling after each delivery.
-- **Laps in-memory cache:** Validated `LapTime` objects are cached inside `Repository` on retrieval, preventing costly database reads and repetitive CPU-heavy Pydantic validation on pagination clicks. Saving new laps invalidates this cache.
+- **Notification system:** Users subscribe to session reminders via inline keyboard flow. A background `notification_sender` schedules PTB `run_once` jobs based on the earliest pending `fire_at` in the database, auto-rescheduling after each delivery. Uses a local `schedule_cache` dict to prevent redundant database lookups during the notification loop.
+- **Laps in-memory cache:** Validated `LapTime` objects are cached inside `Repository` on retrieval (LRU, max 30 entries), preventing costly database reads and repetitive CPU-heavy Pydantic validation on pagination clicks. Saving new laps invalidates this cache.
 - **Input and formatting guards:** Callback query parameter parsing is guarded against parsing errors (`ValueError`), and markdown-sensitive fields are escaped to prevent Telegram Markdown parse failures.
 - **Fuzzy matching:** `/driver` and `/circuit` commands use difflib-based fuzzy matching across all name fields.
 - **Driver mapping & cache enrichment:** OpenF1 driver profiles are cached and enriched with country flags mapped from ISO 3-letter codes. OpenF1 session results are mapped to Jolpica's driver entities using their permanent numbers via `Repository.get_drivers_by_id_map()`.
@@ -108,6 +108,9 @@ uv run -m f1_bot
 
 ## Running tests
 
+> [!TIP]
+> Storage tests (`test_storage/`) and E2E scenario tests (`test_e2e.py`) run against the dev PostgreSQL instance but will automatically be skipped with a `Postgres not available` message if the container is offline, rather than failing the build. Handler tests (`test_handlers/`) are isolated unit tests and do not require PostgreSQL at all.
+
 ```bash
 # Start dev PostgreSQL (required for tests)
 docker compose -f docker-compose.dev.yml up -d
@@ -143,6 +146,13 @@ uv run ruff check src/ tests/
 | `TELEGRAM_READ_TIMEOUT` | No | `20.0` | Read timeout for Telegram client in seconds |
 | `F1BOT_LOG_LEVEL` | No | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR` |
 | `F1BOT_LOG_FORMAT` | No | `auto` | `auto` (JSON if not TTY) / `console` / `json` |
+| `F1BOT_JOLPICA_BASE_URL` | No | `https://api.jolpi.ca/ergast/f1` | Jolpica API base URL |
+| `F1BOT_OPENF1_BASE_URL` | No | `https://api.openf1.org/v1` | OpenF1 API base URL |
+| `F1BOT_JOLPICA_RATE_PER_SECOND` | No | `4.0` | Jolpica token-bucket rate limit per second |
+| `F1BOT_JOLPICA_RATE_PER_HOUR` | No | `500` | Jolpica token-bucket rate limit per hour |
+| `F1BOT_OPENF1_RATE_PER_SECOND` | No | `3.0` | OpenF1 token-bucket rate limit per second |
+| `F1BOT_OPENF1_RATE_PER_MINUTE` | No | `30` | OpenF1 token-bucket rate limit per minute |
+| `F1BOT_NOTIFICATION_RATE_PER_SECOND` | No | `25.0` | Outbound Telegram notification rate limit per second |
 
 
 ## Data sources

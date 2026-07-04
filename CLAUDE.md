@@ -5,6 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Running the project
 
 ```bash
+docker compose -f docker-compose.dev.yml up -d  # start dev PostgreSQL (required for storage/E2E tests)
 uv run -m f1_bot                          # start the bot (requires .env)
 uv run pytest -m "not integration"        # unit tests only (~400 tests)
 uv run pytest -m integration -v           # integration tests (real HTTP, ~22 tests)
@@ -24,8 +25,8 @@ Startup / Scheduler → JolpicaClient + OpenF1Client → PostgreSQL
               Telegram users → handlers → Repository → PostgreSQL (read-only)
 ```
 
-- **Startup sync:** `startup_sync()` runs in `_post_init` before the bot accepts commands. Fetches schedule, standings, results, pit stops, laps, session data. Also runs a historical driver ID backfill migration.
-- **Unified hourly sync:** A single `hourly_sync` job replaces the old 6 staggered jobs. All sync work runs sequentially in one cycle (`_POLL_INTERVAL` = 1 hour in `scheduler/manager.py`).
+- **Startup sync:** `startup_sync()` runs in `_post_init` before the bot accepts commands. Executes `run_driver_id_backfill_migration` to backfill historical session records, then concurrently syncs schedule, standings, results, pit stops, laps, and session data.
+- **Unified hourly sync:** A single `hourly_sync` job replaces the old 6 staggered jobs. Runs on a 1-hour cycle. The Jolpica and OpenF1 sync branches run concurrently via `asyncio.gather()`, while actions inside each branch run sequentially.
 - **Two-state UX:** `/next` and `/results` use a unified two-state interaction: State A (overview with session filter buttons + round navigation) → State B (filtered with round navigation + Back).
 - **Public Repository (Metadata & README only):** Hosted at `git@github.com:cby0730/f1-telegram-bot.git` (local path: `/Users/chen-bo-yo/Projects/f1-telegram-bot`). It contains only the public `README.md` and does not expose the private source code of this bot.
 
@@ -39,7 +40,7 @@ Startup / Scheduler → JolpicaClient + OpenF1Client → PostgreSQL
 | `/results` | `handlers/results.py` — unified entry for all results |
 | `/pitstops`, `/laps` | `handlers/race_data.py` |
 | `/standings` | `handlers/standings.py` |
-| `/driver`, `/circuit` | `handlers/extras.py` |
+| `/driver`, `/circuit` | `handlers/extras.py` — profile/info with fuzzy matching; interactive menu if no arguments |
 | `/timezone` | `handlers/timezone.py` |
 | `/remind` | `handlers/notifications.py` — view/manage session reminders |
 
@@ -49,10 +50,11 @@ Startup / Scheduler → JolpicaClient + OpenF1Client → PostgreSQL
 |---|---|
 | `next:filtered:{filter}:{round}` | `/next` State B — filter ∈ {fp1, fp2, fp3, qualifying, sprint_qualifying, sprint, race} |
 | `next:back:_:{round}` | `/next` return to State A |
-| `res:filtered:{session_key}:{round}` | `/results` State B — session_key ∈ {race, qualifying, sprint, fp1, fp2, fp3, sprint_qualifying} |
+| `res:filtered:{session_key}:{round}` | `/results` State B — session_key ∈ {race, qualifying, sprint, fp1, fp2, fp3, sprint_qualifying, all} |
 | `res:back:_:{round}` | `/results` return to State A |
 | `pit:{round}` | Pit stops round navigation |
-| `lap:{round}:s` / `lap:{round}:l:{lap_num}` / `lap:{round}:dp` / `lap:{round}:d:{driver_id}:{page}` | Laps navigation (summary / per-lap / driver picker / per-driver) |
+| `lap:{round}:s` / `lap:{round}:l:{lap_num}` / `lap:{round}:dp` / `lap:{round}:d:{driver_id}:{page}` | Laps navigation (summary / per-lap / driver picker / per-driver, paginated by 20) |
+| `rpk:{origin}:{round}` | Round selection grid picker (origin ∈ {nb, nf:{filter}, rb, rf:{session_key}, pit, lap}) |
 | `notify:pick:{round}` | Notification session picker |
 | `notify:sess:{session_key}:{round}` | Notification timing presets |
 | `notify:set:{minutes}:{session_key}:{round}` | Toggle subscription on/off |
@@ -62,7 +64,7 @@ Startup / Scheduler → JolpicaClient + OpenF1Client → PostgreSQL
 | `notify:clearall:{action}` | Clear all reminders (confirm/yes/cancel) |
 | `drv:detail:{driver_id}` / `drv:list` | Driver profile navigation |
 | `circ:detail:{circuit_id}` / `circ:list` | Circuit info navigation |
-| `tz:region:{region}` / `tz:set:{timezone}` | Timezone picker navigation |
+| `tz:region:{region}` / `tz:set:{timezone}` | Timezone picker navigation (region `__back__` returns to continent menu) |
 | `standings:wdc` / `standings:wcc` | Standings WDC/WCC toggle |
 
 ## Key files
@@ -76,19 +78,25 @@ Startup / Scheduler → JolpicaClient + OpenF1Client → PostgreSQL
 | `src/f1_bot/scheduler/jobs.py` | `startup_sync()` + `hourly_sync()` + individual `sync_*` callbacks; each takes `(jolpica, repo)` or `(openf1, repo)` |
 | `src/f1_bot/scheduler/manager.py` | Registers single `hourly_sync` job via `run_repeating`; owns `_POLL_INTERVAL` |
 | `src/f1_bot/handlers/pagination.py` | Shared keyboard builders: `next_overview_keyboard`, `next_filtered_keyboard`, `results_overview_keyboard`, `results_filtered_keyboard`, `round_keyboard`, `schedule_keyboard` |
+| `src/f1_bot/handlers/round_picker.py` | Round selection grid overlay callback handler and keyboard builder |
 | `src/f1_bot/formatting/messages.py` | All message formatters (`format_schedule`, `format_driver_standings`, `format_constructor_standings`, `format_session_results`, etc.) |
 | `src/f1_bot/formatting/emoji.py` | `pos_icon`, `flag_icon`, `session_icon`, `flag_color`, `country_code_to_flag` — mapping and flag logic |
 | `src/f1_bot/formatting/timezone.py` | `combine_race_dt()` — combines race date + time into UTC datetime; used by scheduler and repository |
+| `src/f1_bot/api/base.py` | `BaseAPIClient` standardizing httpx requests, timeout config, proxy, rate limiting, and backoff |
+| `src/f1_bot/api/jolpica.py` | `JolpicaClient` subclass for Ergast/Jolpica schedule, standings, results, laps, pitstops |
+| `src/f1_bot/api/openf1.py` | `OpenF1Client` subclass for OpenF1 sessions, laps, interval, driver data |
 | `src/f1_bot/utils/rate_limiter.py` | Token bucket; constructor: `RateLimiter(per_second=..., per_period=..., period=...)` |
 | `src/f1_bot/utils/fuzzy_match.py` | `match_driver()` / `match_circuit()` using difflib; scores all fields, takes max |
 | `src/f1_bot/utils/sessions.py` | `find_next_sessions()` / `find_recent_completed_session()` / `normalize_session_key()` / `session_entries()` — session-level timeline logic |
 | `src/f1_bot/utils/logging.py` | structlog setup; `add_taiwan_timestamp` processor; auto-detects TTY for console vs JSON output |
 | `src/f1_bot/handlers/notifications.py` | `/remind` command + `notify:*` callback flow (pick session → pick timing → toggle subscription) |
 | `src/f1_bot/models/notification.py` | `NotificationSubscription` model + `TIMING_PRESETS` (15/30/60/180 min) |
+| `src/f1_bot/models/user.py` | `UserPreference` model representing timezone settings |
 | `src/f1_bot/scheduler/notification_sender.py` | `schedule_next_notification()` + `send_notifications()` — background delivery via PTB JobQueue |
 | `src/f1_bot/handlers/errors.py` | Custom error handler formatting for Telegram command validation / network errors |
 | `src/f1_bot/models/live.py` | OpenF1 live data models (`LivePosition`, `LiveInterval`, `RaceControlMessage`, `WeatherData`) — infrastructure for future live features, currently unused by handlers |
 | `tests/conftest.py` | `pg_store`, `repo` fixtures (dev PostgreSQL) |
+| `tests/test_e2e.py` | 26 offline E2E mock scenarios verifying commands and callback flows |
 
 ## Known gotchas
 
@@ -150,6 +158,8 @@ set fields on frozen Pydantic models during test setup (e.g., attaching a `sprin
 - `asyncio_mode = "auto"` — all async tests run without explicit `@pytest.mark.asyncio`
 - `pytest.mark.integration` — requires network (Jolpica or OpenF1 HTTP)
 - No marker — unit test; uses dev PostgreSQL; safe to run offline
+- Graceful skip: Offline tests using `pg_store` or `repo` fixtures will automatically skip via `pytest.skip` if the dev container is offline, preventing failure.
+- Handler tests: `tests/test_handlers/` mock the Repository read layer entirely and require no database connectivity to run.
 - Fixtures: `pg_store` and `repo` in `tests/conftest.py` connect to dev PostgreSQL (`docker-compose.dev.yml`)
 - Mocking HTTP: use `pytest-httpx` (`httpx_mock` fixture) for unit tests
 - Scheduler tests: import private constants (`_LIVE_WINDOW_MARGIN`, `_RESULTS_WINDOW`) directly for boundary assertions
