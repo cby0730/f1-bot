@@ -59,13 +59,21 @@ async def _round_picker_callback(update: Update, context: ContextTypes.DEFAULT_T
         await query.answer(text="Schedule unavailable", show_alert=True)
         return
 
-    navigable = _compute_navigable_rounds(origin, races, bounds)
+    try:
+        navigable = _compute_navigable_rounds(origin, races, bounds)
+    except ValueError:
+        await query.answer(text="Invalid selection", show_alert=True)
+        return
+
     if not navigable:
         await query.answer(text="No rounds available", show_alert=True)
         return
 
     if current_round not in navigable:
-        current_round = navigable[-1]
+        if origin == "nb" or origin.startswith("nf:"):
+            current_round = navigable[0]
+        else:
+            current_round = navigable[-1]
 
     try:
         await query.edit_message_text(

@@ -373,7 +373,7 @@ def upcoming_rounds(races: list, group: str = "all") -> list[int]:
         if entry.race.round not in seen:
             seen.add(entry.race.round)
             result.append(entry.race.round)
-    return result
+    return sorted(result)
 
 
 def get_completed_rounds_for_session(races: list, session_key: str) -> list[int]:

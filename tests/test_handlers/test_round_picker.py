@@ -193,6 +193,18 @@ class TestRoundPickerCallback:
 
     @patch(
         "f1_bot.handlers.round_picker._compute_navigable_rounds",
+        return_value=[4, 5, 6],
+    )
+    async def test_snaps_to_first_for_upcoming_if_round_not_navigable(self, mock_compute):
+        races = [_upcoming_race(i) for i in range(4, 7)]
+        update = _mock_update("rpk:nb:99")
+        ctx = _mock_context(races, {"next_upcoming_round": 4})
+        await _round_picker_callback(update, ctx)
+        call_args = update.callback_query.edit_message_text.call_args
+        assert "R4" in call_args.args[0]
+
+    @patch(
+        "f1_bot.handlers.round_picker._compute_navigable_rounds",
         return_value=[1, 2, 3],
     )
     async def test_bad_request_swallowed(self, mock_compute):
@@ -216,3 +228,12 @@ class TestRoundPickerCallback:
         call_args = mock_compute.call_args[0]
         assert call_args[0] == "rf:sprint_qualifying"
         assert call_args[1] == races
+
+    async def test_value_error_handling_for_invalid_filter(self):
+        races = [_completed_race(5)]
+        update = _mock_update("rpk:nf:invalid_filter:5")
+        ctx = _mock_context(races, {"last_completed_round": 5})
+        await _round_picker_callback(update, ctx)
+        update.callback_query.answer.assert_called_once_with(
+            text="Invalid selection", show_alert=True
+        )

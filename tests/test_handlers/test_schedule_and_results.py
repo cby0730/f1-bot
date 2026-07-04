@@ -395,7 +395,7 @@ async def test_format_all_results_dynamic_truncation(monkeypatch):
     assert "truncated to top 10" in text_extreme
 
 
-async def testget_completed_rounds_for_session():
+async def test_get_completed_rounds_for_session():
     from f1_bot.handlers.pagination import get_completed_rounds_for_session
 
     c = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
@@ -728,3 +728,24 @@ async def test_format_all_results_prefetch_no_regression(monkeypatch):
     assert "Qualifying results text" in result
     # With pre-fetch, only 7 calls (one per session key), not 7+4=11
     assert call_count == 7
+
+
+async def test_next_callback_invalid_filter_value_error():
+    import pytest
+
+    from f1_bot.handlers.schedule import _next_callback
+
+    update = MagicMock()
+    update.callback_query.data = "next:filtered:invalid_filter:5"
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
+
+    r1 = _race()
+    repo = MagicMock()
+    repo.get_schedule = AsyncMock(return_value=[r1])
+    repo.get_schedule_bounds = AsyncMock(return_value=_bounds([r1]))
+    repo.get_user_timezone = AsyncMock(return_value=None)
+    ctx = _context(repo=repo)
+
+    with pytest.raises(ValueError, match="Unknown session group or key: invalid_filter"):
+        await _next_callback(update, ctx)
