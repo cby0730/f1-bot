@@ -6,6 +6,7 @@ from f1_bot.handlers import (
     notifications,
     race_data,
     results,
+    round_picker,
     schedule,
     standings,
     start,
@@ -19,6 +20,7 @@ def register_all_handlers(app: Application) -> None:
     standings.register(app)
     results.register(app)
     race_data.register(app)
+    round_picker.register(app)
     extras.register(app)
     timezone.register(app)
     notifications.register(app)

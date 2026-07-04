@@ -8,7 +8,7 @@ Postgres is used via the mango_pg dev container.
 import json
 import os
 import urllib.parse
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -25,22 +25,32 @@ from f1_bot.main import build_app  # noqa: E402
 TELEGRAM_TOKEN = "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
 MOCK_BOT_ID = 123456789
 MOCK_USER_ID = 999999
+_SEASON = date.today().year
 
 
-def make_mock_schedule(num_races: int = 24, current_year: int = 2026) -> dict:
+def make_mock_schedule(num_races: int = 24, current_year: int | None = None) -> dict:
     """Helper to generate a valid Jolpica schedule response matching Pydantic schemas."""
+    today = date.today()
+    if current_year is None:
+        current_year = today.year
     races = []
     for i in range(1, num_races + 1):
-        # Races 1 to 15 are completed (past)
-        # Races 16 to 24 are upcoming (future)
-        if i <= 15:
-            month = 3 + (i - 1) // 5
-            day = 1 + ((i - 1) % 5) * 5
+        if current_year == today.year:
+            # Relative dates: rounds 1-15 always past, 16+ always future
+            if i <= 15:
+                d = today - timedelta(days=(16 - i))
+            else:
+                d = today + timedelta(days=(i - 15))
+            date_str = d.isoformat()
         else:
-            month = 7 + (i - 16) // 5
-            day = 1 + ((i - 16) % 5) * 5
-
-        date_str = f"{current_year}-{month:02d}-{day:02d}"
+            # Fixed dates for explicit past-year tests (e.g. current_year=2020)
+            if i <= 15:
+                month = 3 + (i - 1) // 5
+                day = 1 + ((i - 1) % 5) * 5
+            else:
+                month = 7 + (i - 16) // 5
+                day = 1 + ((i - 16) % 5) * 5
+            date_str = f"{current_year}-{month:02d}-{day:02d}"
 
         race_dict = {
             "season": str(current_year),
@@ -169,7 +179,7 @@ async def e2e_app(e2e_settings, httpx_mock):
 
     httpx_mock.add_response(
         url="https://api.jolpi.ca/ergast/f1/current.json",
-        json=make_mock_schedule(24, current_year=2026),
+        json=make_mock_schedule(24),
         is_optional=True,
         is_reusable=True,
     )
@@ -188,7 +198,7 @@ async def e2e_app(e2e_settings, httpx_mock):
     repo = app.bot_data["repo"]
     jolpica = app.bot_data["jolpica"]
     races = await jolpica.get_current_schedule()
-    await repo.save_schedule(2026, races)
+    await repo.save_schedule(_SEASON, races)
 
     yield app
 
@@ -366,7 +376,7 @@ async def test_scenario_05_countdown_no_upcoming_races(e2e_app, httpx_mock):
 
     # Fetch 2020 schedule from mocked API and save to database
     races = await e2e_app.bot_data["jolpica"].get_current_schedule()
-    await repo.save_schedule(2026, races)
+    await repo.save_schedule(_SEASON, races)
 
     update = make_tg_update(e2e_app, "/countdown")
     await e2e_app.process_update(update)
@@ -490,7 +500,7 @@ async def test_scenario_11_results_shows_race_results_from_db(e2e_app, httpx_moc
             constructor=Constructor(constructor_id="rb", name="Red Bull", nationality="Austrian"),
         )
     ]
-    await repo.save_race_results(2026, 15, results)
+    await repo.save_race_results(_SEASON, 15, results)
 
     update = make_tg_update(e2e_app, "/results")
     await e2e_app.process_update(update)
@@ -520,7 +530,7 @@ async def test_scenario_12_results_callback_filtered_race(e2e_app, httpx_mock):
             constructor=Constructor(constructor_id="mer", name="Mercedes", nationality="German"),
         )
     ]
-    await repo.save_race_results(2026, 14, results)
+    await repo.save_race_results(_SEASON, 14, results)
 
     cb_update = make_tg_callback_query_update(e2e_app, "res:filtered:race:14")
     await e2e_app.process_update(cb_update)
@@ -550,7 +560,7 @@ async def test_scenario_13_results_shows_keyboard(e2e_app, httpx_mock):
             constructor=Constructor(constructor_id="mcl", name="McLaren", nationality="British"),
         )
     ]
-    await repo.save_race_results(2026, 15, results)
+    await repo.save_race_results(_SEASON, 15, results)
 
     update = make_tg_update(e2e_app, "/results")
     await e2e_app.process_update(update)
@@ -583,7 +593,7 @@ async def test_scenario_14_results_qualifying_filter(e2e_app, httpx_mock):
             q3="1:13.0",
         )
     ]
-    await repo.save_qualifying_results(2026, 10, results)
+    await repo.save_qualifying_results(_SEASON, 10, results)
 
     cb_update = make_tg_callback_query_update(e2e_app, "res:filtered:qualifying:10")
     await e2e_app.process_update(cb_update)
@@ -624,7 +634,7 @@ async def test_scenario_16_results_sprint_filter(e2e_app, httpx_mock):
             constructor=Constructor(constructor_id="rb", name="Red Bull", nationality="Austrian"),
         )
     ]
-    await repo.save_sprint_results(2026, 12, results)
+    await repo.save_sprint_results(_SEASON, 12, results)
 
     cb_update = make_tg_callback_query_update(e2e_app, "res:filtered:sprint:12")
     await e2e_app.process_update(cb_update)
@@ -654,7 +664,7 @@ async def test_scenario_17_results_sprint_round_3(e2e_app, httpx_mock):
             constructor=Constructor(constructor_id="mcl", name="McLaren", nationality="British"),
         )
     ]
-    await repo.save_sprint_results(2026, 3, results)
+    await repo.save_sprint_results(_SEASON, 3, results)
 
     cb_update = make_tg_callback_query_update(e2e_app, "res:filtered:sprint:3")
     await e2e_app.process_update(cb_update)
@@ -671,7 +681,7 @@ async def test_scenario_18_results_no_data_empty_schedule(e2e_app, httpx_mock):
 
     future_races = [
         Race(
-            season=2026,
+            season=_SEASON,
             round=i,
             name=f"Grand Prix {i}",
             circuit=Circuit(
@@ -681,7 +691,7 @@ async def test_scenario_18_results_no_data_empty_schedule(e2e_app, httpx_mock):
         )
         for i in range(1, 4)
     ]
-    await repo.save_schedule(2026, future_races)
+    await repo.save_schedule(_SEASON, future_races)
 
     update = make_tg_update(e2e_app, "/results")
     await e2e_app.process_update(update)
@@ -709,7 +719,7 @@ async def test_scenario_20_results_no_completed_sessions(e2e_app, httpx_mock):
 
     future_races = [
         Race(
-            season=2026,
+            season=_SEASON,
             round=i,
             name=f"Grand Prix {i}",
             circuit=Circuit(
@@ -719,7 +729,7 @@ async def test_scenario_20_results_no_completed_sessions(e2e_app, httpx_mock):
         )
         for i in range(1, 4)
     ]
-    await repo.save_schedule(2026, future_races)
+    await repo.save_schedule(_SEASON, future_races)
 
     update = make_tg_update(e2e_app, "/results")
     await e2e_app.process_update(update)
@@ -749,7 +759,7 @@ async def test_scenario_21_results_back_button(e2e_app, httpx_mock):
             constructor=Constructor(constructor_id="mer", name="Mercedes", nationality="German"),
         )
     ]
-    await repo.save_race_results(2026, 15, results)
+    await repo.save_race_results(_SEASON, 15, results)
 
     cb_update = make_tg_callback_query_update(e2e_app, "res:back:_:15")
     await e2e_app.process_update(cb_update)
@@ -765,7 +775,7 @@ async def test_scenario_22_pitstops_from_db(e2e_app, httpx_mock):
     from f1_bot.models.results import PitStop
 
     stops = [PitStop(driver_id="hamilton", lap=15, stop_number=1, duration=24.567)]
-    await repo.save_pit_stops(2026, 15, stops)
+    await repo.save_pit_stops(_SEASON, 15, stops)
 
     update = make_tg_update(e2e_app, "/pitstops")
     await e2e_app.process_update(update)
@@ -783,7 +793,7 @@ async def test_scenario_23_laps_from_db(e2e_app, httpx_mock):
     from f1_bot.models.results import LapTime
 
     laps = [LapTime(lap_number=45, driver_id="hamilton", time="1:18.293", position=1)]
-    await repo.save_lap_timings(2026, 15, laps)
+    await repo.save_lap_timings(_SEASON, 15, laps)
 
     update = make_tg_update(e2e_app, "/laps")
     await e2e_app.process_update(update)
@@ -815,7 +825,7 @@ async def test_scenario_24_results_round_navigation(e2e_app, httpx_mock):
             constructor=Constructor(constructor_id="rb", name="Red Bull", nationality="Austrian"),
         )
     ]
-    await repo.save_race_results(2026, 15, results_15)
+    await repo.save_race_results(_SEASON, 15, results_15)
 
     # Populate round 14
     results_14 = [
@@ -831,7 +841,7 @@ async def test_scenario_24_results_round_navigation(e2e_app, httpx_mock):
             constructor=Constructor(constructor_id="mcl", name="McLaren", nationality="British"),
         )
     ]
-    await repo.save_race_results(2026, 14, results_14)
+    await repo.save_race_results(_SEASON, 14, results_14)
 
     # Step 1: /results shows round 15
     update = make_tg_update(e2e_app, "/results")

@@ -224,7 +224,7 @@ async def test_results_handler_shows_last_completed_round():
     assert pager_row[0].text == "◀"
     assert pager_row[0].callback_data == "res:back:_:14"
     assert pager_row[1].text == "R15/15"
-    assert pager_row[1].callback_data == "res:back:_:15"
+    assert pager_row[1].callback_data == "rpk:rb:15"
 
 
 async def test_results_handler_no_completed_round_shows_no_data():
@@ -371,6 +371,7 @@ async def test_format_all_results_dynamic_truncation(monkeypatch):
 
     # Case 1: Short message (<= 4096)
     text = await _format_all_results(repo, 2026, 1, race, drivers_map)
+    assert text is not None
     assert "FP1: Max" in text
     assert "Race: Max" in text
     assert "omitted" not in text
@@ -378,6 +379,7 @@ async def test_format_all_results_dynamic_truncation(monkeypatch):
     # Case 2: Long message (> 4096) -> Drop practice
     mock_results["fp1"] = "A" * 4100
     text_long = await _format_all_results(repo, 2026, 1, race, drivers_map)
+    assert text_long is not None
     assert "FP2: Max" not in text_long
     assert "FP1: Max" not in text_long
     assert "SQ: Max" in text_long
@@ -389,6 +391,7 @@ async def test_format_all_results_dynamic_truncation(monkeypatch):
     mock_results["fp1"] = "A" * 4100
     mock_results["race"] = "B" * 4100
     text_extreme = await _format_all_results(repo, 2026, 1, race, drivers_map)
+    assert text_extreme is not None
     assert "FP2: Max" not in text_extreme
     assert "SQ: Max (top 10)" in text_extreme
     assert "B" * 4100 + " (top 10)" in text_extreme
@@ -396,7 +399,7 @@ async def test_format_all_results_dynamic_truncation(monkeypatch):
 
 
 async def test_get_completed_rounds_for_session():
-    from f1_bot.handlers.results import _get_completed_rounds_for_session
+    from f1_bot.handlers.pagination import get_completed_rounds_for_session
 
     c = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
     r1 = Race(
@@ -437,14 +440,14 @@ async def test_get_completed_rounds_for_session():
     )
     races = [r1, r2, r3]
 
-    assert _get_completed_rounds_for_session(races, "fp3") == [1, 3]
-    assert _get_completed_rounds_for_session(races, "sprint") == [2]
-    assert _get_completed_rounds_for_session(races, "race") == [1, 2, 3]
+    assert get_completed_rounds_for_session(races, "fp3") == [1, 3]
+    assert get_completed_rounds_for_session(races, "sprint") == [2]
+    assert get_completed_rounds_for_session(races, "race") == [1, 2, 3]
 
 
 async def test_get_completed_rounds_qualifying_before_race():
     """Round with completed qualifying but pending race is navigable."""
-    from f1_bot.handlers.results import _get_completed_rounds_for_session
+    from f1_bot.handlers.pagination import get_completed_rounds_for_session
 
     c = Circuit(circuit_id="test", name="Test", locality="Test", country="Test")
     today = date.today()
@@ -473,11 +476,11 @@ async def test_get_completed_rounds_qualifying_before_race():
     races = [r1, r2]
 
     # qualifying completed for both rounds
-    assert _get_completed_rounds_for_session(races, "qualifying") == [1, 2]
+    assert get_completed_rounds_for_session(races, "qualifying") == [1, 2]
     # "all" includes R2 because FP1 and Q are completed
-    assert _get_completed_rounds_for_session(races, "all") == [1, 2]
+    assert get_completed_rounds_for_session(races, "all") == [1, 2]
     # race only completed for R1
-    assert _get_completed_rounds_for_session(races, "race") == [1]
+    assert get_completed_rounds_for_session(races, "race") == [1]
 
 
 def test_results_filtered_keyboard_custom_denominator():
@@ -728,3 +731,24 @@ async def test_format_all_results_prefetch_no_regression(monkeypatch):
     assert "Qualifying results text" in result
     # With pre-fetch, only 7 calls (one per session key), not 7+4=11
     assert call_count == 7
+
+
+async def test_next_callback_invalid_filter_value_error():
+    import pytest
+
+    from f1_bot.handlers.schedule import _next_callback
+
+    update = MagicMock()
+    update.callback_query.data = "next:filtered:invalid_filter:5"
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
+
+    r1 = _race()
+    repo = MagicMock()
+    repo.get_schedule = AsyncMock(return_value=[r1])
+    repo.get_schedule_bounds = AsyncMock(return_value=_bounds([r1]))
+    repo.get_user_timezone = AsyncMock(return_value=None)
+    ctx = _context(repo=repo)
+
+    with pytest.raises(ValueError, match="Unknown session group or key: invalid_filter"):
+        await _next_callback(update, ctx)
