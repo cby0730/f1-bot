@@ -14,6 +14,8 @@ from telegram.constants import ParseMode
 from telegram.error import BadRequest
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
+from f1_bot.formatting.context import RenderContext
+from f1_bot.formatting.i18n import t
 from f1_bot.formatting.messages import (
     format_qualifying_results,
     format_race_results,
@@ -21,6 +23,7 @@ from f1_bot.formatting.messages import (
     format_sprint_results,
     no_data_message,
 )
+from f1_bot.handlers.context import resolve_context
 from f1_bot.handlers.pagination import (
     get_completed_rounds_for_session,
     load_schedule_and_bounds,
@@ -34,9 +37,9 @@ from f1_bot.models.results import (
     SprintResult,
 )
 from f1_bot.utils.sessions import (
-    SESSION_LABELS,
     find_race_session,
     find_recent_completed_session,
+    session_label,
 )
 
 log = structlog.get_logger(__name__)
@@ -72,37 +75,44 @@ async def _get_session_result(repo, season: int, rnd: int, session_key: str):
     """Try to find session results by scanning known OpenF1 session keys stored in results table."""
     # session results are stored as "session:{openf1_session_key}" in the results table
     all_types = await repo.get_all_result_types(season, rnd)
-    for t in all_types:
-        parts = t.split(":")
+    for result_type in all_types:
+        parts = result_type.split(":")
         if len(parts) == 3 and parts[0] == "session" and parts[1] == session_key:
-            cached = await repo.get_results_by_type(season, rnd, t)
+            cached = await repo.get_results_by_type(season, rnd, result_type)
             if cached:
                 return [SessionResult.model_validate(r) for r in cached]
     return []
 
 
 async def _format_results_for_session(
-    repo, season: int, rnd: int, race, session_key: str, drivers_map: dict, top_n: int | None = None
+    repo,
+    season: int,
+    rnd: int,
+    race,
+    session_key: str,
+    drivers_map: dict,
+    ctx: RenderContext,
+    top_n: int | None = None,
 ) -> str | None:
     """Format results for a specific session key. Returns formatted text or None."""
     if session_key == "race":
         results = await _get_race_results(repo, season, rnd)
         if results:
-            return format_race_results(race, results, top_n=top_n or 20)
+            return format_race_results(race, results, ctx, top_n=top_n or 20)
     elif session_key == "qualifying":
         results = await _get_qualifying_results(repo, season, rnd)
         if results:
-            return format_qualifying_results(race, results, top_n=top_n)
+            return format_qualifying_results(race, results, ctx, top_n=top_n)
     elif session_key == "sprint":
         results = await _get_sprint_results(repo, season, rnd)
         if results:
-            return format_sprint_results(race, results, top_n=top_n)
+            return format_sprint_results(race, results, ctx, top_n=top_n)
     elif session_key in ("fp1", "fp2", "fp3", "sprint_qualifying"):
         entry = find_race_session([race], rnd, session_key)
         if entry:
             results = await _get_session_result(repo, season, rnd, session_key)
             if results:
-                return format_session_results(entry, results, drivers_map, top_n=top_n)
+                return format_session_results(entry, results, ctx, drivers_map, top_n=top_n)
     return None
 
 
@@ -132,24 +142,26 @@ async def _find_default_session(repo, races: list, season: int, rnd: int) -> str
 
 async def results_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Entry point: show results for anchor round with session filter buttons."""
+    repo = context.bot_data["repo"]
+    ctx = await resolve_context(update, repo)
+
     try:
         races, bounds, season = await load_schedule_and_bounds(context)
     except RuntimeError:
-        await update.effective_message.reply_text(no_data_message("schedule"))
+        await update.effective_message.reply_text(no_data_message("common.noun_schedule", ctx))
         return
 
     rnd = bounds.get("last_completed_round")
     if rnd is None:
         # Try the latest round with any result data
-        rnd = await context.bot_data["repo"].get_last_result_round(season)
+        rnd = await repo.get_last_result_round(season)
     if rnd is None:
-        await update.effective_message.reply_text(no_data_message("results"))
+        await update.effective_message.reply_text(no_data_message("common.noun_results", ctx))
         return
 
-    repo = context.bot_data["repo"]
     race = next((r for r in races if r.round == rnd), None)
     if not race:
-        await update.effective_message.reply_text(no_data_message("results"))
+        await update.effective_message.reply_text(no_data_message("common.noun_results", ctx))
         return
 
     drivers_map = await repo.get_drivers_by_id_map(season)
@@ -157,13 +169,13 @@ async def results_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     if default_session:
         text = await _format_results_for_session(
-            repo, season, rnd, race, default_session, drivers_map
+            repo, season, rnd, race, default_session, drivers_map, ctx
         )
     else:
         text = None
 
     if not text:
-        text = no_data_message("results")
+        text = no_data_message("common.noun_results", ctx)
 
     completed = get_completed_rounds_for_session(races, "all")
 
@@ -171,7 +183,7 @@ async def results_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         text,
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=results_overview_keyboard(
-            rnd, completed_rounds=completed, active_key=default_session
+            rnd, completed_rounds=completed, active_key=default_session, lang=ctx.lang
         ),
     )
 
@@ -189,6 +201,8 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
       res:back:_:{round}                  → State A: overview for round
     """
     query = update.callback_query
+    repo = context.bot_data["repo"]
+    ctx = await resolve_context(update, repo)
 
     parts = query.data.split(":")
     if len(parts) < 4:
@@ -200,19 +214,18 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     try:
         rnd = int(parts[3])
     except (ValueError, IndexError):
-        await query.answer(text="Invalid selection", show_alert=True)
+        await query.answer(text=t("common.invalid_selection", ctx.lang), show_alert=True)
         return
 
     try:
         races, bounds, season = await load_schedule_and_bounds(context)
     except RuntimeError:
-        await query.answer(text="Schedule unavailable", show_alert=True)
+        await query.answer(text=t("common.schedule_unavailable", ctx.lang), show_alert=True)
         return
 
-    repo = context.bot_data["repo"]
     race = next((r for r in races if r.round == rnd), None)
     if not race:
-        await query.answer(text="Round not found", show_alert=True)
+        await query.answer(text=t("common.round_not_found", ctx.lang), show_alert=True)
         return
 
     drivers_map = await repo.get_drivers_by_id_map(season)
@@ -223,10 +236,10 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         text = None
         if default_session:
             text = await _format_results_for_session(
-                repo, season, rnd, race, default_session, drivers_map
+                repo, season, rnd, race, default_session, drivers_map, ctx
             )
         if not text:
-            text = no_data_message("results")
+            text = no_data_message("common.noun_results", ctx)
 
         completed = get_completed_rounds_for_session(races, "all")
 
@@ -235,7 +248,7 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 text,
                 parse_mode=ParseMode.MARKDOWN,
                 reply_markup=results_overview_keyboard(
-                    rnd, completed_rounds=completed, active_key=default_session
+                    rnd, completed_rounds=completed, active_key=default_session, lang=ctx.lang
                 ),
             )
         except BadRequest:
@@ -246,13 +259,13 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     if mode == "filtered":
         # Check if "all" — show combined results
         if session_key == "all":
-            text = await _format_all_results(repo, season, rnd, race, drivers_map)
+            text = await _format_all_results(repo, season, rnd, race, drivers_map, ctx)
             completed = get_completed_rounds_for_session(races, "all")
             try:
                 await query.edit_message_text(
-                    text or no_data_message("results"),
+                    text or no_data_message("common.noun_results", ctx),
                     parse_mode=ParseMode.MARKDOWN,
-                    reply_markup=results_filtered_keyboard(rnd, completed, "all"),
+                    reply_markup=results_filtered_keyboard(rnd, completed, "all", lang=ctx.lang),
                 )
             except BadRequest:
                 pass
@@ -265,46 +278,57 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             if entry is None:
                 navigable = get_completed_rounds_for_session(races, session_key)
                 if not navigable:
-                    label = SESSION_LABELS.get(session_key, session_key)
-                    msg = f"No {label} data yet this season"
+                    msg = t(
+                        "results.no_session_data",
+                        ctx.lang,
+                        label=session_label(session_key, ctx.lang),
+                    )
                     await query.answer(text=msg, show_alert=True)
                     return
                 rnd = navigable[-1]
                 race = next((r for r in races if r.round == rnd), None)
                 if not race:
-                    await query.answer(text="Round not found", show_alert=True)
+                    await query.answer(text=t("common.round_not_found", ctx.lang), show_alert=True)
                     return
 
-        text = await _format_results_for_session(repo, season, rnd, race, session_key, drivers_map)
+        text = await _format_results_for_session(
+            repo, season, rnd, race, session_key, drivers_map, ctx
+        )
         if not text:
-            text = no_data_message(f"{session_key} results")
+            text = no_data_message(
+                "common.noun_session_results", ctx, session=session_label(session_key, ctx.lang)
+            )
 
         completed = get_completed_rounds_for_session(races, session_key)
         try:
             await query.edit_message_text(
                 text,
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=results_filtered_keyboard(rnd, completed, session_key),
+                reply_markup=results_filtered_keyboard(rnd, completed, session_key, lang=ctx.lang),
             )
         except BadRequest:
             pass
         except Exception as e:
             log.warning("results_filtered_failed", error=str(e))
-            await query.answer(text="Failed to load data", show_alert=True)
+            await query.answer(text=t("common.failed_to_load", ctx.lang), show_alert=True)
             return
 
         await query.answer()
         return
 
 
-async def _format_all_results(repo, season: int, rnd: int, race, drivers_map: dict) -> str | None:
+async def _format_all_results(
+    repo, season: int, rnd: int, race, drivers_map: dict, ctx: RenderContext
+) -> str | None:
     """Format all available session results for a round into a combined message."""
     all_keys = ("fp1", "fp2", "fp3", "sprint_qualifying", "sprint", "qualifying", "race")
 
     # Pre-fetch all session texts once (avoids re-querying in Stage 2)
     texts: dict[str, str | None] = {}
     for key in all_keys:
-        texts[key] = await _format_results_for_session(repo, season, rnd, race, key, drivers_map)
+        texts[key] = await _format_results_for_session(
+            repo, season, rnd, race, key, drivers_map, ctx
+        )
 
     # Stage 1: All sessions, full results
     sections = [texts[k] for k in all_keys if texts[k]]
@@ -323,7 +347,7 @@ async def _format_all_results(repo, season: int, rnd: int, race, drivers_map: di
         return None
 
     filtered_text = "\n\n".join(comp_sections)
-    note = "\n\n⚠️ *Practice results (FP1/FP2/FP3) omitted to fit Telegram character limits. Please use the buttons above to view them.*"
+    note = t("results.truncated_practice", ctx.lang)
     if len(filtered_text) + len(note) <= 4096:
         return filtered_text + note
 
@@ -331,7 +355,7 @@ async def _format_all_results(repo, season: int, rnd: int, race, drivers_map: di
     truncated_sections = []
     for key in comp_keys:
         text = await _format_results_for_session(
-            repo, season, rnd, race, key, drivers_map, top_n=10
+            repo, season, rnd, race, key, drivers_map, ctx, top_n=10
         )
         if text:
             truncated_sections.append(text)
@@ -339,7 +363,7 @@ async def _format_all_results(repo, season: int, rnd: int, race, drivers_map: di
     if not truncated_sections:
         return None
 
-    truncated_note = "\n\n⚠️ *Practice results omitted and remaining results truncated to top 10 to fit Telegram character limits.*"
+    truncated_note = t("results.truncated_top10", ctx.lang)
     return "\n\n".join(truncated_sections) + truncated_note
 
 
@@ -351,7 +375,8 @@ async def _format_all_results(repo, season: int, rnd: int, race, drivers_map: di
 async def _legacy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle old qual:/spr:/sr: callbacks from stale messages."""
     query = update.callback_query
-    await query.answer(text="This button is outdated. Use /results again.", show_alert=True)
+    ctx = await resolve_context(update, context.bot_data["repo"])
+    await query.answer(text=t("results.outdated", ctx.lang), show_alert=True)
 
 
 def register(app: Application) -> None:

@@ -1,6 +1,7 @@
 """Tests for scheduler sync functions — verify each sync function calls the right API methods and saves to repo."""
 
 import datetime as dt
+import json
 from datetime import date, time, timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -12,6 +13,7 @@ from f1_bot.scheduler.jobs import (
     _LIVE_WINDOW_MARGIN,
     _is_in_live_window,
     hourly_sync,
+    run_driver_id_backfill_migration,
     startup_sync,
     sync_drivers_and_circuits,
     sync_openf1_laps,
@@ -781,3 +783,162 @@ class TestStartupSync:
 
         repo.get_schedule.assert_awaited_once()
         mock_res.assert_awaited_once()  # fallback races still used for results sync
+
+
+# --- run_driver_id_backfill_migration ---
+
+
+def _sample_session_result(driver_number: int = 1, driver_id: str | None = None) -> SessionResult:
+    return SessionResult(
+        position=1,
+        driver_number=driver_number,
+        driver_id=driver_id,
+        duration=95.4,
+        gap_to_leader="+0.000",
+        number_of_laps=57,
+    )
+
+
+def _row(session_type: str, results: list[SessionResult] | None = None) -> dict:
+    """Build a repo row the same shape get_all_results_by_type_prefix returns."""
+    results = results if results is not None else [_sample_session_result()]
+    return {
+        "season": 2024,
+        "round": 3,
+        "type": session_type,
+        "data_json": json.dumps([r.model_dump(mode="json") for r in results]),
+    }
+
+
+def _openf1_driver(driver_number: int = 1) -> dict:
+    return {
+        "driver_number": driver_number,
+        "first_name": "Max",
+        "last_name": "Verstappen",
+        "name_acronym": "VER",
+        "country_code": "NED",
+        "team_name": "Red Bull Racing",
+    }
+
+
+class TestDriverIdBackfillMigration:
+    """The one-time startup migration that populates driver_id on historical results.
+
+    It is patched out in every startup_sync test, so without these it runs only in
+    production — on real user data, exactly once, unobserved.
+    """
+
+    async def test_skips_entirely_when_already_run(self):
+        """The migration key is the only thing preventing a full re-scan on every boot."""
+        openf1, repo = MagicMock(), MagicMock()
+        repo.get_sync_metadata = AsyncMock(return_value="2024-01-01T00:00:00")
+        repo.get_all_results_by_type_prefix = AsyncMock()
+        repo.set_sync_metadata = AsyncMock()
+
+        await run_driver_id_backfill_migration(openf1, repo)
+
+        repo.get_all_results_by_type_prefix.assert_not_awaited()
+        repo.set_sync_metadata.assert_not_awaited()
+
+    async def test_empty_database_marks_complete(self):
+        """A fresh install has nothing to backfill and must not re-scan on later boots."""
+        openf1, repo = MagicMock(), MagicMock()
+        repo.get_sync_metadata = AsyncMock(return_value=None)
+        repo.get_all_results_by_type_prefix = AsyncMock(return_value=[])
+        repo.set_sync_metadata = AsyncMock()
+        repo.save_session_results = AsyncMock()
+
+        await run_driver_id_backfill_migration(openf1, repo)
+
+        repo.save_session_results.assert_not_awaited()
+        repo.set_sync_metadata.assert_awaited_once_with("backfill_session_results_driver_id_v2")
+
+    async def test_three_part_key_splits_openf1_lookup_from_storage_key(self):
+        """`session:race:9999` — the shape sync_openf1_session_results actually writes.
+
+        The numeric tail is the OpenF1 session_key used to fetch drivers; the storage
+        key keeps the session name. Conflating the two silently queries the wrong session.
+        """
+        openf1, repo = MagicMock(), MagicMock()
+        openf1.get_drivers = AsyncMock(return_value=[])
+        repo.get_sync_metadata = AsyncMock(return_value=None)
+        repo.get_all_results_by_type_prefix = AsyncMock(return_value=[_row("session:race:9999")])
+        repo.set_sync_metadata = AsyncMock()
+        repo.save_session_results = AsyncMock()
+
+        await run_driver_id_backfill_migration(openf1, repo)
+
+        openf1.get_drivers.assert_awaited_once_with(session_key=9999)
+        args = repo.save_session_results.await_args.args
+        assert args[0] == 2024
+        assert args[1] == 3
+        assert args[2] == "race:9999"
+
+    async def test_two_part_numeric_key_uses_session_key_for_both(self):
+        """Legacy `session:9999` rows predate the named-session key format."""
+        openf1, repo = MagicMock(), MagicMock()
+        openf1.get_drivers = AsyncMock(return_value=[])
+        repo.get_sync_metadata = AsyncMock(return_value=None)
+        repo.get_all_results_by_type_prefix = AsyncMock(return_value=[_row("session:9999")])
+        repo.set_sync_metadata = AsyncMock()
+        repo.save_session_results = AsyncMock()
+
+        await run_driver_id_backfill_migration(openf1, repo)
+
+        openf1.get_drivers.assert_awaited_once_with(session_key=9999)
+        assert repo.save_session_results.await_args.args[2] == 9999
+
+    async def test_unparseable_keys_are_skipped_without_aborting_the_run(self):
+        """One malformed row must not cost every later row its backfill.
+
+        A crash here would abort mid-scan and (see below) leave the key unset, so the
+        same bad row would re-break the migration on every subsequent boot.
+        """
+        openf1, repo = MagicMock(), MagicMock()
+        openf1.get_drivers = AsyncMock(return_value=[])
+        repo.get_sync_metadata = AsyncMock(return_value=None)
+        repo.get_all_results_by_type_prefix = AsyncMock(
+            return_value=[
+                _row("session:race"),  # 2-part, non-numeric tail
+                _row("session"),  # 1-part
+                _row("session:race:9999"),  # valid — must still be processed
+            ]
+        )
+        repo.set_sync_metadata = AsyncMock()
+        repo.save_session_results = AsyncMock()
+
+        await run_driver_id_backfill_migration(openf1, repo)
+
+        assert repo.save_session_results.await_count == 1
+        assert repo.save_session_results.await_args.args[2] == "race:9999"
+        repo.set_sync_metadata.assert_awaited_once()
+
+    async def test_driver_id_is_populated_on_saved_results(self):
+        """The entire point of the migration — results go in with driver_id None, out with it set."""
+        openf1, repo = MagicMock(), MagicMock()
+        openf1.get_drivers = AsyncMock(return_value=[_openf1_driver(1)])
+        repo.get_sync_metadata = AsyncMock(return_value=None)
+        repo.get_all_results_by_type_prefix = AsyncMock(
+            return_value=[_row("session:race:9999", [_sample_session_result(driver_number=1)])]
+        )
+        repo.set_sync_metadata = AsyncMock()
+        repo.save_drivers = AsyncMock()
+        repo.save_session_results = AsyncMock()
+
+        await run_driver_id_backfill_migration(openf1, repo)
+
+        saved = repo.save_session_results.await_args.args[3]
+        assert saved[0].driver_id == "openf1_1_verstappen"
+
+    async def test_failure_leaves_migration_unmarked_so_it_retries(self):
+        """A failed migration must not be recorded as done — the data would stay unbackfilled forever."""
+        openf1, repo = MagicMock(), MagicMock()
+        openf1.get_drivers = AsyncMock(return_value=[])
+        repo.get_sync_metadata = AsyncMock(return_value=None)
+        repo.get_all_results_by_type_prefix = AsyncMock(return_value=[_row("session:race:9999")])
+        repo.set_sync_metadata = AsyncMock()
+        repo.save_session_results = AsyncMock(side_effect=RuntimeError("db down"))
+
+        await run_driver_id_backfill_migration(openf1, repo)  # must not raise
+
+        repo.set_sync_metadata.assert_not_awaited()

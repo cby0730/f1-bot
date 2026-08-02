@@ -1,12 +1,6 @@
 import structlog
 
 from f1_bot.api.base import BaseAPIClient
-from f1_bot.models.live import (
-    LiveInterval,
-    LivePosition,
-    RaceControlMessage,
-    WeatherData,
-)
 from f1_bot.models.race import Meeting, Session
 from f1_bot.models.results import LapTime, PitStop, SessionResult
 from f1_bot.utils.rate_limiter import RateLimiter
@@ -15,7 +9,7 @@ log = structlog.get_logger(__name__)
 
 
 class OpenF1Client(BaseAPIClient):
-    """Client for the OpenF1 API — live timing, sessions, and timezone offsets."""
+    """Client for the OpenF1 API — sessions, results, laps, pit stops, and timezone offsets."""
 
     def __init__(
         self, base_url: str, rate_limiter: RateLimiter, *, proxy: str | None = None
@@ -65,62 +59,6 @@ class OpenF1Client(BaseAPIClient):
             )
         return sessions
 
-    async def get_positions(self, **filters) -> list[LivePosition]:
-        data = await self.get("/position", params=filters or None)
-        positions = []
-        for p in data:
-            if not all(k in p for k in ("session_key", "driver_number", "position")):
-                continue
-            positions.append(
-                LivePosition(
-                    session_key=p["session_key"],
-                    driver_number=p["driver_number"],
-                    position=p["position"],
-                    date=p.get("date"),
-                )
-            )
-        return positions
-
-    async def get_intervals(self, **filters) -> list[LiveInterval]:
-        data = await self.get("/intervals", params=filters or None)
-        intervals = []
-        for i in data:
-            if not all(k in i for k in ("session_key", "driver_number")):
-                continue
-            gap = i.get("gap_to_leader")
-            ivl = i.get("interval")
-            intervals.append(
-                LiveInterval(
-                    session_key=i["session_key"],
-                    driver_number=i["driver_number"],
-                    gap_to_leader=str(gap) if gap is not None else None,
-                    interval=str(ivl) if ivl is not None else None,
-                    date=i.get("date"),
-                )
-            )
-        return intervals
-
-    async def get_race_control(self, **filters) -> list[RaceControlMessage]:
-        data = await self.get("/race_control", params=filters or None)
-        messages = []
-        for m in data:
-            if "session_key" not in m:
-                log.warning("openf1_record_skipped", method="get_race_control", record=m)
-                continue
-            messages.append(
-                RaceControlMessage(
-                    session_key=m["session_key"],
-                    category=m.get("category", "Other"),
-                    flag=m.get("flag"),
-                    scope=m.get("scope"),
-                    sector=m.get("sector"),
-                    driver_number=m.get("driver_number"),
-                    message=m.get("message", ""),
-                    date=m.get("date", ""),
-                )
-            )
-        return messages
-
     async def get_pit(self, **filters) -> list[PitStop]:
         data = await self.get("/pit", params=filters or None)
         stops = []
@@ -161,28 +99,6 @@ class OpenF1Client(BaseAPIClient):
                 )
             )
         return laps
-
-    async def get_weather(self, **filters) -> list[WeatherData]:
-        data = await self.get("/weather", params=filters or None)
-        weather = []
-        for w in data:
-            if "session_key" not in w:
-                log.warning("openf1_record_skipped", method="get_weather", record=w)
-                continue
-            weather.append(
-                WeatherData(
-                    session_key=w["session_key"],
-                    air_temperature=w.get("air_temperature"),
-                    track_temperature=w.get("track_temperature"),
-                    humidity=w.get("humidity"),
-                    pressure=w.get("pressure"),
-                    wind_speed=w.get("wind_speed"),
-                    wind_direction=w.get("wind_direction"),
-                    rainfall=w.get("rainfall"),
-                    date=w.get("date"),
-                )
-            )
-        return weather
 
     async def get_session_results(self, **filters) -> list[SessionResult]:
         data = await self.get("/session_result", params=filters or None)

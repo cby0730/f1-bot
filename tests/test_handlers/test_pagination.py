@@ -1,5 +1,7 @@
 """Tests for pagination keyboard builders and resolve_default_round."""
 
+from telegram import InlineKeyboardButton
+
 from f1_bot.handlers.pagination import (
     _origin_to_callback,
     next_filtered_keyboard,
@@ -11,6 +13,7 @@ from f1_bot.handlers.pagination import (
     round_picker_keyboard,
     round_picker_text,
     schedule_keyboard,
+    two_column_keyboard,
 )
 from f1_bot.models.race import Circuit, Race
 
@@ -380,3 +383,34 @@ class TestRoundPickerText:
         races = [_make_race(1, "Test_GP")]
         text = round_picker_text(1, races)
         assert "Test\\_GP" in text
+
+
+# ---------------------------------------------------------------------------
+# two_column_keyboard
+# ---------------------------------------------------------------------------
+
+
+class TestTwoColumnKeyboard:
+    """The shared 2-column packer must lay buttons out two-per-row so every driver
+    grid (/compare, /driver, /circuit) renders identically — an odd final button
+    lands alone on the last row rather than being dropped or paired with a blank."""
+
+    @staticmethod
+    def _btn(n: int) -> InlineKeyboardButton:
+        return InlineKeyboardButton(f"b{n}", callback_data=f"x:{n}")
+
+    def test_empty_yields_empty_keyboard(self):
+        # PTB stores rows as a tuple-of-tuples, so empty is () not [].
+        assert two_column_keyboard([]).inline_keyboard == ()
+
+    def test_single_button_is_a_lone_row(self):
+        b1 = self._btn(1)
+        assert two_column_keyboard([b1]).inline_keyboard == ((b1,),)
+
+    def test_odd_count_last_row_holds_one(self):
+        b1, b2, b3 = self._btn(1), self._btn(2), self._btn(3)
+        assert two_column_keyboard([b1, b2, b3]).inline_keyboard == ((b1, b2), (b3,))
+
+    def test_even_count_packs_full_rows(self):
+        b1, b2, b3, b4 = self._btn(1), self._btn(2), self._btn(3), self._btn(4)
+        assert two_column_keyboard([b1, b2, b3, b4]).inline_keyboard == ((b1, b2), (b3, b4))

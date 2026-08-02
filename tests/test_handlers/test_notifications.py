@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from f1_bot.handlers.notifications import (
     MAX_REMINDERS,
     _build_remind_view,
+    _notify_clearall,
     _notify_del,
     _notify_pick,
     _notify_sess,
@@ -244,7 +245,7 @@ async def test_build_remind_view_single_round_auto_skip(repo):
             )
         )
 
-    text, kb = await _build_remind_view(repo, 100)
+    text, kb = await _build_remind_view(repo, 100, "en")
 
     assert "R10" in text
     buttons = [btn.text for row in kb.inline_keyboard for btn in row]
@@ -272,7 +273,7 @@ async def test_build_remind_view_multi_round_state_a(repo):
             )
         )
 
-    text, kb = await _build_remind_view(repo, 100)
+    text, kb = await _build_remind_view(repo, 100, "en")
 
     assert "Active Reminders" in text
     cb_data = [btn.callback_data for row in kb.inline_keyboard for btn in row]
@@ -408,3 +409,90 @@ async def test_bell_button_in_next_overview_keyboard():
     bell_buttons = [b for b in all_buttons if "🔔" in b.text]
     assert len(bell_buttons) == 1
     assert bell_buttons[0].callback_data == "notify:pick:16"
+
+
+# --- notify:clearall ---
+
+
+async def _seed_two_users(repo) -> None:
+    fire_at = datetime.now(UTC) + timedelta(days=3)
+    for tg_id, session_key in ((100, "race"), (100, "qualifying"), (200, "race")):
+        await repo.subscribe_notification(
+            NotificationSubscription(
+                telegram_id=tg_id,
+                season=2026,
+                round=10,
+                session_key=session_key,
+                minutes_before=30,
+                fire_at=fire_at,
+            )
+        )
+
+
+async def test_notify_clearall_confirm_deletes_nothing(repo):
+    """The confirm step must be inert — it only renders the yes/no prompt.
+
+    Clearing reminders is irreversible; deleting on the first tap would make the
+    confirmation dialog decorative.
+    """
+    await _seed_two_users(repo)
+    update = _make_update("notify:clearall:confirm", user_id=100)
+    context = _make_context(repo=repo)
+
+    await _notify_clearall(update, context)
+
+    assert len(await repo.get_user_notifications(100, 2026)) == 2
+    call_kwargs = update.callback_query.edit_message_text.call_args
+    markup = call_kwargs.kwargs.get("reply_markup")
+    cb_data = [btn.callback_data for row in markup.inline_keyboard for btn in row]
+    assert "notify:clearall:yes" in cb_data
+    assert "notify:clearall:cancel" in cb_data
+
+
+async def test_notify_clearall_yes_deletes_only_the_caller(repo):
+    """Deletion is scoped to the requesting user — another user's reminders survive."""
+    await _seed_two_users(repo)
+    update = _make_update("notify:clearall:yes", user_id=100)
+    jq = MagicMock()
+    jq.get_jobs_by_name = MagicMock(return_value=[])
+    jq.run_once = MagicMock()
+    context = _make_context(repo=repo, jq=jq)
+
+    await _notify_clearall(update, context)
+
+    assert await repo.get_user_notifications(100, 2026) == []
+    assert len(await repo.get_user_notifications(200, 2026)) == 1
+    update.callback_query.answer.assert_awaited_once()
+
+
+async def test_notify_clearall_yes_reschedules_the_next_notification(repo):
+    """The pending job points at a reminder that no longer exists — it must be rebuilt.
+
+    Without the reschedule, the JobQueue would still fire for a deleted subscription.
+    """
+    await _seed_two_users(repo)
+    update = _make_update("notify:clearall:yes", user_id=100)
+    jq = MagicMock()
+    jq.get_jobs_by_name = MagicMock(return_value=[])
+    jq.run_once = MagicMock()
+    context = _make_context(repo=repo, jq=jq)
+
+    with patch(
+        "f1_bot.handlers.notifications.schedule_next_notification", new_callable=AsyncMock
+    ) as mock_sched:
+        await _notify_clearall(update, context)
+
+    mock_sched.assert_awaited_once()
+    assert mock_sched.await_args.args[1] is repo
+
+
+async def test_notify_clearall_cancel_deletes_nothing(repo):
+    """Backing out of the dialog must leave every reminder intact."""
+    await _seed_two_users(repo)
+    update = _make_update("notify:clearall:cancel", user_id=100)
+    context = _make_context(repo=repo)
+
+    await _notify_clearall(update, context)
+
+    assert len(await repo.get_user_notifications(100, 2026)) == 2
+    assert len(await repo.get_user_notifications(200, 2026)) == 1

@@ -5,14 +5,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Running the project
 
 ```bash
-docker compose -f docker-compose.dev.yml up -d  # start dev PostgreSQL (required for storage/E2E tests)
 uv run -m f1_bot                          # start the bot (requires .env)
-uv run pytest -m "not integration"        # unit tests only (~400 tests)
-uv run pytest -m integration -v           # integration tests (real HTTP, ~22 tests)
+uv run pytest -m "not integration"        # unit tests only (~565 tests, dev PostgreSQL)
+uv run pytest -m integration -v           # integration tests (real HTTP, ~19 tests)
 uv run pytest tests/test_smoke.py -v      # full-stack smoke test
-uv run pytest tests/test_handlers/test_race_data.py -v  # single test file
-uv run ruff check src/ tests/             # lint
-uv run ruff format src/ tests/            # auto-format
+
+# Coverage — NOT `pytest --cov` (segfaults, see gotcha below)
+uv run coverage run --source=f1_bot -m pytest -m "not integration" -p no:randomly
+uv run coverage report
 ```
 
 ## Architecture
@@ -25,47 +25,28 @@ Startup / Scheduler → JolpicaClient + OpenF1Client → PostgreSQL
               Telegram users → handlers → Repository → PostgreSQL (read-only)
 ```
 
-- **Startup sync:** `startup_sync()` runs in `_post_init` before the bot accepts commands. Executes `run_driver_id_backfill_migration` to backfill historical session records, then concurrently syncs schedule, standings, results, pit stops, laps, and session data.
-- **Unified hourly sync:** A single `hourly_sync` job replaces the old 6 staggered jobs. Runs on a 1-hour cycle. The Jolpica and OpenF1 sync branches run concurrently via `asyncio.gather()`, while actions inside each branch run sequentially.
 - **Two-state UX:** `/next` and `/results` use a unified two-state interaction: State A (overview with session filter buttons + round navigation) → State B (filtered with round navigation + Back).
-- **Public Repository (Metadata & README only):** Hosted at `git@github.com:cby0730/f1-telegram-bot.git` (local path: `/Users/chen-bo-yo/Projects/f1-telegram-bot`). It contains only the public `README.md` and does not expose the private source code of this bot.
+- **i18n (three layers, `en` + `zh-Hant`):** no user-facing string lives in feature code.
 
-## Commands (13 total)
+```
+CORE (language-agnostic)        models/ storage/ utils/ scheduler/ api/
+PRESENTATION (platform-agnostic) formatting/i18n/ t(key, lang, **kwargs) · RenderContext(lang, tz)
+PLATFORM (Telegram)              handlers/ resolve_context(update, repo) · set_my_commands(language_code=)
+```
 
-| Command | Handler file |
-|---|---|
-| `/start`, `/help` | `handlers/start.py` |
-| `/next` | `handlers/schedule.py` — unified entry for next session |
-| `/schedule`, `/countdown` | `handlers/schedule.py` |
-| `/results` | `handlers/results.py` — unified entry for all results |
-| `/pitstops`, `/laps` | `handlers/race_data.py` |
-| `/standings` | `handlers/standings.py` |
-| `/driver`, `/circuit` | `handlers/extras.py` — profile/info with fuzzy matching; interactive menu if no arguments |
-| `/timezone` | `handlers/timezone.py` |
-| `/remind` | `handlers/notifications.py` — view/manage session reminders |
+  `t()` never imports `telegram` and never sees an `Update`, so a future LINE
+  adapter reuses the catalog unchanged — it only supplies its own
+  `resolve_context` and platform default. Language resolution is **two layers:
+  DB preference > platform default (`en`)**. There is deliberately **no
+  `language_code` auto-detection** (see spec 005's rollout section — combined
+  with the backfill migration it would have silently pinned existing users to
+  English, unrecoverably).
+- **Public Repository (Metadata & README only):** Hosted at `git@github.com:cby0730/f1-telegram-bot.git` . It contains only the public `README.md` and does not expose the private source code of this bot.
 
-## Callback data formats
+## Commands and callback data
 
-| Pattern | Meaning |
-|---|---|
-| `next:filtered:{filter}:{round}` | `/next` State B — filter ∈ {fp1, fp2, fp3, qualifying, sprint_qualifying, sprint, race} |
-| `next:back:_:{round}` | `/next` return to State A |
-| `res:filtered:{session_key}:{round}` | `/results` State B — session_key ∈ {race, qualifying, sprint, fp1, fp2, fp3, sprint_qualifying, all} |
-| `res:back:_:{round}` | `/results` return to State A |
-| `pit:{round}` | Pit stops round navigation |
-| `lap:{round}:s` / `lap:{round}:l:{lap_num}` / `lap:{round}:dp` / `lap:{round}:d:{driver_id}:{page}` | Laps navigation (summary / per-lap / driver picker / per-driver, paginated by 20) |
-| `rpk:{origin}:{round}` | Round selection grid picker (origin ∈ {nb, nf:{filter}, rb, rf:{session_key}, pit, lap}) |
-| `notify:pick:{round}` | Notification session picker |
-| `notify:sess:{session_key}:{round}` | Notification timing presets |
-| `notify:set:{minutes}:{session_key}:{round}` | Toggle subscription on/off |
-| `notify:list:{round}` | List user's reminders for a round |
-| `notify:del:{id}:{round}` | Delete a single reminder |
-| `notify:back` | Return to reminder overview |
-| `notify:clearall:{action}` | Clear all reminders (confirm/yes/cancel) |
-| `drv:detail:{driver_id}` / `drv:list` | Driver profile navigation |
-| `circ:detail:{circuit_id}` / `circ:list` | Circuit info navigation |
-| `tz:region:{region}` / `tz:set:{timezone}` | Timezone picker navigation (region `__back__` returns to continent menu) |
-| `standings:wdc` / `standings:wcc` | Standings WDC/WCC toggle |
+The 16-command → handler map and the full `callback_data` pattern table live in
+`src/f1_bot/handlers/CLAUDE.md`, which loads automatically when working under that directory.
 
 ## Key files
 
@@ -77,26 +58,28 @@ Startup / Scheduler → JolpicaClient + OpenF1Client → PostgreSQL
 | `src/f1_bot/storage/repository.py` | Unified read layer over PostgreSQL; `get_schedule_bounds()` is the source of truth for completed/upcoming rounds |
 | `src/f1_bot/scheduler/jobs.py` | `startup_sync()` + `hourly_sync()` + individual `sync_*` callbacks; each takes `(jolpica, repo)` or `(openf1, repo)` |
 | `src/f1_bot/scheduler/manager.py` | Registers single `hourly_sync` job via `run_repeating`; owns `_POLL_INTERVAL` |
-| `src/f1_bot/handlers/pagination.py` | Shared keyboard builders: `next_overview_keyboard`, `next_filtered_keyboard`, `results_overview_keyboard`, `results_filtered_keyboard`, `round_keyboard`, `schedule_keyboard` |
-| `src/f1_bot/handlers/round_picker.py` | Round selection grid overlay callback handler and keyboard builder |
-| `src/f1_bot/formatting/messages.py` | All message formatters (`format_schedule`, `format_driver_standings`, `format_constructor_standings`, `format_session_results`, etc.) |
+| `src/f1_bot/handlers/pagination.py` | Shared keyboard builders: `next_overview_keyboard`, `next_filtered_keyboard`, `results_overview_keyboard`, `results_filtered_keyboard`, `round_keyboard`, `schedule_keyboard`; also `round_picker_keyboard`/`round_picker_text` and the round-set helpers (`upcoming_rounds`, `get_completed_rounds_for_session`) the picker reuses |
+| `src/f1_bot/handlers/round_picker.py` | Round picker overlay handler (`rpk:` callbacks); `_compute_navigable_rounds(origin, ...)` maps the `origin` token back to the caller's navigable rounds |
+| `src/f1_bot/handlers/compare.py` | `/compare` command + `cmp:*` callback; aggregates current-season race+sprint results into a two-driver head-to-head. Reads PostgreSQL only |
+| `src/f1_bot/handlers/title.py` | `/title` command + `title:*` callback; WDC/WCC clinch analysis. `_render_view` aligns remaining events to each table's own `round_after` (see gotcha). Reads PostgreSQL only |
+| `src/f1_bot/utils/championship.py` | Pure clinch math (DB-free): `remaining_events`, `max_remaining_points`, `clinch_status`, `ClinchStatus`; point constants `WDC_RACE_MAX`/`WDC_SPRINT_MAX` (25/8), `WCC_RACE_MAX`/`WCC_SPRINT_MAX` (43/15) |
+| `src/f1_bot/formatting/i18n/core.py` | `t(key, lang, /, **kwargs)` (the `/` is load-bearing — see gotcha), `lang_name()`, `check_catalog_complete()`, `SHIPPED_LANGS` (`en`, `zh-Hant`), `DEFAULT_LANG` |
+| `src/f1_bot/formatting/i18n/catalog/` | The message catalog, split by domain (`common`, `schedule`, `results`, `standings`, `race_data`, `extras`, `notifications`, `settings`, `start`, `commands`, `datetime`). Nested dict, language on the inner level; `__init__.py` merges them and raises on a duplicate key |
+| `src/f1_bot/formatting/context.py` | `RenderContext(lang, tz)` frozen dataclass — the render-time seam threaded into every formatter |
+| `src/f1_bot/handlers/context.py` | `resolve_context(update, repo, default_lang)` — the single source of truth for "which language + tz for this request" |
+| `src/f1_bot/handlers/language.py` | `/language` command + `lang:*` callbacks; `language_keyboard()` is reused by `start.py`'s welcome button |
+| `src/f1_bot/formatting/messages.py` | All message formatters (`format_schedule`, `format_driver_standings`, `format_constructor_standings`, `format_session_results`, `format_title_wdc`/`format_title_wcc`, etc.). Every one takes `ctx: RenderContext` as its last arg |
 | `src/f1_bot/formatting/emoji.py` | `pos_icon`, `flag_icon`, `session_icon`, `flag_color`, `country_code_to_flag` — mapping and flag logic |
 | `src/f1_bot/formatting/timezone.py` | `combine_race_dt()` — combines race date + time into UTC datetime; used by scheduler and repository |
-| `src/f1_bot/api/base.py` | `BaseAPIClient` standardizing httpx requests, timeout config, proxy, rate limiting, and backoff |
-| `src/f1_bot/api/jolpica.py` | `JolpicaClient` subclass for Ergast/Jolpica schedule, standings, results, laps, pitstops |
-| `src/f1_bot/api/openf1.py` | `OpenF1Client` subclass for OpenF1 sessions, laps, interval, driver data |
 | `src/f1_bot/utils/rate_limiter.py` | Token bucket; constructor: `RateLimiter(per_second=..., per_period=..., period=...)` |
 | `src/f1_bot/utils/fuzzy_match.py` | `match_driver()` / `match_circuit()` using difflib; scores all fields, takes max |
 | `src/f1_bot/utils/sessions.py` | `find_next_sessions()` / `find_recent_completed_session()` / `normalize_session_key()` / `session_entries()` — session-level timeline logic |
 | `src/f1_bot/utils/logging.py` | structlog setup; `add_taiwan_timestamp` processor; auto-detects TTY for console vs JSON output |
 | `src/f1_bot/handlers/notifications.py` | `/remind` command + `notify:*` callback flow (pick session → pick timing → toggle subscription) |
 | `src/f1_bot/models/notification.py` | `NotificationSubscription` model + `TIMING_PRESETS` (15/30/60/180 min) |
-| `src/f1_bot/models/user.py` | `UserPreference` model representing timezone settings |
 | `src/f1_bot/scheduler/notification_sender.py` | `schedule_next_notification()` + `send_notifications()` — background delivery via PTB JobQueue |
 | `src/f1_bot/handlers/errors.py` | Custom error handler formatting for Telegram command validation / network errors |
-| `src/f1_bot/models/live.py` | OpenF1 live data models (`LivePosition`, `LiveInterval`, `RaceControlMessage`, `WeatherData`) — infrastructure for future live features, currently unused by handlers |
 | `tests/conftest.py` | `pg_store`, `repo` fixtures (dev PostgreSQL) |
-| `tests/test_e2e.py` | 26 offline E2E mock scenarios verifying commands and callback flows |
 
 ## Known gotchas
 
@@ -114,6 +97,17 @@ breaks `httpx` C extensions.
 set fields on frozen Pydantic models during test setup (e.g., attaching a `sprint` session to a `Race`).
 
 **startup_sync in tests:** Patch `f1_bot.main.startup_sync` with `AsyncMock` in E2E/main tests to avoid real HTTP calls.
+
+**Never measure coverage with `pytest --cov` — it segfaults (exit 139).** Any test
+that opens an asyncpg connection dies inside the Cython
+`asyncpg.protocol.protocol.Protocol` constructor, killing the whole run rather
+than one test. Bisected to a three-way interaction: pytest + pytest-cov's `--cov`
++ **asyncpg >= 0.31.0** (`pyproject.toml` pins `~= 0.30`, which admits 0.31).
+`asyncpg==0.30.0` does not crash, and neither does `coverage run -m pytest` — so
+it is not coverage's tracer (`COVERAGE_CORE=sysmon` crashes too) nor
+pytest-asyncio/anyio/pytest-httpx. Use the `coverage run` recipe at the top of
+this file; it runs the full suite clean. Production is unaffected — the bot never
+runs under pytest-cov.
 
 **Legacy callback handlers:** `schedule.py` and `results.py` register legacy callback patterns (e.g., `nsess:`, `qual:`) that respond with "please use /next" — these handle stale inline keyboards from before the refactoring.
 
@@ -151,20 +145,88 @@ set fields on frozen Pydantic models during test setup (e.g., attaching a `sprin
 
 **Notification DELETE strategy:** `mark_notifications_sent()` DELETEs rows instead of setting `notified=TRUE`. This prevents row accumulation and avoids unique constraint conflicts on re-subscription. `save_notification()` uses `ON CONFLICT DO UPDATE SET notified=FALSE, fire_at=EXCLUDED.fire_at` to handle re-subscriptions cleanly.
 
-**Dockerfile stale env var:** The Dockerfile still sets `F1BOT_SQLITE_PATH=/data/f1bot.db` and mounts a `/data` volume — leftovers from the SQLite era. These are unused now (PostgreSQL is the store) but haven't been cleaned up yet.
+**`/title` remaining-events alignment (two-clocks fix):** `/title` must derive remaining races/sprints from the **standings snapshot's own `round_after`** (via `repo.get_standings_round(season, table)`), NOT from live `now()` (`get_schedule_bounds()["upcoming_rounds"]`). Points are an hourly snapshot; `upcoming_rounds` flips the moment a race start-time passes — mixing the two lets a near-clinch leader flash a false 🔒 CLINCHED mid-weekend. Each view uses its **own** table's `round_after` (WDC→`standings_drivers`, WCC→`standings_constructors`) because a partial sync can leave the two tables at different rounds. `remaining_events()` **enumerates** `round > N` over `get_schedule()` — never `total - N` (would mis-count on schedule gaps).
+
+**No user-facing literals in feature code:** every string goes through
+`t(key, ctx.lang, **kwargs)`. Three guard tests enforce this and will fail CI
+(all in `tests/test_i18n/`): Guard A scans `handlers/` + `formatting/` (excluding
+`i18n/catalog/`) for CJK codepoints; Guard B AST-scans the same trees for
+`reply_text`/`edit_message_text`/`answer` called with a bare string literal;
+Guard C (`test_markdown_escape_guard.py`) AST-scans `formatting/` for external
+free text interpolated into a `t()` template without `_esc()`.
+Never compose a translated template with an untranslated English fragment — pass
+everything as named kwargs, and make the fragment itself a catalog key.
+
+**Guard C — why `formatting/` only, and why AST:** over half the catalog templates
+carry Telegram Markdown markers, so an API string containing `_`/`*`/`` ` ``/`[`
+interpolated into one either mis-renders or makes Telegram reject the message —
+which handlers swallow via `except BadRequest: pass`, so the user sees nothing
+happen. `handlers/` is deliberately **out of scope**: its free-text
+interpolations feed inline-button labels and `answer(show_alert=True)` popups,
+neither of which Telegram parses as Markdown, so escaping there would surface
+literal backslashes. The guard follows escaping done at the assignment
+(`title = _esc(race.name)` → `t(..., title=title)` passes) and treats `_esc`,
+`t` and the `*_label` catalog helpers as safe. Add a kwarg name to
+`FREE_TEXT_KWARGS` when a new template interpolates external text.
+
+**Guard blind spot — helpers with `lang: str = DEFAULT_LANG`:** the guards only
+catch *literals*. A call site that simply **omits** the `lang` argument to a
+defaulted helper (e.g. `round_picker_text(rnd, races)`) renders catalog English
+with no literal to find, so both guards pass while zh-Hant users see English.
+After adding a `lang`/`ctx` parameter to a shared helper, grep its call sites —
+don't rely on the guards to prove the migration is complete.
+
+**`t(key, lang, /, **kwargs)` — the `/` is load-bearing, never delete it:** it makes
+`key`/`lang` **positional-only** so a catalog template is free to use `{key}` or
+`{lang}` as a placeholder name. Without it, `t("settings.lang_saved", code, lang=...)`
+binds `lang` both positionally and by keyword → `TypeError`, which silently killed
+the *entire* `/language` command (all 3 interpolation sites: `settings.lang_picker`,
+`lang_saved`, `lang_unknown`). Same class as the Pydantic field-shadowing gotcha
+above. The 4 interpolating tests in `tests/test_handlers/test_language.py` are the
+regression guard — they fail loudly if the `/` is removed.
+
+**`t()` failure modes are asymmetric by design:** an *unknown key* raises
+`KeyError` (a programmer typo — loud), while a *known key missing one language*
+falls back to the `en` template (a user must never see a raw key). The
+`check_catalog_complete()` test is the merge gate; startup is deliberately **not**
+gated, so a translation gap blocks merge without taking down a running bot.
+
+**Single-column preference upserts:** `set_user_timezone` / `set_user_language`
+each write only their own column via one `ON CONFLICT DO UPDATE`. Never
+reintroduce a whole-object `upsert_user_preference` — it clobbers the other
+column with its default, and the read-modify-write "fix" reintroduces the same
+bug as a TOCTOU race across two `await`s. Either command creates the row; the
+other column takes its schema `DEFAULT`. `created_at` is written on the INSERT
+branch only.
+
+**`strftime` is never used for weekday/month names:** those come from the
+`datetime.*` catalog keys. `strftime` names depend on the process-global C
+locale — not thread-safe under async and impossible to vary per user.
+`format_dt(dt, tz_name, lang)` formats only the numeric parts with `strftime`.
+
+**CJK monospace padding:** code-block tables pad labels with `_pad_display()`
+(stdlib `unicodedata.east_asian_width`), not `{label:<10}`. Python field widths
+count code points, but CJK glyphs occupy two display columns, so code-point
+padding drifts the number columns on translated rows.
+
+**Notification sender has no `Update`:** it localizes via
+`await repo.get_user_language(telegram_id)`, not `resolve_context`. It passes
+**lang only, no tz** — the push message renders no clock time, so a recipient-tz
+lookup would be dead weight on a hot job path.
+
+**`CommandValidationError` carries a key, not a message:** raise it as
+`CommandValidationError("schedule.invalid_round", round=n)`. `error_handler`
+resolves the user's language centrally and renders it; `_safe_context()` falls
+back to English when there is no `Update`/user so the error handler itself can
+never raise.
 
 ## Test conventions
 
-- `asyncio_mode = "auto"` — all async tests run without explicit `@pytest.mark.asyncio`
 - `pytest.mark.integration` — requires network (Jolpica or OpenF1 HTTP)
 - No marker — unit test; uses dev PostgreSQL; safe to run offline
-- Graceful skip: Offline tests using `pg_store` or `repo` fixtures will automatically skip via `pytest.skip` if the dev container is offline, preventing failure.
-- Handler tests: `tests/test_handlers/` mock the Repository read layer entirely and require no database connectivity to run.
-- Fixtures: `pg_store` and `repo` in `tests/conftest.py` connect to dev PostgreSQL (`docker-compose.dev.yml`)
 - Mocking HTTP: use `pytest-httpx` (`httpx_mock` fixture) for unit tests
 - Scheduler tests: import private constants (`_LIVE_WINDOW_MARGIN`, `_RESULTS_WINDOW`) directly for boundary assertions
 - Relative-date fixtures: For testing time-windowed sync functions where `now` is computed internally, use `date.today() - timedelta(days=N)` instead of patching
-- Pre-commit hooks: ruff lint+format, gitleaks (secrets), hadolint (Dockerfile), pip-audit (SCA), trailing-whitespace/end-of-file-fixer
 
 ## APIs
 

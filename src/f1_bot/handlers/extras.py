@@ -7,13 +7,17 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
+from f1_bot.formatting.context import RenderContext
 from f1_bot.formatting.emoji import circuit_flag_icon, flag_icon
+from f1_bot.formatting.i18n import t
 from f1_bot.formatting.messages import (
     _esc,
     format_circuit_info,
     format_driver_profile,
     no_data_message,
 )
+from f1_bot.handlers.context import resolve_context
+from f1_bot.handlers.pagination import two_column_keyboard
 from f1_bot.utils.fuzzy_match import match_circuit, match_driver
 
 log = structlog.get_logger(__name__)
@@ -27,9 +31,7 @@ def _driver_menu_keyboard(drivers: list) -> InlineKeyboardMarkup:
         label = f"{flag} {d.family_name}"
         buttons.append(InlineKeyboardButton(label, callback_data=f"drv:detail:{d.driver_id}"))
 
-    # Chunk into 2 columns
-    keyboard = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
-    return InlineKeyboardMarkup(keyboard)
+    return two_column_keyboard(buttons)
 
 
 def _circuit_menu_keyboard(round_circuits: list) -> InlineKeyboardMarkup:
@@ -40,18 +42,19 @@ def _circuit_menu_keyboard(round_circuits: list) -> InlineKeyboardMarkup:
         label = f"R{rnd} {flag} {c.locality}"
         buttons.append(InlineKeyboardButton(label, callback_data=f"circ:detail:{c.circuit_id}"))
 
-    # Chunk into 2 columns
-    keyboard = [buttons[i : i + 2] for i in range(0, len(buttons), 2)]
-    return InlineKeyboardMarkup(keyboard)
+    return two_column_keyboard(buttons)
 
 
 async def driver_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     repo = context.bot_data.get("repo")
+    ctx = await resolve_context(update, repo) if repo else RenderContext()
     season = datetime.date.today().year
 
     if not context.args:
         if not repo:
-            await update.effective_message.reply_text(no_data_message("driver list"))
+            await update.effective_message.reply_text(
+                no_data_message("common.noun_driver_list", ctx)
+            )
             return
         try:
             standings = await repo.get_driver_standings(season)
@@ -59,13 +62,15 @@ async def driver_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             standings = []
 
         if not standings:
-            await update.effective_message.reply_text(no_data_message("driver list"))
+            await update.effective_message.reply_text(
+                no_data_message("common.noun_driver_list", ctx)
+            )
             return
 
         drivers = [s.driver for s in sorted(standings, key=lambda s: s.position)]
         keyboard = _driver_menu_keyboard(drivers)
         await update.effective_message.reply_text(
-            "🏎 Select a driver:",
+            t("extras.select_driver", ctx.lang),
             reply_markup=keyboard,
             parse_mode=ParseMode.MARKDOWN,
         )
@@ -73,7 +78,7 @@ async def driver_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     query = " ".join(context.args)
     if not repo:
-        await update.effective_message.reply_text(no_data_message("driver list"))
+        await update.effective_message.reply_text(no_data_message("common.noun_driver_list", ctx))
         return
 
     try:
@@ -96,13 +101,13 @@ async def driver_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             pass
 
     if not drivers:
-        await update.effective_message.reply_text(no_data_message("driver list"))
+        await update.effective_message.reply_text(no_data_message("common.noun_driver_list", ctx))
         return
 
     driver = match_driver(query, drivers)
     if not driver:
         await update.effective_message.reply_text(
-            f"❓ No driver found matching *{_esc(query)}*. Try a last name or 3-letter code.",
+            t("extras.no_driver_match", ctx.lang, query=_esc(query)),
             parse_mode=ParseMode.MARKDOWN,
         )
         return
@@ -112,18 +117,21 @@ async def driver_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
         standing = next((s for s in standings if s.driver.driver_id == driver.driver_id), None)
 
     await update.effective_message.reply_text(
-        format_driver_profile(driver, standing),
+        format_driver_profile(driver, standing, ctx),
         parse_mode=ParseMode.MARKDOWN,
     )
 
 
 async def circuit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     repo = context.bot_data.get("repo")
+    ctx = await resolve_context(update, repo) if repo else RenderContext()
     season = datetime.date.today().year
 
     if not context.args:
         if not repo:
-            await update.effective_message.reply_text(no_data_message("circuit list"))
+            await update.effective_message.reply_text(
+                no_data_message("common.noun_circuit_list", ctx)
+            )
             return
         try:
             round_circuits = await repo.get_circuits_for_season(season)
@@ -131,12 +139,14 @@ async def circuit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
             round_circuits = []
 
         if not round_circuits:
-            await update.effective_message.reply_text(no_data_message("circuit list"))
+            await update.effective_message.reply_text(
+                no_data_message("common.noun_circuit_list", ctx)
+            )
             return
 
         keyboard = _circuit_menu_keyboard(round_circuits)
         await update.effective_message.reply_text(
-            "📍 Select a circuit:",
+            t("extras.select_circuit", ctx.lang),
             reply_markup=keyboard,
             parse_mode=ParseMode.MARKDOWN,
         )
@@ -144,7 +154,7 @@ async def circuit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     query = " ".join(context.args)
     if not repo:
-        await update.effective_message.reply_text(no_data_message("circuit list"))
+        await update.effective_message.reply_text(no_data_message("common.noun_circuit_list", ctx))
         return
 
     try:
@@ -153,7 +163,7 @@ async def circuit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         schedule = []
 
     if not schedule:
-        await update.effective_message.reply_text(no_data_message("circuit list"))
+        await update.effective_message.reply_text(no_data_message("common.noun_circuit_list", ctx))
         return
 
     seen = set()
@@ -166,7 +176,7 @@ async def circuit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     circuit = match_circuit(query, circuits)
     if not circuit:
         await update.effective_message.reply_text(
-            f"❓ No circuit found matching *{_esc(query)}*.",
+            t("extras.no_circuit_match", ctx.lang, query=_esc(query)),
             parse_mode=ParseMode.MARKDOWN,
         )
         return
@@ -174,7 +184,7 @@ async def circuit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     recent_races = [r for r in schedule if r.circuit.circuit_id == circuit.circuit_id]
 
     await update.effective_message.reply_text(
-        format_circuit_info(circuit, recent_races),
+        format_circuit_info(circuit, recent_races, ctx),
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -184,6 +194,9 @@ async def _extras_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     if not query or not query.data:
         return
 
+    repo = context.bot_data.get("repo")
+    ctx = await resolve_context(update, repo) if repo else RenderContext()
+
     data = query.data
     try:
         parts = data.split(":", 2)
@@ -192,15 +205,14 @@ async def _extras_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
         target_id = parts[2] if len(parts) > 2 else None
     except (ValueError, IndexError):
         try:
-            await query.answer(text="Invalid selection", show_alert=True)
+            await query.answer(text=t("common.invalid_selection", ctx.lang), show_alert=True)
         except Exception:  # noqa: S110
             pass
         return
 
-    repo = context.bot_data.get("repo")
     if not repo:
         try:
-            await query.answer(text="Database unavailable", show_alert=True)
+            await query.answer(text=t("common.database_unavailable", ctx.lang), show_alert=True)
         except Exception:  # noqa: S110
             pass
         return
@@ -214,7 +226,7 @@ async def _extras_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 if not standings:
                     await query.answer()
                     await query.edit_message_text(
-                        text=no_data_message("driver list"),
+                        text=no_data_message("common.noun_driver_list", ctx),
                         parse_mode=ParseMode.MARKDOWN,
                     )
                     return
@@ -222,7 +234,7 @@ async def _extras_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 keyboard = _driver_menu_keyboard(drivers)
                 await query.answer()
                 await query.edit_message_text(
-                    text="🏎 Select a driver:",
+                    text=t("extras.select_driver", ctx.lang),
                     reply_markup=keyboard,
                     parse_mode=ParseMode.MARKDOWN,
                 )
@@ -235,12 +247,12 @@ async def _extras_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     driver = drivers_map.get(target_id)
 
                 if not driver:
-                    await query.answer(text="Driver not found", show_alert=True)
+                    await query.answer(text=t("extras.driver_not_found", ctx.lang), show_alert=True)
                     return
 
-                text = format_driver_profile(driver, standing)
+                text = format_driver_profile(driver, standing, ctx)
                 keyboard = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("🔙 Back", callback_data="drv:list")]]
+                    [[InlineKeyboardButton(t("common.back", ctx.lang), callback_data="drv:list")]]
                 )
                 await query.answer()
                 await query.edit_message_text(
@@ -255,14 +267,14 @@ async def _extras_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 if not round_circuits:
                     await query.answer()
                     await query.edit_message_text(
-                        text=no_data_message("circuit list"),
+                        text=no_data_message("common.noun_circuit_list", ctx),
                         parse_mode=ParseMode.MARKDOWN,
                     )
                     return
                 keyboard = _circuit_menu_keyboard(round_circuits)
                 await query.answer()
                 await query.edit_message_text(
-                    text="📍 Select a circuit:",
+                    text=t("extras.select_circuit", ctx.lang),
                     reply_markup=keyboard,
                     parse_mode=ParseMode.MARKDOWN,
                 )
@@ -273,14 +285,16 @@ async def _extras_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                 )
 
                 if not circuit:
-                    await query.answer(text="Circuit not found", show_alert=True)
+                    await query.answer(
+                        text=t("extras.circuit_not_found", ctx.lang), show_alert=True
+                    )
                     return
 
                 recent_races = [r for r in schedule if r.circuit.circuit_id == target_id]
 
-                text = format_circuit_info(circuit, recent_races)
+                text = format_circuit_info(circuit, recent_races, ctx)
                 keyboard = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton("🔙 Back", callback_data="circ:list")]]
+                    [[InlineKeyboardButton(t("common.back", ctx.lang), callback_data="circ:list")]]
                 )
                 await query.answer()
                 await query.edit_message_text(
@@ -291,7 +305,7 @@ async def _extras_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     except Exception:
         log.exception("extras_callback_failed")
         try:
-            await query.answer(text="An error occurred", show_alert=True)
+            await query.answer(text=t("common.error_occurred", ctx.lang), show_alert=True)
         except Exception:  # noqa: S110
             pass
 

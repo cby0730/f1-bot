@@ -9,7 +9,6 @@ from f1_bot.models.constructor import Constructor, ConstructorStanding
 from f1_bot.models.driver import Driver, DriverStanding
 from f1_bot.models.race import Circuit, Race, RaceSession
 from f1_bot.models.results import QualifyingResult, RaceResult, SessionResult, SprintResult
-from f1_bot.models.user import UserPreference
 
 
 def _driver(driver_id: str = "hamilton") -> Driver:
@@ -345,19 +344,37 @@ async def test_get_user_timezone_default(repo):
     assert tz == "UTC"
 
 
-async def test_upsert_and_get_user_timezone(repo):
-    pref = UserPreference(telegram_id=12345, timezone="Asia/Taipei")
-    await repo.upsert_user_preference(pref)
+async def test_set_and_get_user_timezone(repo):
+    """set_user_timezone writes the timezone; get_user_timezone reads it back.
+
+    Replaces the removed whole-object repo.upsert_user_preference (spec 005).
+    """
+    await repo.set_user_timezone(12345, "Asia/Taipei")
     tz = await repo.get_user_timezone(telegram_id=12345)
     assert tz == "Asia/Taipei"
 
 
-async def test_upsert_user_timezone_overwrite(repo):
-    """Upserting with a different timezone overwrites the previous value."""
-    await repo.upsert_user_preference(UserPreference(telegram_id=100, timezone="UTC"))
-    await repo.upsert_user_preference(UserPreference(telegram_id=100, timezone="Europe/London"))
+async def test_set_user_timezone_overwrite(repo):
+    """Setting a different timezone overwrites the previous value."""
+    await repo.set_user_timezone(100, "UTC")
+    await repo.set_user_timezone(100, "Europe/London")
     tz = await repo.get_user_timezone(telegram_id=100)
     assert tz == "Europe/London"
+
+
+async def test_get_user_language_stored_and_default(repo):
+    """get_user_language returns the stored language, or 'en' when no row exists.
+
+    This is the language-only lookup the notification sender uses on a background
+    job (no Update to resolve a full RenderContext from), so its default must match
+    the platform default.
+    """
+    # No row yet → default
+    assert await repo.get_user_language(telegram_id=77777) == "en"
+
+    # After setting a language → stored value
+    await repo.set_user_language(77777, "zh-Hant")
+    assert await repo.get_user_language(telegram_id=77777) == "zh-Hant"
 
 
 # --- get_schedule_bounds edge cases ---

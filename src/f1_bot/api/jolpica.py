@@ -118,45 +118,47 @@ class JolpicaClient(BaseAPIClient):
         data = await self.get(f"/{season}/driverstandings.json")
         try:
             standings_lists = data["MRData"]["StandingsTable"]["StandingsLists"]
+            if not standings_lists:
+                return []
+            standings = []
+            for s in standings_lists[0]["DriverStandings"]:
+                standings.append(
+                    DriverStanding(
+                        position=int(s["position"]),
+                        points=float(s["points"]),
+                        wins=int(s["wins"]),
+                        driver=_parse_driver(s["Driver"]),
+                        constructor_name=(
+                            s["Constructors"][0]["name"] if s.get("Constructors") else ""
+                        ),
+                    )
+                )
         except (KeyError, TypeError) as e:
             log.warning("jolpica_malformed_response", method="get_driver_standings", error=str(e))
             return []
-        if not standings_lists:
-            return []
-        standings = []
-        for s in standings_lists[0]["DriverStandings"]:
-            standings.append(
-                DriverStanding(
-                    position=int(s["position"]),
-                    points=float(s["points"]),
-                    wins=int(s["wins"]),
-                    driver=_parse_driver(s["Driver"]),
-                    constructor_name=s["Constructors"][0]["name"] if s.get("Constructors") else "",
-                )
-            )
         return standings
 
     async def get_constructor_standings(self, season: str = "current") -> list[ConstructorStanding]:
         data = await self.get(f"/{season}/constructorstandings.json")
         try:
             standings_lists = data["MRData"]["StandingsTable"]["StandingsLists"]
+            if not standings_lists:
+                return []
+            standings = []
+            for s in standings_lists[0]["ConstructorStandings"]:
+                standings.append(
+                    ConstructorStanding(
+                        position=int(s["position"]),
+                        points=float(s["points"]),
+                        wins=int(s["wins"]),
+                        constructor=_parse_constructor(s["Constructor"]),
+                    )
+                )
         except (KeyError, TypeError) as e:
             log.warning(
                 "jolpica_malformed_response", method="get_constructor_standings", error=str(e)
             )
             return []
-        if not standings_lists:
-            return []
-        standings = []
-        for s in standings_lists[0]["ConstructorStandings"]:
-            standings.append(
-                ConstructorStanding(
-                    position=int(s["position"]),
-                    points=float(s["points"]),
-                    wins=int(s["wins"]),
-                    constructor=_parse_constructor(s["Constructor"]),
-                )
-            )
         return standings
 
     async def get_race_results(

@@ -1,59 +1,53 @@
-from telegram import LinkPreviewOptions, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, LinkPreviewOptions, Update
 from telegram.constants import ParseMode
 from telegram.ext import Application, CommandHandler, ContextTypes
 
-_HELP_TEXT = """
-*F1 Bot Commands*
+from f1_bot.formatting.i18n import t
+from f1_bot.handlers.context import resolve_context
+from f1_bot.handlers.language import CB_PICKER
 
-*Bot*
-/start — Welcome message and command overview
-/help — Show this command list
 
-*Schedule*
-/next — Next race overview + session filter buttons (FP1–Race)
-/schedule — Full season race calendar
-/countdown — Time remaining until the next race
-/timezone — Set your timezone (e.g. /timezone Asia/Taipei)
+def _welcome_text(lang: str) -> str:
+    return (
+        t("start.welcome_intro", lang)
+        + "\n\n"
+        + t("start.help", lang)
+        + "\n\n"
+        + t("start.data_sources", lang)
+        + "\n\n"
+        + t("start.support", lang)
+    )
 
-*Standings*
-/standings — WDC + WCC standings
 
-*Results*
-/results — Results overview + session filter (FP1–Race, round navigation)
-/pitstops — Pit stop data (use ◀ ▶ buttons to navigate rounds)
-/laps — Lap times with sector data (By-Lap / By-Driver view)
+def _language_button(lang: str) -> InlineKeyboardMarkup:
+    """Persistent `🌐 Language / 語言` entry point on the welcome message.
 
-*Info*
-/driver [name] — Driver profile
-/circuit [name] — Circuit info
-
-*Notifications*
-/remind — Manage your session reminders
-""".strip()
-
-_WELCOME = (
-    "Welcome to *F1 Bot*! Get Formula 1 race info, standings, and session results.\n\n"
-    "Times are shown in *UTC* by default. Use /timezone to set your local timezone.\n\n"
-    + _HELP_TEXT
-    + "\n\n"
-    "📊 *Data Sources*:\n"
-    "• [Jolpica F1 API](https://github.com/jolpica/jolpica-f1) (Ergast)\n"
-    "• [OpenF1 API](https://github.com/br-g/openf1)\n\n"
-    "⭐ *Support this project*:\n"
-    "If you like this bot, please give it a star on [GitHub](https://github.com/cby0730/f1-telegram-bot)!"
-)
+    Deliberately bilingual and always shown: new users default to the platform
+    language (`en` on Telegram) with no auto-detection, so this button is what stops
+    a zh-Hant reader from being stranded in an English wall of text. It routes to
+    `lang:picker`, handled by `handlers/language.py` — the picker keyboard itself is
+    built there, in one place.
+    """
+    return InlineKeyboardMarkup(
+        [[InlineKeyboardButton(t("settings.lang_button", lang), callback_data=CB_PICKER)]]
+    )
 
 
 async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    ctx = await resolve_context(update, context.bot_data["repo"])
     await update.effective_message.reply_text(
-        _WELCOME,
+        _welcome_text(ctx.lang),
         parse_mode=ParseMode.MARKDOWN,
         link_preview_options=LinkPreviewOptions(is_disabled=True),
+        reply_markup=_language_button(ctx.lang),
     )
 
 
 async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.effective_message.reply_text(_HELP_TEXT, parse_mode=ParseMode.MARKDOWN)
+    ctx = await resolve_context(update, context.bot_data["repo"])
+    await update.effective_message.reply_text(
+        t("start.help", ctx.lang), parse_mode=ParseMode.MARKDOWN
+    )
 
 
 def register(app: Application) -> None:

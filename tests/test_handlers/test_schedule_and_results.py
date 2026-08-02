@@ -345,7 +345,10 @@ async def test_get_next_race_utc_alignment(repo, monkeypatch):
 
 async def test_format_all_results_dynamic_truncation(monkeypatch):
     """Verify Stage 1, Stage 2, and Stage 3 truncation rules in _format_all_results."""
+    from f1_bot.formatting.context import RenderContext
     from f1_bot.handlers.results import _format_all_results
+
+    ctx = RenderContext()
 
     mock_results = {
         "fp1": "FP1: Max",
@@ -357,7 +360,7 @@ async def test_format_all_results_dynamic_truncation(monkeypatch):
         "race": "Race: Max",
     }
 
-    async def mock_format_session(repo, season, rnd, race, key, drivers_map, top_n=None):
+    async def mock_format_session(repo, season, rnd, race, key, drivers_map, ctx, top_n=None):
         val = mock_results.get(key)
         if val and top_n is not None:
             return val + f" (top {top_n})"
@@ -370,7 +373,7 @@ async def test_format_all_results_dynamic_truncation(monkeypatch):
     drivers_map = {}
 
     # Case 1: Short message (<= 4096)
-    text = await _format_all_results(repo, 2026, 1, race, drivers_map)
+    text = await _format_all_results(repo, 2026, 1, race, drivers_map, ctx)
     assert text is not None
     assert "FP1: Max" in text
     assert "Race: Max" in text
@@ -378,7 +381,7 @@ async def test_format_all_results_dynamic_truncation(monkeypatch):
 
     # Case 2: Long message (> 4096) -> Drop practice
     mock_results["fp1"] = "A" * 4100
-    text_long = await _format_all_results(repo, 2026, 1, race, drivers_map)
+    text_long = await _format_all_results(repo, 2026, 1, race, drivers_map, ctx)
     assert text_long is not None
     assert "FP2: Max" not in text_long
     assert "FP1: Max" not in text_long
@@ -390,7 +393,7 @@ async def test_format_all_results_dynamic_truncation(monkeypatch):
     # Case 3: Extremely long message even without practice -> Truncate to top 10
     mock_results["fp1"] = "A" * 4100
     mock_results["race"] = "B" * 4100
-    text_extreme = await _format_all_results(repo, 2026, 1, race, drivers_map)
+    text_extreme = await _format_all_results(repo, 2026, 1, race, drivers_map, ctx)
     assert text_extreme is not None
     assert "FP2: Max" not in text_extreme
     assert "SQ: Max (top 10)" in text_extreme
@@ -706,6 +709,7 @@ async def test_results_callback_nonexistent_round():
 
 async def test_format_all_results_prefetch_no_regression(monkeypatch):
     """_format_all_results with short combined text returns it directly (Stage 1)."""
+    from f1_bot.formatting.context import RenderContext
     from f1_bot.handlers.results import _format_all_results
 
     repo = MagicMock()
@@ -714,7 +718,7 @@ async def test_format_all_results_prefetch_no_regression(monkeypatch):
 
     call_count = 0
 
-    async def mock_format(r, s, rnd, rc, key, dm, top_n=None):
+    async def mock_format(r, s, rnd, rc, key, dm, ctx, top_n=None):
         nonlocal call_count
         call_count += 1
         if key == "race":
@@ -725,7 +729,7 @@ async def test_format_all_results_prefetch_no_regression(monkeypatch):
 
     monkeypatch.setattr("f1_bot.handlers.results._format_results_for_session", mock_format)
 
-    result = await _format_all_results(repo, 2026, 5, race, {})
+    result = await _format_all_results(repo, 2026, 5, race, {}, RenderContext())
     assert result is not None
     assert "Race results text" in result
     assert "Qualifying results text" in result

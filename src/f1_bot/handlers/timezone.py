@@ -2,52 +2,59 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
+from f1_bot.formatting.i18n import t
 from f1_bot.formatting.messages import _esc
-from f1_bot.formatting.timezone import TIMEZONE_REGIONS, is_valid_timezone
-from f1_bot.models.user import UserPreference
+from f1_bot.formatting.timezone import TIMEZONE_REGIONS, is_valid_timezone, region_label
+from f1_bot.handlers.context import resolve_context
 
 _CB_REGION = "tz:region:"
 _CB_SET = "tz:set:"
 
 
-def _region_keyboard() -> InlineKeyboardMarkup:
+def _region_keyboard(lang: str) -> InlineKeyboardMarkup:
+    """Region menu.
+
+    `callback_data` carries the stable slug while the button carries the translated
+    label, so translating a label can never invalidate an in-flight keyboard.
+    """
     rows = [
-        [InlineKeyboardButton(region, callback_data=f"{_CB_REGION}{region}")]
+        [InlineKeyboardButton(region_label(region, lang), callback_data=f"{_CB_REGION}{region}")]
         for region in TIMEZONE_REGIONS
     ]
     return InlineKeyboardMarkup(rows)
 
 
-def _city_keyboard(region: str) -> InlineKeyboardMarkup:
+def _city_keyboard(region: str, lang: str) -> InlineKeyboardMarkup:
+    # City names stay literal — they are proper nouns, an explicit non-goal.
     cities = TIMEZONE_REGIONS.get(region, [])
     rows = [[InlineKeyboardButton(label, callback_data=f"{_CB_SET}{tz}")] for label, tz in cities]
-    rows.append([InlineKeyboardButton("« Back", callback_data=f"{_CB_REGION}__back__")])
+    rows.append(
+        [InlineKeyboardButton(t("common.back_prev", lang), callback_data=f"{_CB_REGION}__back__")]
+    )
     return InlineKeyboardMarkup(rows)
 
 
 async def timezone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     repo = context.bot_data["repo"]
+    ctx = await resolve_context(update, repo)
 
     # Direct input: /timezone Asia/Taipei
     if context.args:
         tz_name = context.args[0]
         if not is_valid_timezone(tz_name):
             await update.effective_message.reply_text(
-                f"❌ Unknown timezone: `{_esc(tz_name)}`\n\n"
-                "Use a standard IANA name like `Asia/Taipei`, `Europe/London`, `America/New_York`.\n"
-                "Or just type /timezone to pick from a list.",
+                t("settings.tz_unknown", ctx.lang, tz=_esc(tz_name)),
                 parse_mode=ParseMode.MARKDOWN,
             )
             return
-        await _save_tz(repo, update.effective_user.id, tz_name, update)
+        await _save_tz(repo, update.effective_user.id, tz_name, update, ctx.lang)
         return
 
     # Show region picker
-    current_tz = await repo.get_user_timezone(update.effective_user.id)
     await update.effective_message.reply_text(
-        f"🌍 *Set your timezone*\n\nCurrent: `{current_tz}`\n\nChoose your region:",
+        t("settings.tz_picker", ctx.lang, tz=ctx.tz),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_region_keyboard(),
+        reply_markup=_region_keyboard(ctx.lang),
     )
 
 
@@ -55,37 +62,47 @@ async def timezone_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     query = update.callback_query
     await query.answer()
     repo = context.bot_data["repo"]
+    ctx = await resolve_context(update, repo)
 
     if query.data.startswith(_CB_REGION):
         region = query.data[len(_CB_REGION) :]
         if region == "__back__":
             await query.edit_message_text(
-                "🌍 *Set your timezone*\n\nChoose your region:",
+                t("settings.tz_picker_back", ctx.lang),
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=_region_keyboard(),
+                reply_markup=_region_keyboard(ctx.lang),
+            )
+        elif region not in TIMEZONE_REGIONS:
+            await query.edit_message_text(
+                t("common.invalid_selection", ctx.lang), parse_mode=ParseMode.MARKDOWN
             )
         else:
             await query.edit_message_text(
-                f"🌍 *{region}* — pick a city:",
+                t("settings.tz_city", ctx.lang, region=region_label(region, ctx.lang)),
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=_city_keyboard(region),
+                reply_markup=_city_keyboard(region, ctx.lang),
             )
 
     elif query.data.startswith(_CB_SET):
         tz_name = query.data[len(_CB_SET) :]
         if not is_valid_timezone(tz_name):
             await query.edit_message_text(
-                f"❌ Unknown timezone: `{_esc(tz_name)}`\n\nPlease try /timezone again.",
+                t("settings.tz_unknown_short", ctx.lang, tz=_esc(tz_name)),
                 parse_mode=ParseMode.MARKDOWN,
             )
             return
-        await _save_tz(repo, update.effective_user.id, tz_name, update, via_callback=query)
+        await _save_tz(
+            repo, update.effective_user.id, tz_name, update, ctx.lang, via_callback=query
+        )
 
 
-async def _save_tz(repo, telegram_id: int, tz_name: str, update, via_callback=None) -> None:
-    pref = UserPreference(telegram_id=telegram_id, timezone=tz_name)
-    await repo.upsert_user_preference(pref)
-    text = f"✅ Timezone set to *{tz_name}*\n\nRace times will now be shown in your local time."
+async def _save_tz(
+    repo, telegram_id: int, tz_name: str, update, lang: str, via_callback=None
+) -> None:
+    # Single-column upsert: writing a whole UserPreference here would carry the
+    # `language` field's default along and silently reset the user's language.
+    await repo.set_user_timezone(telegram_id, tz_name)
+    text = t("settings.tz_saved", lang, tz=tz_name)
     if via_callback:
         await via_callback.edit_message_text(text, parse_mode=ParseMode.MARKDOWN)
     else:

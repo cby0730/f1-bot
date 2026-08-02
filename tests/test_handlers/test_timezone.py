@@ -3,7 +3,6 @@
 from unittest.mock import AsyncMock, MagicMock
 
 from f1_bot.handlers.timezone import timezone_callback, timezone_handler
-from f1_bot.models.user import UserPreference
 
 
 def _context(repo):
@@ -37,17 +36,16 @@ async def test_timezone_handler_no_args_shows_region_picker():
 
 async def test_timezone_handler_valid_timezone_saves_and_confirms():
     repo = MagicMock()
-    repo.upsert_user_preference = AsyncMock()
+    repo.set_user_timezone = AsyncMock()
     update, _ = _update()
     ctx = _context(repo)
     ctx.args = ["Asia/Taipei"]
 
     await timezone_handler(update, ctx)
 
-    repo.upsert_user_preference.assert_called_once()
-    saved_pref = repo.upsert_user_preference.call_args.args[0]
-    assert saved_pref.timezone == "Asia/Taipei"
-    assert saved_pref.telegram_id == 123
+    # Single-column upsert: (telegram_id, tz) — never a whole UserPreference (which
+    # would carry the language default and clobber the user's saved language).
+    repo.set_user_timezone.assert_called_once_with(123, "Asia/Taipei")
     text = update.effective_message.reply_text.await_args.args[0]
     assert "Asia/Taipei" in text
 
@@ -62,7 +60,7 @@ async def test_timezone_handler_invalid_timezone_shows_error():
 
     text = update.effective_message.reply_text.await_args.args[0]
     assert "❌" in text or "Unknown" in text
-    repo.upsert_user_preference.assert_not_called()
+    repo.set_user_timezone.assert_not_called()
 
 
 async def test_timezone_callback_region_shows_city_picker():
@@ -71,7 +69,8 @@ async def test_timezone_callback_region_shows_city_picker():
     query = MagicMock()
     query.answer = AsyncMock()
     query.edit_message_text = AsyncMock()
-    query.data = "tz:region:Asia"
+    # Region slugs are stable lowercase identifiers carried in callback_data.
+    query.data = "tz:region:asia"
     update = MagicMock()
     update.callback_query = query
     update.effective_user.id = 123
@@ -105,7 +104,7 @@ async def test_timezone_callback_back_shows_region_picker():
 
 async def test_timezone_callback_set_saves_timezone():
     repo = MagicMock()
-    repo.upsert_user_preference = AsyncMock()
+    repo.set_user_timezone = AsyncMock()
     query = MagicMock()
     query.answer = AsyncMock()
     query.edit_message_text = AsyncMock()
@@ -117,10 +116,7 @@ async def test_timezone_callback_set_saves_timezone():
 
     await timezone_callback(update, ctx)
 
-    repo.upsert_user_preference.assert_called_once()
-    saved: UserPreference = repo.upsert_user_preference.call_args.args[0]
-    assert saved.timezone == "Europe/London"
-    assert saved.telegram_id == 456
+    repo.set_user_timezone.assert_called_once_with(456, "Europe/London")
     text = query.edit_message_text.call_args.args[0]
     assert "Europe/London" in text
 
@@ -128,7 +124,7 @@ async def test_timezone_callback_set_saves_timezone():
 async def test_timezone_callback_rejects_invalid_timezone():
     """Crafted callback data with an invalid tz must not save anything."""
     repo = MagicMock()
-    repo.upsert_user_preference = AsyncMock()
+    repo.set_user_timezone = AsyncMock()
     query = MagicMock()
     query.answer = AsyncMock()
     query.edit_message_text = AsyncMock()
@@ -140,6 +136,6 @@ async def test_timezone_callback_rejects_invalid_timezone():
 
     await timezone_callback(update, ctx)
 
-    repo.upsert_user_preference.assert_not_called()
+    repo.set_user_timezone.assert_not_called()
     text = query.edit_message_text.call_args.args[0]
     assert "❌" in text or "Unknown" in text
