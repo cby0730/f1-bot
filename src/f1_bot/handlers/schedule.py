@@ -6,6 +6,7 @@ from telegram.constants import ParseMode
 from telegram.error import BadRequest
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
+from f1_bot.formatting.i18n import t
 from f1_bot.formatting.messages import (
     format_countdown_msg,
     format_next_race,
@@ -13,13 +14,14 @@ from f1_bot.formatting.messages import (
     format_schedule,
     no_data_message,
 )
+from f1_bot.handlers.context import resolve_context
 from f1_bot.handlers.pagination import (
     load_schedule_and_bounds,
     next_filtered_keyboard,
     next_overview_keyboard,
     upcoming_rounds,
 )
-from f1_bot.utils.sessions import find_next_sessions
+from f1_bot.utils.sessions import find_next_sessions, session_label
 
 log = structlog.get_logger(__name__)
 
@@ -31,27 +33,31 @@ log = structlog.get_logger(__name__)
 
 async def next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Entry point: show next race weekend overview with session filter buttons."""
+    repo = context.bot_data["repo"]
+    ctx = await resolve_context(update, repo)
+
     try:
         races, bounds, season = await load_schedule_and_bounds(context)
     except RuntimeError:
-        await update.effective_message.reply_text(no_data_message("upcoming race"))
+        await update.effective_message.reply_text(
+            no_data_message("common.noun_upcoming_race", ctx)
+        )
         return
-
-    repo = context.bot_data["repo"]
-    user_tz = await repo.get_user_timezone(update.effective_user.id)
 
     today = datetime.datetime.now(tz=datetime.UTC).date()
     upcoming = [r for r in races if r.date >= today]
     if not upcoming:
-        await update.effective_message.reply_text(no_data_message("upcoming race"))
+        await update.effective_message.reply_text(
+            no_data_message("common.noun_upcoming_race", ctx)
+        )
         return
 
     race = upcoming[0]
     nav_rounds = upcoming_rounds(races, "all")
     await update.effective_message.reply_text(
-        format_next_race(race, user_tz),
+        format_next_race(race, ctx),
         parse_mode=ParseMode.MARKDOWN,
-        reply_markup=next_overview_keyboard(race.round, nav_rounds),
+        reply_markup=next_overview_keyboard(race.round, nav_rounds, ctx.lang),
     )
 
 
@@ -68,6 +74,8 @@ async def _next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
       next:back:_:{round}             → State A: overview for round
     """
     query = update.callback_query
+    repo = context.bot_data["repo"]
+    ctx = await resolve_context(update, repo)
 
     parts = query.data.split(":")
     if len(parts) < 4:
@@ -79,23 +87,20 @@ async def _next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     try:
         rnd = int(parts[3])
     except (ValueError, IndexError):
-        await query.answer(text="Invalid selection", show_alert=True)
+        await query.answer(text=t("common.invalid_selection", ctx.lang), show_alert=True)
         return
 
     try:
         races, bounds, season = await load_schedule_and_bounds(context)
     except RuntimeError:
-        await query.answer(text="Schedule unavailable", show_alert=True)
+        await query.answer(text=t("common.schedule_unavailable", ctx.lang), show_alert=True)
         return
-
-    repo = context.bot_data["repo"]
-    user_tz = await repo.get_user_timezone(update.effective_user.id)
 
     if mode == "back":
         # Return to State A (overview) for the same round
         nav_rounds = upcoming_rounds(races, "all")
         if not nav_rounds:
-            await query.answer(text="No upcoming races", show_alert=True)
+            await query.answer(text=t("schedule.no_upcoming_races", ctx.lang), show_alert=True)
             return
 
         if rnd not in nav_rounds:
@@ -106,14 +111,14 @@ async def _next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             race = next((r for r in races if r.round == nav_rounds[0]), None)
 
         if race is None:
-            await query.answer(text="No upcoming races", show_alert=True)
+            await query.answer(text=t("schedule.no_upcoming_races", ctx.lang), show_alert=True)
             return
 
         try:
             await query.edit_message_text(
-                format_next_race(race, user_tz),
+                format_next_race(race, ctx),
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=next_overview_keyboard(race.round, nav_rounds),
+                reply_markup=next_overview_keyboard(race.round, nav_rounds, ctx.lang),
             )
         except BadRequest:
             pass
@@ -122,9 +127,14 @@ async def _next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
     if mode == "filtered":
         # State B: show next upcoming session of this filter type
+        none_left = t(
+            "schedule.no_upcoming_filtered",
+            ctx.lang,
+            session=session_label(session_filter, ctx.lang),
+        )
         nav_rounds = upcoming_rounds(races, session_filter)
         if not nav_rounds:
-            await query.answer(text=f"No upcoming {session_filter} sessions", show_alert=True)
+            await query.answer(text=none_left, show_alert=True)
             return
 
         # If requested round no longer has sessions, snap to first
@@ -139,20 +149,20 @@ async def _next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
             entry = next((e for e in entries if e.race.round == rnd), None)
 
         if entry is None:
-            await query.answer(text=f"No upcoming {session_filter} sessions", show_alert=True)
+            await query.answer(text=none_left, show_alert=True)
             return
 
         try:
             await query.edit_message_text(
-                format_next_session(entry, user_tz),
+                format_next_session(entry, ctx),
                 parse_mode=ParseMode.MARKDOWN,
-                reply_markup=next_filtered_keyboard(rnd, nav_rounds, session_filter),
+                reply_markup=next_filtered_keyboard(rnd, nav_rounds, session_filter, ctx.lang),
             )
         except BadRequest:
             pass
         except Exception as e:
             log.warning("next_filtered_callback_failed", error=str(e))
-            await query.answer(text="Failed to load data", show_alert=True)
+            await query.answer(text=t("common.failed_to_load", ctx.lang), show_alert=True)
             return
 
         await query.answer()
@@ -165,29 +175,31 @@ async def _next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 async def schedule_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    repo = context.bot_data["repo"]
+    ctx = await resolve_context(update, repo)
     try:
         races, bounds, season = await load_schedule_and_bounds(context)
     except RuntimeError:
-        await update.effective_message.reply_text(no_data_message("schedule"))
+        await update.effective_message.reply_text(no_data_message("common.noun_schedule", ctx))
         return
 
-    repo = context.bot_data["repo"]
-    user_tz = await repo.get_user_timezone(update.effective_user.id)
     await update.effective_message.reply_text(
-        format_schedule(races, user_tz), parse_mode=ParseMode.MARKDOWN
+        format_schedule(races, ctx), parse_mode=ParseMode.MARKDOWN
     )
 
 
 async def countdown_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     repo = context.bot_data["repo"]
+    ctx = await resolve_context(update, repo)
     season = datetime.date.today().year
-    user_tz = await repo.get_user_timezone(update.effective_user.id)
     race = await repo.get_next_race(season)
     if not race:
-        await update.effective_message.reply_text(no_data_message("upcoming race"))
+        await update.effective_message.reply_text(
+            no_data_message("common.noun_upcoming_race", ctx)
+        )
         return
     await update.effective_message.reply_text(
-        format_countdown_msg(race, user_tz), parse_mode=ParseMode.MARKDOWN
+        format_countdown_msg(race, ctx), parse_mode=ParseMode.MARKDOWN
     )
 
 
@@ -199,7 +211,8 @@ async def countdown_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
 async def _legacy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Handle old nsess:/nprac:/nqual:/nspr: callbacks from stale messages."""
     query = update.callback_query
-    await query.answer(text="This button is outdated. Use /next again.", show_alert=True)
+    ctx = await resolve_context(update, context.bot_data["repo"])
+    await query.answer(text=t("schedule.outdated_next", ctx.lang), show_alert=True)
 
 
 def register(app: Application) -> None:

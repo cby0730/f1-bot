@@ -394,8 +394,10 @@ async def test_scenario_06_timezone_interactive_flow(e2e_app, httpx_mock):
     reply_text = extract_reply_message(httpx_mock)
     assert "Choose your region:" in reply_text
 
-    # 2. Simulate clicking 'Europe' region button
-    cb_update = make_tg_callback_query_update(e2e_app, "tz:region:🌍 Europe")
+    # 2. Simulate clicking 'Europe' region button. callback_data now carries the
+    # stable region *slug* ("europe"), not the translated label, so a relabel can
+    # never invalidate an in-flight keyboard (see timezone._region_keyboard).
+    cb_update = make_tg_callback_query_update(e2e_app, "tz:region:europe")
     await e2e_app.process_update(cb_update)
     reply_text = extract_reply_message(httpx_mock)
     assert "pick a city:" in reply_text
@@ -459,13 +461,12 @@ async def test_scenario_09_next_utc_default(e2e_app, httpx_mock):
 @pytest.mark.asyncio
 async def test_scenario_10_next_custom_timezone(e2e_app, httpx_mock):
     """Scenario 10: /next command output converted to user timezone preference."""
-    # Save timezone preference
+    # Save timezone preference. The whole-object upsert_user_preference was replaced
+    # by the single-column set_user_timezone (spec 005) so setting a timezone can no
+    # longer clobber the user's language.
     repo = e2e_app.bot_data["repo"]
-    from f1_bot.models.user import UserPreference
 
-    await repo.upsert_user_preference(
-        UserPreference(telegram_id=MOCK_USER_ID, timezone="Europe/Paris")
-    )
+    await repo.set_user_timezone(MOCK_USER_ID, "Europe/Paris")
 
     update = make_tg_update(e2e_app, "/next")
     await e2e_app.process_update(update)

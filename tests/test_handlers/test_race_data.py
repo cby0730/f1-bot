@@ -472,6 +472,7 @@ async def test_laps_callback_handles_invalid_driver():
 
 async def test_laps_by_lap_handles_partial_null_sectors():
     """Verify that mixed None sector timings format correctly as '—' without crash."""
+    from f1_bot.formatting.context import RenderContext
     from f1_bot.formatting.messages import format_laps_by_lap
     from f1_bot.models.results import LapTime
 
@@ -489,7 +490,9 @@ async def test_laps_by_lap_handles_partial_null_sectors():
         )
     ]
 
-    text = format_laps_by_lap(race=_race(5), laps=laps, lap_number=1, total_laps=1)
+    text = format_laps_by_lap(
+        race=_race(5), laps=laps, lap_number=1, total_laps=1, ctx=RenderContext()
+    )
 
     assert "HAM" in text
     assert "25.5" in text

@@ -1,4 +1,10 @@
+from f1_bot.formatting.i18n import t
 from f1_bot.handlers import start
+
+# The command list is no longer a module constant; it lives in the i18n catalog and
+# is rendered per-language. Assert against the English rendering — the same text the
+# /help handler emits for a default-language user.
+_HELP_TEXT = t("start.help", "en")
 
 
 def test_help_text_lists_registered_commands_from_start_module():
@@ -8,7 +14,7 @@ def test_help_text_lists_registered_commands_from_start_module():
     start.register(app)
 
     for command in registered:
-        assert f"/{command}" in start._HELP_TEXT
+        assert f"/{command}" in _HELP_TEXT
 
 
 def test_help_text_lists_all_public_registered_commands():
@@ -19,7 +25,9 @@ def test_help_text_lists_all_public_registered_commands():
         "schedule",
         "countdown",
         "timezone",
+        "language",
         "standings",
+        "title",
         "results",
         "pitstops",
         "laps",
@@ -28,4 +36,4 @@ def test_help_text_lists_all_public_registered_commands():
     }
 
     for command in commands:
-        assert f"/{command}" in start._HELP_TEXT
+        assert f"/{command}" in _HELP_TEXT

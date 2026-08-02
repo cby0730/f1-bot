@@ -6,6 +6,8 @@ from telegram.constants import ParseMode
 from telegram.error import BadRequest
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes
 
+from f1_bot.formatting.i18n import t
+from f1_bot.handlers.context import resolve_context
 from f1_bot.handlers.pagination import (
     get_completed_rounds_for_session,
     load_schedule_and_bounds,
@@ -40,15 +42,16 @@ async def _round_picker_callback(update: Update, context: ContextTypes.DEFAULT_T
     """Handle rpk:{origin}:{round} callbacks — display the round picker grid."""
     query = update.callback_query
     parts = query.data.split(":")
+    ctx = await resolve_context(update, context.bot_data["repo"])
 
     if len(parts) < 3:
-        await query.answer(text="Invalid selection", show_alert=True)
+        await query.answer(text=t("common.invalid_selection", ctx.lang), show_alert=True)
         return
 
     try:
         current_round = int(parts[-1])
     except ValueError:
-        await query.answer(text="Invalid selection", show_alert=True)
+        await query.answer(text=t("common.invalid_selection", ctx.lang), show_alert=True)
         return
 
     origin = ":".join(parts[1:-1])
@@ -56,17 +59,17 @@ async def _round_picker_callback(update: Update, context: ContextTypes.DEFAULT_T
     try:
         races, bounds, season = await load_schedule_and_bounds(context)
     except RuntimeError:
-        await query.answer(text="Schedule unavailable", show_alert=True)
+        await query.answer(text=t("common.schedule_unavailable", ctx.lang), show_alert=True)
         return
 
     try:
         navigable = _compute_navigable_rounds(origin, races, bounds)
     except ValueError:
-        await query.answer(text="Invalid selection", show_alert=True)
+        await query.answer(text=t("common.invalid_selection", ctx.lang), show_alert=True)
         return
 
     if not navigable:
-        await query.answer(text="No rounds available", show_alert=True)
+        await query.answer(text=t("common.no_rounds_available", ctx.lang), show_alert=True)
         return
 
     if current_round not in navigable:
@@ -77,9 +80,9 @@ async def _round_picker_callback(update: Update, context: ContextTypes.DEFAULT_T
 
     try:
         await query.edit_message_text(
-            round_picker_text(current_round, races),
+            round_picker_text(current_round, races, ctx.lang),
             parse_mode=ParseMode.MARKDOWN,
-            reply_markup=round_picker_keyboard(origin, current_round, navigable, races),
+            reply_markup=round_picker_keyboard(origin, current_round, navigable, races, ctx.lang),
         )
     except BadRequest:
         pass
