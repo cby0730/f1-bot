@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
 
+from f1_bot.formatting.i18n import t
 from f1_bot.formatting.timezone import combine_race_dt
 from f1_bot.models.race import Race, RaceSession, Session
 
@@ -36,6 +37,31 @@ SESSION_LABELS = {
     "race": "Race",
 }
 
+def session_label(key: str, lang: str) -> str:
+    """Display label for a session key, e.g. ``"qualifying"`` → ``"Qualifying"``.
+
+    ``SESSION_LABELS`` above is retained as the *key set* (``find_next_sessions``
+    membership-tests against it); only the display path goes through the catalog.
+    Unknown keys echo back, matching the old ``SESSION_LABELS.get(k, k)`` behaviour.
+    """
+    try:
+        return t(f"session.{key}", lang)
+    except KeyError:
+        return key
+
+
+def session_short_label(key: str, lang: str) -> str:
+    """Abbreviated label for the compact session list in ``/next``.
+
+    Distinct from `session_label` because that list has always used ``Quali`` /
+    ``Sprint Quali`` to fit the line — a second, narrower vocabulary, not a synonym.
+    """
+    try:
+        return t(f"session.short.{key}", lang)
+    except KeyError:
+        return session_label(key, lang)
+
+
 SESSION_GROUPS = {
     "all": {"fp1", "fp2", "fp3", "sprint_qualifying", "sprint", "qualifying", "race"},
     "practice": {"fp1", "fp2", "fp3"},
@@ -51,10 +77,6 @@ class SessionEntry:
     key: str
     session: RaceSession
     starts_at: datetime | None
-
-    @property
-    def label(self) -> str:
-        return SESSION_LABELS[self.key]
 
 
 def normalize_session_key(value: str | None) -> str | None:

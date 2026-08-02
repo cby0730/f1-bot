@@ -183,6 +183,11 @@ async def test_get_next_fire_at(pg_store):
 
 
 async def test_delete_notifications_for_user(pg_store):
+    """Deletion must be scoped to the target user — a bystander's rows survive.
+
+    The bystander is load-bearing: without it, dropping the ``WHERE telegram_id``
+    clause would wipe the whole table and this test would still pass.
+    """
     fire_at = datetime(2026, 7, 1, 12, 0, tzinfo=UTC)
     for i in range(3):
         sub = NotificationSubscription(
@@ -195,8 +200,21 @@ async def test_delete_notifications_for_user(pg_store):
         )
         await pg_store.save_notification(sub)
 
+    bystander = NotificationSubscription(
+        telegram_id=99999,
+        season=2026,
+        round=10,
+        session_key="race",
+        minutes_before=30,
+        fire_at=fire_at,
+    )
+    await pg_store.save_notification(bystander)
+
     count = await pg_store.delete_notifications_for_user(12345)
     assert count == 3
 
     subs = await pg_store.get_user_notifications(12345, 2026)
     assert len(subs) == 0
+
+    survivors = await pg_store.get_user_notifications(99999, 2026)
+    assert len(survivors) == 1

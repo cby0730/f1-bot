@@ -41,23 +41,17 @@ async def _post_init(app: Application) -> None:
     try:
         from telegram import BotCommand
 
-        commands = [
-            BotCommand("start", "Welcome message and command overview"),
-            BotCommand("help", "Show command list"),
-            BotCommand("next", "Next race — session filter buttons"),
-            BotCommand("schedule", "Full season race calendar"),
-            BotCommand("countdown", "Time remaining until the next race"),
-            BotCommand("timezone", "Set your timezone"),
-            BotCommand("standings", "WDC + WCC standings"),
-            BotCommand("results", "Results — session filter + round navigation"),
-            BotCommand("pitstops", "Pit stop data with round navigation"),
-            BotCommand("laps", "Lap times with sector data"),
-            BotCommand("driver", "Driver profile"),
-            BotCommand("circuit", "Circuit info"),
-            BotCommand("remind", "Manage notification reminders"),
-        ]
-        await app.bot.set_my_commands(commands)
-        log.info("bot_commands_registered")
+        from f1_bot.formatting.i18n import COMMAND_ORDER, DEFAULT_LANG, SHIPPED_LANGS, t
+
+        def _menu(lang: str) -> list[BotCommand]:
+            return [BotCommand(name, t(f"commands.{name}", lang)) for name in COMMAND_ORDER]
+
+        # Default menu (clients whose locale we ship no translation for) plus one
+        # explicit registration per shipped language.
+        await app.bot.set_my_commands(_menu(DEFAULT_LANG))
+        for lang in SHIPPED_LANGS:
+            await app.bot.set_my_commands(_menu(lang), language_code=lang.split("-")[0])
+        log.info("bot_commands_registered", languages=list(SHIPPED_LANGS))
     except Exception as e:
         log.warning("failed_to_set_bot_commands", error=str(e))
 

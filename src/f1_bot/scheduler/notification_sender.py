@@ -51,7 +51,10 @@ async def send_notifications(context) -> None:
                 schedule_cache[sub.season] = await repo.get_schedule(sub.season)
             races = schedule_cache[sub.season]
             race = next((r for r in races if r.round == sub.round), None)
-            msg = format_notification_message(race, sub.session_key, sub.minutes_before)
+            # This job has no Update, so resolve_context() is unavailable: read the
+            # language directly. No tz lookup — the push message renders no clock time.
+            lang = await repo.get_user_language(sub.telegram_id)
+            msg = format_notification_message(race, sub.session_key, sub.minutes_before, lang)
             await bot.send_message(chat_id=sub.telegram_id, text=msg, parse_mode=ParseMode.MARKDOWN)
             sent_ids.append(sub.id)
         except Forbidden:

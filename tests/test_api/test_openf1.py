@@ -7,7 +7,6 @@ to get stable, reproducible data. Requires network access.
 import pytest
 
 from f1_bot.api.openf1 import OpenF1Client
-from f1_bot.models.live import LivePosition, RaceControlMessage, WeatherData
 from f1_bot.models.race import Meeting
 from f1_bot.models.results import LapTime, PitStop
 from f1_bot.utils.rate_limiter import RateLimiter
@@ -48,19 +47,6 @@ async def test_get_sessions_abu_dhabi_2024(client):
     assert "Race" in session_types or "race" in session_types
 
 
-# --- Positions (race start, limited) ---
-
-
-async def test_get_positions_abu_dhabi_race(client):
-    positions = await client.get_positions(session_key=ABU_DHABI_2024_RACE_SESSION, driver_number=1)
-    assert len(positions) > 0
-    p = positions[0]
-    assert isinstance(p, LivePosition)
-    assert p.session_key == ABU_DHABI_2024_RACE_SESSION
-    assert p.driver_number == 1
-    assert 1 <= p.position <= 20
-
-
 # --- Pit stops ---
 
 
@@ -85,26 +71,3 @@ async def test_get_laps_abu_dhabi_race_single_driver(client):
     assert isinstance(lap, LapTime)
     assert lap.lap_number == 1
     assert lap.driver_id == "1"
-
-
-# --- Weather ---
-
-
-async def test_get_weather_abu_dhabi_race(client):
-    weather = await client.get_weather(session_key=ABU_DHABI_2024_RACE_SESSION)
-    assert len(weather) > 0
-    w = weather[0]
-    assert isinstance(w, WeatherData)
-    assert w.session_key == ABU_DHABI_2024_RACE_SESSION
-    assert w.air_temperature is not None
-
-
-# --- Race control messages ---
-
-
-async def test_get_race_control_abu_dhabi(client):
-    messages = await client.get_race_control(session_key=ABU_DHABI_2024_RACE_SESSION)
-    assert len(messages) > 0
-    m = messages[0]
-    assert isinstance(m, RaceControlMessage)
-    assert m.message

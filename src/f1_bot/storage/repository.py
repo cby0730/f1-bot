@@ -5,6 +5,7 @@ from datetime import UTC, datetime
 
 import structlog
 
+from f1_bot.formatting.i18n import DEFAULT_LANG
 from f1_bot.models.constructor import ConstructorStanding
 from f1_bot.models.driver import DriverStanding
 from f1_bot.models.notification import NotificationSubscription
@@ -133,6 +134,14 @@ class Repository:
         data = [s.model_dump(mode="json") for s in standings]
         await self._store.save_constructor_standings(season, round_after, data)
 
+    async def get_standings_round(self, season: int, table: str) -> int | None:
+        """round_after of the latest standings snapshot for ``table``.
+
+        ``table`` is 'drivers' | 'constructors'. Same snapshot as
+        get_driver_standings / get_constructor_standings; None if no row exists.
+        """
+        return await self._store.get_standings_round(season, table)
+
     # --- Results ---
 
     async def get_race_results(self, season: int, round_num: int) -> list | None:
@@ -210,12 +219,24 @@ class Repository:
     async def get_user_preference(self, telegram_id: int) -> UserPreference | None:
         return await self._store.get_user_preference(telegram_id)
 
-    async def upsert_user_preference(self, pref: UserPreference) -> None:
-        await self._store.upsert_user_preference(pref)
+    async def set_user_timezone(self, telegram_id: int, timezone: str) -> None:
+        await self._store.set_user_timezone(telegram_id, timezone)
+
+    async def set_user_language(self, telegram_id: int, language: str) -> None:
+        await self._store.set_user_language(telegram_id, language)
 
     async def get_user_timezone(self, telegram_id: int) -> str:
         pref = await self.get_user_preference(telegram_id)
         return pref.timezone if pref else "UTC"
+
+    async def get_user_language(self, telegram_id: int) -> str:
+        """Language only — for paths that have no `Update` to resolve a context from.
+
+        The notification sender is the reason this exists: it renders per recipient
+        on a background job and needs the language without the timezone lookup.
+        """
+        pref = await self.get_user_preference(telegram_id)
+        return pref.language if pref else DEFAULT_LANG
 
     # --- Drivers / Circuits ---
 

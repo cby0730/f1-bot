@@ -10,6 +10,7 @@ from f1_bot.utils.sessions import (
     match_openf1_session,
     normalize_session_key,
     session_entries,
+    session_label,
 )
 
 
@@ -63,7 +64,10 @@ def test_find_race_session_resolves_round_and_session_alias():
     entry = find_race_session([_race()], 16, "fp3")
 
     assert entry is not None
-    assert entry.label == "FP3"
+    # `SessionEntry.label` was removed in the i18n refactor; the display label now
+    # comes from the catalog via `session_label(key, lang)`. Intent unchanged: the
+    # "fp3" alias resolves to the FP3 session.
+    assert session_label(entry.key, "en") == "FP3"
 
 
 def test_match_openf1_session_uses_date_and_session_name():

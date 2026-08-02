@@ -73,6 +73,7 @@ CREATE TABLE IF NOT EXISTS circuits (
 CREATE TABLE IF NOT EXISTS user_preferences (
     telegram_id BIGINT PRIMARY KEY,
     timezone TEXT NOT NULL DEFAULT 'UTC',
+    language TEXT NOT NULL DEFAULT 'en',
     created_at TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
@@ -147,6 +148,14 @@ class PostgresStore:
             # Database migration: remove old session result formats
             await conn.execute(
                 "DELETE FROM results WHERE type LIKE 'session:%' AND type NOT LIKE 'session:%:%'"
+            )
+
+            # Database migration: language preference (spec 005). CREATE TABLE IF NOT
+            # EXISTS is a no-op on an existing table, so pre-005 databases need the
+            # column added explicitly.
+            await conn.execute(
+                "ALTER TABLE user_preferences "
+                "ADD COLUMN IF NOT EXISTS language TEXT NOT NULL DEFAULT 'en'"
             )
 
         log.info("postgres_initialized", url=self._database_url.split("@")[-1])
@@ -237,6 +246,22 @@ class PostgresStore:
             )
         return json.loads(row["data_json"]) if row else None
 
+    async def get_standings_round(self, season: int, table: str) -> int | None:
+        """round_after of the latest snapshot for the given standings table.
+
+        ``table`` is 'drivers' | 'constructors'. Reads the SAME row that
+        get_driver_standings / get_constructor_standings return (both
+        ORDER BY round_after DESC LIMIT 1), so points and cutoff stay aligned.
+        Returns None if that table has no row for the season.
+        """
+        source = "standings_drivers" if table == "drivers" else "standings_constructors"
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                f"SELECT round_after FROM {source} WHERE season=$1 ORDER BY round_after DESC LIMIT 1",  # noqa: S608
+                season,
+            )
+        return row["round_after"] if row else None
+
     # --- Results ---
 
     async def save_results(
@@ -281,7 +306,8 @@ class PostgresStore:
     async def get_user_preference(self, telegram_id: int) -> UserPreference | None:
         async with self._pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT telegram_id, timezone, created_at, updated_at FROM user_preferences WHERE telegram_id=$1",
+                "SELECT telegram_id, timezone, language, created_at, updated_at "
+                "FROM user_preferences WHERE telegram_id=$1",
                 telegram_id,
             )
         if not row:
@@ -289,21 +315,37 @@ class PostgresStore:
         return UserPreference(
             telegram_id=row["telegram_id"],
             timezone=row["timezone"],
+            language=row["language"],
             created_at=datetime.fromisoformat(row["created_at"]),
             updated_at=datetime.fromisoformat(row["updated_at"]),
         )
 
-    async def upsert_user_preference(self, pref: UserPreference) -> None:
+    async def set_user_timezone(self, telegram_id: int, timezone: str) -> None:
+        """Write *only* the timezone column.
+
+        A whole-object upsert would reset the other preference to its model default:
+        `/timezone` would silently wipe the user's language and vice versa. Read-then-
+        write would fix the clobber but reintroduce it as a TOCTOU race, so each setter
+        is a single atomic statement touching one column.
+        """
+        await self._set_user_column("timezone", telegram_id, timezone)
+
+    async def set_user_language(self, telegram_id: int, language: str) -> None:
+        """Write *only* the language column — see `set_user_timezone`."""
+        await self._set_user_column("language", telegram_id, language)
+
+    async def _set_user_column(self, column: str, telegram_id: int, value: str) -> None:
+        # `column` is never user input — the two callers above pass literals.
         now = _now_iso()
         async with self._pool.acquire() as conn:
             await conn.execute(
-                """INSERT INTO user_preferences (telegram_id, timezone, created_at, updated_at)
-                   VALUES ($1,$2,$3,$4)
-                   ON CONFLICT(telegram_id)
-                   DO UPDATE SET timezone=EXCLUDED.timezone, updated_at=EXCLUDED.updated_at""",
-                pref.telegram_id,
-                pref.timezone,
-                now,
+                f"""INSERT INTO user_preferences (telegram_id, {column}, created_at, updated_at)
+                    VALUES ($1,$2,$3,$3)
+                    ON CONFLICT(telegram_id)
+                    DO UPDATE SET {column}=EXCLUDED.{column},
+                                  updated_at=EXCLUDED.updated_at""",  # noqa: S608
+                telegram_id,
+                value,
                 now,
             )
 

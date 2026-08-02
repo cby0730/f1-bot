@@ -31,17 +31,26 @@ async def test_post_init_sets_commands():
     # Verify DB initialization is called
     app.bot_data["store"].init.assert_awaited_once()
 
-    # Verify set_my_commands is called to register autocomplete commands
-    app.bot.set_my_commands.assert_awaited_once()
+    # Post-005 the menu is registered once as the default plus once per shipped
+    # language: SHIPPED_LANGS == ("en", "zh-Hant"), so 1 + 2 == 3 awaits.
+    from f1_bot.formatting.i18n import SHIPPED_LANGS
 
-    # Retrieve and verify the list of registered commands
-    args, _ = app.bot.set_my_commands.call_args
-    commands = args[0]
+    assert app.bot.set_my_commands.await_count == 1 + len(SHIPPED_LANGS)
 
-    assert len(commands) == 13
+    calls = app.bot.set_my_commands.call_args_list
 
-    # Assert specific commands exist in the list
-    cmd_names = {c.command for c in commands}
+    # First call is the default menu (no language_code).
+    default_args, default_kwargs = calls[0]
+    default_menu = default_args[0]
+    assert "language_code" not in default_kwargs
+
+    # Every registered menu must carry all 16 commands. Telegram silently *ignores*
+    # a set_my_commands list whose length mismatches, so a wrong count would not fail
+    # loudly on its own — assert it here.
+    assert len(default_menu) == 16
+
+    # Assert specific commands exist in the default list, including the new /language.
+    cmd_names = {c.command for c in default_menu}
     expected_commands = {
         "start",
         "help",
@@ -49,15 +58,37 @@ async def test_post_init_sets_commands():
         "schedule",
         "countdown",
         "timezone",
+        "language",
         "standings",
+        "title",
         "results",
         "pitstops",
         "laps",
         "driver",
         "circuit",
+        "compare",
         "remind",
     }
     assert cmd_names == expected_commands
+
+    # Collect the per-language registrations by their language_code kwarg.
+    by_lang = {
+        kwargs["language_code"]: args[0]
+        for args, kwargs in calls
+        if "language_code" in kwargs
+    }
+    assert set(by_lang) == {lang.split("-")[0] for lang in SHIPPED_LANGS}
+
+    # The zh-Hant menu must be registered and localized: same 16 commands, but the
+    # descriptions differ from the English default — proving translations were applied
+    # and not silently falling back to English.
+    # Telegram receives "zh" (ISO 639-1) even though catalog key is "zh-Hant".
+    zh_menu = by_lang["zh"]
+    assert len(zh_menu) == 16
+    assert {c.command for c in zh_menu} == expected_commands
+    default_descs = {c.command: c.description for c in default_menu}
+    zh_descs = {c.command: c.description for c in zh_menu}
+    assert zh_descs != default_descs
 
 
 async def test_post_shutdown_closes_resources():
