@@ -41,7 +41,7 @@ PLATFORM (Telegram)              handlers/ resolve_context(update, repo) · set_
   `language_code` auto-detection** (see spec 005's rollout section — combined
   with the backfill migration it would have silently pinned existing users to
   English, unrecoverably).
-- **Public Repository (Metadata & README only):** Hosted at `git@github.com:cby0730/f1-telegram-bot.git` . It contains only the public `README.md` and does not expose the private source code of this bot.
+- **Source repository:** Hosted at `https://github.com/cby0730/f1-bot` (the `/start` welcome message links here for stars).
 
 ## Commands and callback data
 
