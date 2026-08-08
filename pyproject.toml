@@ -1,10 +1,10 @@
 [project]
 name = "f1-bot"
 version = "0.3.0"
-description = "Add your description here"
+description = "Your pocket pit wall — a Telegram bot for Formula 1 schedules, results, and standings"
 readme = "README.md"
 authors = [
-    { name = "billy", email = "billy@local" }
+    { name = "Billy", email = "billy@local" }
 ]
 requires-python = ">=3.13"
 dependencies = [
@@ -15,6 +15,10 @@ dependencies = [
     "python-telegram-bot[job-queue]~=22.0",
     "structlog~=25.0",
 ]
+
+[project.urls]
+Homepage = "https://github.com/cby0730/f1-bot"
+Repository = "https://github.com/cby0730/f1-bot"
 
 [project.scripts]
 f1-bot = "f1_bot:main"

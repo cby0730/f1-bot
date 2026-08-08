@@ -43,7 +43,7 @@ class BaseAPIClient:
         client_kwargs: dict = {
             "base_url": self._base_url,
             "timeout": httpx.Timeout(30.0, connect=10.0),
-            "headers": {"User-Agent": "f1-bot/0.2.4 (github.com/billy/f1-bot)"},
+            "headers": {"User-Agent": "f1-bot/0.3.0 (github.com/cby0730/f1-bot)"},
         }
         if proxy:
             client_kwargs["proxy"] = proxy
