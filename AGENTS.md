@@ -35,3 +35,10 @@ Read those first; this file only records non-obvious environment caveats.
   use the local Postgres and skip gracefully if it is unavailable. `integration` and
   `tests/test_smoke.py` make real HTTP calls to Jolpica/OpenF1, which works from this
   environment.
+
+- **No CI test/lint gate; merging to `main` deploys to production.** The GitHub
+  workflows do not run tests or lint — `.github/workflows/deploy.yml` SSHes into the
+  OCI VM and runs `docker compose up -d --build` on every push to `main`, so a merge
+  ships straight to prod. The only automated quality gate is `.pre-commit-config.yaml`
+  (ruff, ruff-format, gitleaks, hadolint, pip-audit), and only when installed locally.
+  Run lint + tests yourself before committing (see `CLAUDE.md`).
