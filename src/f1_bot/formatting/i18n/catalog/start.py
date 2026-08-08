@@ -94,12 +94,12 @@ START: dict[str, dict[str, str]] = {
         "en": (
             "⭐ *Support this project*:\n"
             "If you like this bot, please give it a star on "
-            "[GitHub](https://github.com/cby0730/f1-telegram-bot)!"
+            "[GitHub](https://github.com/cby0730/f1-bot)!"
         ),
         "zh-Hant": (
             "⭐ *支持這個專案*：\n"
             "如果你喜歡這個機器人，歡迎到 "
-            "[GitHub](https://github.com/cby0730/f1-telegram-bot) 給我們一顆星！"
+            "[GitHub](https://github.com/cby0730/f1-bot) 給我們一顆星！"
         ),
     },
 }

@@ -4,8 +4,6 @@ A full-featured and elegantly designed Telegram Bot for Formula 1, providing F1 
 
 👉 **Try the Telegram Bot: [@F1_Infomation_bot](https://t.me/F1_Infomation_bot)**
 
-*Note: The source code for this project is hosted in a private repository. This repository serves as the public description and data source attribution page.*
-
 ---
 
 ## 📊 Data Sources
