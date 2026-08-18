@@ -352,16 +352,12 @@ async def test_scenario_01_start_command(e2e_app, httpx_mock):
 
 @pytest.mark.asyncio
 async def test_scenario_02_help_command(e2e_app, httpx_mock):
-    """Scenario 2: /help is a hidden alias of /start."""
+    """Scenario 2: /help is unregistered — typing it must not reply."""
+    before = [r.url for r in httpx_mock.get_requests() if "sendMessage" in str(r.url)]
     update = make_tg_update(e2e_app, "/help")
     await e2e_app.process_update(update)
-
-    reply_text = extract_reply_message(httpx_mock)
-    assert "Welcome to *F1 Bot*" in reply_text
-    assert "What I can do" in reply_text
-    markup = extract_reply_markup(httpx_mock)
-    data = [b["callback_data"] for row in markup["inline_keyboard"] for b in row]
-    assert "lang:picker" in data
+    after = [r.url for r in httpx_mock.get_requests() if "sendMessage" in str(r.url)]
+    assert after == before
 
 
 @pytest.mark.asyncio

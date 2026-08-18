@@ -9,7 +9,7 @@ user-facing literals — all text goes through `t(key, ctx.lang, **kwargs)`.
 
 | Command | Handler file |
 |---|---|
-| `/start` | `handlers/start.py` — welcome + language button. `/help` is a hidden alias of `/start` |
+| `/start` | `handlers/start.py` — welcome + language button |
 | `/next` | `handlers/schedule.py` — weekend overview. `/countdown` is a hidden alias of `/next` |
 | `/schedule` | `handlers/schedule.py` |
 | `/results` | `handlers/results.py` — State A also links Pit + Laps |

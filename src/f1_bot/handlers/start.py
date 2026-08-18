@@ -43,10 +43,5 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
 
-# Hidden alias: same welcome + language button as /start.
-help_handler = start_handler
-
-
 def register(app: Application) -> None:
     app.add_handler(CommandHandler("start", start_handler))
-    app.add_handler(CommandHandler("help", help_handler))

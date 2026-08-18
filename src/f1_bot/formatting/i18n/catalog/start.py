@@ -1,4 +1,4 @@
-"""/start and /help.
+"""/start welcome copy.
 
 Kept as whole blocks rather than per-line keys: this text is read as prose, and
 splitting it would force translators to reassemble the layout from fragments.

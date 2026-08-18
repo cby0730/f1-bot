@@ -5,7 +5,7 @@ shipped language and calls `set_my_commands(..., language_code=...)`. This is th
 one localisation mechanism that is Telegram-native — a future LINE adapter has no
 equivalent, so it stays in the platform layer and only the *text* lives here.
 
-Hidden aliases (`/help`, `/countdown`, `/title`, `/timezone`, `/language`,
+Hidden aliases (`/countdown`, `/title`, `/timezone`, `/language`,
 `/compare`, `/pitstops`, `/laps`) stay registered as ``CommandHandler``s but are
 not listed here — Telegram silently ignores a mismatched menu length, so this
 tuple is the source of truth for the visible 9.
