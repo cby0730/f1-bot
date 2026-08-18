@@ -4,7 +4,10 @@ Three-step stateless flow (state carried in callback_data, no server-side sessio
 
     /compare  →  Step 1 pick driver A (cmp:a:{id})
               →  Step 2 pick driver B (cmp:b:{a_id}:{b_id})
-              →  Step 3 result table  ([compare.restart] → cmp:list)
+              →  Step 3 result table  (swap opponent → cmp:a:{a}; back → drv:detail:{a})
+
+``cmp:list`` remains as a legacy route to pick-A so old "Compare again" buttons still
+work. New result messages do not emit it.
 
 Reads exclusively from PostgreSQL via ``Repository`` (SQL-only handler pattern).
 All six stats combine the main race and the sprint of each completed round.
@@ -25,17 +28,9 @@ from f1_bot.formatting.i18n import t
 from f1_bot.formatting.messages import format_driver_comparison, no_data_message
 from f1_bot.handlers.context import resolve_context
 from f1_bot.handlers.pagination import two_column_keyboard
+from f1_bot.models.results import is_classified_finish
 
 log = structlog.get_logger(__name__)
-
-
-def _finished(status: str) -> bool:
-    """Whitelist finish classification: 'Finished' or lapped ('+N Lap(s)').
-
-    Everything else — every failure string — is a DNF. Whitelisting keeps an unseen
-    failure string from ever being misread as a finish.
-    """
-    return status == "Finished" or status.startswith("+")
 
 
 async def _real_drivers(repo, season: int) -> list:
@@ -103,7 +98,7 @@ async def _aggregate(repo, season: int, a_id: str, b_id: str) -> dict:
 
     def _tally_counts(r, idx):
         pos = r["position"]
-        if _finished(r["status"]):
+        if is_classified_finish(r["status"]):
             if pos == 1:
                 wins[idx] += 1
             if pos <= 3:
@@ -120,7 +115,7 @@ async def _aggregate(repo, season: int, a_id: str, b_id: str) -> dict:
     def _tally_h2h(ra, rb, tally):
         """Per-session H2H with DNF handling. Assumes both drivers present."""
         # both DNF — retirement order carries no competitive meaning
-        if not _finished(ra["status"]) and not _finished(rb["status"]):
+        if not is_classified_finish(ra["status"]) and not is_classified_finish(rb["status"]):
             return
         # finishing beats retiring; otherwise lower position wins
         _win_by_position(ra["position"], rb["position"], tally)
@@ -172,9 +167,12 @@ async def _aggregate(repo, season: int, a_id: str, b_id: str) -> dict:
     }
 
 
-def _back_keyboard(lang: str) -> InlineKeyboardMarkup:
+def _result_keyboard(a_id: str, lang: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton(t("compare.restart", lang), callback_data="cmp:list")]]
+        [
+            [InlineKeyboardButton(t("compare.swap_opponent", lang), callback_data=f"cmp:a:{a_id}")],
+            [InlineKeyboardButton(t("common.back", lang), callback_data=f"drv:detail:{a_id}")],
+        ]
     )
 
 
@@ -262,7 +260,7 @@ async def _compare_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             stats = await _aggregate(repo, season, a_id, b_id)
             await query.answer()
             await _safe_edit(
-                query, format_driver_comparison(a, b, stats, ctx), _back_keyboard(ctx.lang)
+                query, format_driver_comparison(a, b, stats, ctx), _result_keyboard(a_id, ctx.lang)
             )
         else:
             await query.answer(text=t("common.invalid_selection", ctx.lang), show_alert=True)

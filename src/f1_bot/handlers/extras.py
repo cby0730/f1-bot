@@ -23,6 +23,19 @@ from f1_bot.utils.fuzzy_match import match_circuit, match_driver
 log = structlog.get_logger(__name__)
 
 
+def _profile_keyboard(driver_id: str, lang: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    t("extras.compare_with", lang), callback_data=f"cmp:a:{driver_id}"
+                )
+            ],
+            [InlineKeyboardButton(t("common.back", lang), callback_data="drv:list")],
+        ]
+    )
+
+
 def _driver_menu_keyboard(drivers: list) -> InlineKeyboardMarkup:
     """Build a 2-column inline keyboard for selecting a driver."""
     buttons = []
@@ -119,6 +132,7 @@ async def driver_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.effective_message.reply_text(
         format_driver_profile(driver, standing, ctx),
         parse_mode=ParseMode.MARKDOWN,
+        reply_markup=_profile_keyboard(driver.driver_id, ctx.lang),
     )
 
 
@@ -251,9 +265,7 @@ async def _extras_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     return
 
                 text = format_driver_profile(driver, standing, ctx)
-                keyboard = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton(t("common.back", ctx.lang), callback_data="drv:list")]]
-                )
+                keyboard = _profile_keyboard(driver.driver_id, ctx.lang)
                 await query.answer()
                 await query.edit_message_text(
                     text=text,

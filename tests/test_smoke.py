@@ -118,3 +118,8 @@ async def test_race_results_flow_through_stack(stack):
     assert len(found) > 0
     assert found[0]["position"] == 1
     assert found[0]["driver"]["family_name"]
+    # Laps DNF join reads these JSONB keys; a schema drift would be green in mocked
+    # e2e and red only here.
+    number = found[0]["driver"]["permanent_number"]
+    assert number is not None and str(number).isdigit()
+    assert found[0]["status"]

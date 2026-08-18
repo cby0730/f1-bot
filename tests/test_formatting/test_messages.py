@@ -9,9 +9,6 @@ from f1_bot.formatting.messages import (
     _parse_lap_time_ms,
     format_constructor_standings,
     format_driver_standings,
-    format_laps_by_driver,
-    format_laps_by_lap,
-    format_laps_driver_picker,
     format_laps_summary,
     format_next_race,
     format_pitstops,
@@ -133,7 +130,7 @@ def test_format_driver_standings_shows_top_drivers():
             constructor_name="Red Bull",
         ),
     ]
-    text = format_driver_standings(standings, 2024, RenderContext())
+    text = format_driver_standings(standings, 2024, 10, 3, RenderContext())
     assert "Hamilton" in text
     assert "Verstappen" in text
     assert "100" in text
@@ -143,7 +140,7 @@ def test_format_driver_standings_shows_season():
     standings = [
         DriverStanding(position=1, points=50, wins=1, driver=_driver(), constructor_name="Merc")
     ]
-    text = format_driver_standings(standings, 2024, RenderContext())
+    text = format_driver_standings(standings, 2024, 0, 0, RenderContext())
     assert "2024" in text
 
 
@@ -157,7 +154,7 @@ def test_format_constructor_standings_shows_teams():
             position=2, points=150, wins=2, constructor=_constructor("ferrari", "Ferrari")
         ),
     ]
-    text = format_constructor_standings(standings, 2024, RenderContext())
+    text = format_constructor_standings(standings, 2024, 5, 1, RenderContext())
     assert "Mercedes" in text
     assert "Ferrari" in text
 
@@ -294,7 +291,9 @@ def test_format_session_results_with_driver_mappings():
             driver_id="rookie", given="Arvid", family="Lindblad", nat="EST", perm_num="88"
         )
     }
-    text_uncommon = format_session_results(entry, results_uncommon, RenderContext(), drivers_dict_uncommon)
+    text_uncommon = format_session_results(
+        entry, results_uncommon, RenderContext(), drivers_dict_uncommon
+    )
     assert "🇪🇪 #88 Arvid Lindblad" in text_uncommon
 
 
@@ -340,86 +339,88 @@ def test_format_pitstops_no_race_uses_round_number():
 
 def test_format_laps_summary_shows_drivers():
     laps = [
-        LapTime(lap_number=1, driver_id="HAM", time="1:32.456", position=1),
-        LapTime(lap_number=2, driver_id="HAM", time="1:31.999", position=1),
-        LapTime(lap_number=1, driver_id="VER", time="1:32.789", position=2),
+        LapTime(lap_number=1, driver_id="44", time="1:32.456", position=1),
+        LapTime(lap_number=2, driver_id="44", time="1:31.999", position=1),
+        LapTime(lap_number=1, driver_id="1", time="1:32.789", position=2),
     ]
     text = format_laps_summary(_race(), laps, RenderContext())
-    assert "HAM" in text
-    assert "VER" in text
+    assert "44" in text
+    assert "1" in text
     assert "Best" in text
-    assert "Avg" in text
+    assert "1:31.999" in text  # HAM's best complete lap
 
 
 def test_format_laps_summary_no_race():
-    laps = [LapTime(lap_number=1, driver_id="LEC", time="1:33.111")]
+    laps = [LapTime(lap_number=1, driver_id="16", time="1:33.111")]
     text = format_laps_summary(None, laps, RenderContext())
-    assert "LEC" in text
+    assert "16" in text
 
 
-# --- format_laps_by_lap ---
-
-
-def test_format_laps_by_lap_shows_all_drivers_for_lap():
+def test_format_laps_independent_sector_mins_and_missing_dash():
+    """S1/S2/S3/lap mins are independent; a missing sector is an em dash, not 0."""
     laps = [
-        LapTime(lap_number=3, driver_id="VER", time="1:31.999", position=1),
-        LapTime(lap_number=3, driver_id="HAM", time="1:32.456", position=2),
-        LapTime(lap_number=4, driver_id="VER", time="1:31.800", position=1),
+        LapTime(
+            lap_number=1,
+            driver_id="44",
+            duration_sector_1=28.1,
+            duration_sector_2=None,
+            duration_sector_3=21.0,
+            lap_duration=81.5,
+        ),
+        LapTime(
+            lap_number=2,
+            driver_id="44",
+            duration_sector_1=29.0,
+            duration_sector_2=32.4,
+            duration_sector_3=20.5,
+            lap_duration=82.0,
+        ),
+        # No S2/S3/lap at all — those cells must be dashes, not 0.
+        LapTime(lap_number=1, driver_id="1", duration_sector_1=30.0),
     ]
-    text = format_laps_by_lap(_race(), laps, 3, 10, RenderContext())
-    assert "VER" in text
+    text = format_laps_summary(_race(), laps, RenderContext())
+    assert "28.1" in text  # min S1 from lap 1
+    assert "32.4" in text  # min S2 from lap 2 (lap 1 missing)
+    assert "20.5" in text  # min S3 from lap 2
+    assert "1:21.500" in text  # min complete lap
+    assert "—" in text
+
+
+def test_format_laps_dnf_join_on_dict_permanent_number():
+    """Join uses JSONB dicts + numeric lap ids. Collision is tagged; Finished is not."""
+    laps = [
+        LapTime(lap_number=1, driver_id="44", lap_duration=90.0),
+        LapTime(lap_number=1, driver_id="1", lap_duration=89.0),
+    ]
+    results = [
+        {"status": "Collision", "driver": {"permanent_number": "44"}},
+        {"status": "Finished", "driver": {"permanent_number": "1"}},
+        {
+            "status": "Did not start",
+            "driver": {"permanent_number": "16"},
+        },  # DNS: in results, no laps
+    ]
+    text = format_laps_summary(_race(), laps, RenderContext(), race_results=results)
+    # 44 tagged DNF; 1 classified; 16 dashed DNS row
+    assert text.count("DNF") == 2
+    assert "16" in text
+
+
+def test_format_laps_missing_number_no_crash_no_false_dnf():
+    laps = [LapTime(lap_number=1, driver_id="HAM", lap_duration=91.0)]
+    results = [{"status": "Collision", "driver": {"permanent_number": "not-a-number"}}]
+    text = format_laps_summary(_race(), laps, RenderContext(), race_results=results)
     assert "HAM" in text
-    # Lap 4 drivers should not appear
-    assert "1:31.800" not in text
-    assert "Timing data from live feeds may occasionally be incomplete." in text
+    assert "DNF" not in text
 
 
-def test_format_laps_by_lap_shows_position():
-    laps = [LapTime(lap_number=1, driver_id="NOR", time="1:30.000", position=3)]
-    text = format_laps_by_lap(_race(), laps, 1, 52, RenderContext())
-    assert "P3" in text
-    assert "standing start lap" in text
-    assert "Timing data from live feeds may occasionally be incomplete." not in text
-
-
-def test_format_laps_by_lap_empty_lap():
-    laps = [LapTime(lap_number=1, driver_id="HAM", time="1:32.000", position=1)]
-    text = format_laps_by_lap(_race(), laps, 99, 52, RenderContext())
-    assert "No data" in text
-
-
-# --- format_laps_by_driver ---
-
-
-def test_format_laps_by_driver_shows_driver_laps():
-    laps = [LapTime(lap_number=i, driver_id="VER", time=f"1:3{i}.000") for i in range(1, 6)]
-    text = format_laps_by_driver(_race(), laps, "VER", page=0, ctx=RenderContext())
-    assert "VER" in text
-    for i in range(1, 6):
-        # format_laps_by_driver uses {:>3} padding: single-digit laps get 2 leading spaces
-        assert f"Lap {i:>3}" in text
-    assert "Timing data from live feeds may occasionally be incomplete." in text
-
-
-def test_format_laps_by_driver_paginates():
-    laps = [LapTime(lap_number=i, driver_id="HAM", time="1:30.000") for i in range(1, 25)]
-    text_p0 = format_laps_by_driver(_race(), laps, "HAM", page=0, ctx=RenderContext())
-    text_p1 = format_laps_by_driver(_race(), laps, "HAM", page=1, ctx=RenderContext())
-    # Page 0: laps 1-20; page 1: laps 21-24
-    assert "Lap  1" in text_p0 or "Lap 1" in text_p0
-    assert "Lap 21" in text_p1 or "21" in text_p1
-    assert "Page 1/2" in text_p0
-    assert "Page 2/2" in text_p1
-
-
-# --- format_laps_driver_picker ---
-
-
-def test_format_laps_driver_picker_header():
-    text = format_laps_driver_picker(_race(), RenderContext())
-    assert "Select" in text
-    assert "Driver" in text
-    assert "Monaco Grand Prix" in text
+def test_format_laps_sorts_by_best_lap():
+    laps = [
+        LapTime(lap_number=1, driver_id="44", lap_duration=92.0),
+        LapTime(lap_number=1, driver_id="1", lap_duration=88.0),
+    ]
+    text = format_laps_summary(_race(), laps, RenderContext())
+    assert text.index("1:28.000") < text.index("1:32.000")
 
 
 # --- _esc ---

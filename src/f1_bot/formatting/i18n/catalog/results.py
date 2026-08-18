@@ -26,6 +26,8 @@ RESULTS: dict[str, dict[str, str]] = {
         "en": "This button is outdated. Use /results again.",
         "zh-Hant": "此按鈕已失效，請重新輸入 /results。",
     },
+    "results.btn_pit": {"en": "🔧 Pit", "zh-Hant": "🔧 進站"},
+    "results.btn_laps": {"en": "⏱ Laps", "zh-Hant": "⏱ 單圈"},
     "results.truncated_practice": {
         "en": (
             "\n\n⚠️ *Practice results (FP1/FP2/FP3) omitted to fit Telegram character "

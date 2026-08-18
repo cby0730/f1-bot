@@ -73,3 +73,12 @@ class PitStop(BaseModel):
     duration: float | None = None  # total pit stop duration in seconds
     pit_out_time: str | None = None
     pit_in_time: str | None = None
+
+
+def is_classified_finish(status: str) -> bool:
+    """Whitelist finish classification: 'Finished' or lapped ('+N Lap(s)').
+
+    Everything else — every failure string — is a DNF. Whitelisting keeps an unseen
+    failure string from ever being misread as a finish.
+    """
+    return status == "Finished" or status.startswith("+")

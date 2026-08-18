@@ -17,6 +17,7 @@ from f1_bot.models.results import (
     RaceResult,
     SessionResult,
     SprintResult,
+    is_classified_finish,
 )
 from f1_bot.utils.championship import (
     WCC_RACE_MAX,
@@ -127,17 +128,6 @@ def format_schedule(races: list[Race], ctx: RenderContext) -> str:
     return "\n".join(lines)
 
 
-def format_countdown_msg(race: Race, ctx: RenderContext) -> str:
-    race_dt = combine_race_dt(race.date, race.time)
-    return t(
-        "schedule.countdown_msg",
-        ctx.lang,
-        name=_esc(race.name),
-        countdown=_countdown_str(race_dt, ctx.lang),
-        time=format_dt(race_dt, ctx.tz, ctx.lang),
-    )
-
-
 def format_next_session(entry: SessionEntry, ctx: RenderContext) -> str:
     dt = entry.starts_at
     label = session_label(entry.key, ctx.lang)
@@ -177,46 +167,6 @@ def format_next_session(entry: SessionEntry, ctx: RenderContext) -> str:
 # ---------- Standings ----------
 
 
-def format_driver_standings(
-    standings: list[DriverStanding], season: int, ctx: RenderContext
-) -> str:
-    lines = [t("standings.wdc_header", ctx.lang, season=season) + "\n"]
-    for s in standings[:20]:
-        lines.append(
-            t(
-                "standings.driver_row",
-                ctx.lang,
-                icon=pos_icon(s.position),
-                flag=flag_icon(s.driver.nationality or ""),
-                name=_esc(f"{s.driver.given_name} {s.driver.family_name}"),
-                points=f"{s.points:.0f}",
-                team=_esc(s.constructor_name),
-            )
-        )
-    return "\n".join(lines)
-
-
-def format_constructor_standings(
-    standings: list[ConstructorStanding], season: int, ctx: RenderContext
-) -> str:
-    lines = [t("standings.wcc_header", ctx.lang, season=season) + "\n"]
-    for s in standings[:10]:
-        lines.append(
-            t(
-                "standings.constructor_row",
-                ctx.lang,
-                icon=pos_icon(s.position),
-                flag=flag_icon(s.constructor.nationality or ""),
-                name=_esc(s.constructor.name),
-                points=f"{s.points:.0f}",
-            )
-        )
-    return "\n".join(lines)
-
-
-# ---------- Title clinch analysis (/title) ----------
-
-
 def _remaining_line(remaining_races: int, remaining_sprints: int, lang: str) -> str:
     """'N races + M sprints left' — always shows both counts.
 
@@ -235,129 +185,121 @@ def _remaining_line(remaining_races: int, remaining_sprints: int, lang: str) -> 
     )
 
 
-def _format_title(
+def _clinch_strip(
     standings: list,
     remaining_races: int,
     remaining_sprints: int,
     season: int,
     ctx: RenderContext,
     *,
-    header_icon: str,
-    kind: str,
     race_max: int,
     sprint_max: int,
     name_of,
     champion_key: str,
 ) -> str:
-    """Shared clinch-analysis body for WDC and WCC — layout only.
+    """Two lines under the standings header: remaining + magic-number or CLINCHED.
 
-    All math comes from ``championship``. ``name_of`` maps a standing to its display
-    name; the two views differ only in that, the icons, and the point constants.
+    Layout only — math is ``championship.clinch_status``. Empty standings yield "".
+    Names are escaped at assignment (Guard C; ``title.magic_number`` is italic).
     """
     if not standings:
-        return no_data_message("common.noun_standings", ctx)
-
+        return ""
     ranked = sorted(standings, key=lambda s: s.position)
     leader = ranked[0]
     max_remaining = max_remaining_points(remaining_races, remaining_sprints, race_max, sprint_max)
-
-    lines = [
-        t("title.header", ctx.lang, icon=header_icon, season=season, kind=kind) + "\n",
-        _remaining_line(remaining_races, remaining_sprints, ctx.lang),
-        t("title.max_points", ctx.lang, points=max_remaining),
-        "",
-    ]
-
-    # Clinch verdict: leader vs. the single strongest chaser (index [1]). A lone
-    # competitor (no chaser) is trivially uncatchable → clinched.
     if len(ranked) < 2:
         status = ClinchStatus(clinched=True, magic_number=None)
     else:
         status = clinch_status(leader.points, ranked[1].points, max_remaining)
 
+    name = _esc(name_of(leader))
+    lines = [_remaining_line(remaining_races, remaining_sprints, ctx.lang)]
     if status.clinched:
         lines.append(
             t(
                 "title.clinched",
                 ctx.lang,
-                name=_esc(name_of(leader)),
+                name=name,
                 season=season,
                 champion=t(champion_key, ctx.lang),
             )
         )
-        lines.append("")
-
-    for s in ranked[:3]:
-        icon = pos_icon(s.position)
-        name = _esc(name_of(s))
-        if s.position == leader.position:
-            lines.append(
-                t("title.leader_row", ctx.lang, icon=icon, name=name, points=f"{s.points:.0f}")
-            )
-        else:
-            deficit = leader.points - s.points
-            lines.append(
-                t(
-                    "title.chaser_row",
-                    ctx.lang,
-                    icon=icon,
-                    name=name,
-                    points=f"{s.points:.0f}",
-                    deficit=f"{deficit:.0f}",
-                )
-            )
-
-    if not status.clinched:
-        lines.append("")
-        lines.append(
-            t("title.magic_number", ctx.lang, name=_esc(name_of(leader)), n=status.magic_number)
-        )
-
+    else:
+        lines.append(t("title.magic_number", ctx.lang, name=name, n=status.magic_number))
     return "\n".join(lines)
 
 
-def format_title_wdc(
+def format_driver_standings(
     standings: list[DriverStanding],
+    season: int,
     remaining_races: int,
     remaining_sprints: int,
-    season: int,
     ctx: RenderContext,
 ) -> str:
-    return _format_title(
+    strip = _clinch_strip(
         standings,
         remaining_races,
         remaining_sprints,
         season,
         ctx,
-        header_icon="🏆",
-        kind="WDC",
         race_max=WDC_RACE_MAX,
         sprint_max=WDC_SPRINT_MAX,
         name_of=lambda s: f"{s.driver.given_name} {s.driver.family_name}",
         champion_key="title.champion_wdc",
     )
+    lines = [t("standings.wdc_header", ctx.lang, season=season)]
+    if strip:
+        lines += ["", strip]
+    lines.append("")
+    for s in standings[:20]:
+        lines.append(
+            t(
+                "standings.driver_row",
+                ctx.lang,
+                icon=pos_icon(s.position),
+                flag=flag_icon(s.driver.nationality or ""),
+                name=_esc(f"{s.driver.given_name} {s.driver.family_name}"),
+                points=f"{s.points:.0f}",
+                team=_esc(s.constructor_name),
+            )
+        )
+    return "\n".join(lines)
 
 
-def format_title_wcc(
+def format_constructor_standings(
     standings: list[ConstructorStanding],
+    season: int,
     remaining_races: int,
     remaining_sprints: int,
-    season: int,
     ctx: RenderContext,
 ) -> str:
-    return _format_title(
+    strip = _clinch_strip(
         standings,
         remaining_races,
         remaining_sprints,
         season,
         ctx,
-        header_icon="🏭",
-        kind="WCC",
         race_max=WCC_RACE_MAX,
         sprint_max=WCC_SPRINT_MAX,
         name_of=lambda s: s.constructor.name,
         champion_key="title.champion_wcc",
     )
+    lines = [t("standings.wcc_header", ctx.lang, season=season)]
+    if strip:
+        lines += ["", strip]
+    lines.append("")
+    for s in standings[:10]:
+        lines.append(
+            t(
+                "standings.constructor_row",
+                ctx.lang,
+                icon=pos_icon(s.position),
+                flag=flag_icon(s.constructor.nationality or ""),
+                name=_esc(s.constructor.name),
+                points=f"{s.points:.0f}",
+            )
+        )
+    return "\n".join(lines)
 
 
 # ---------- Results ----------
@@ -471,7 +413,9 @@ def format_session_results(
             driver_name = f" {d.given_name} {d.family_name}"
             flag = flag_icon(d.nationality or "")
 
-        lines.append(_result_row(ctx, pos, flag, f"#{result.driver_number}{driver_name}", "", status))
+        lines.append(
+            _result_row(ctx, pos, flag, f"#{result.driver_number}{driver_name}", "", status)
+        )
     return "\n".join(lines)
 
 
@@ -529,7 +473,7 @@ def format_pitstops(
 
 # ---------- Laps ----------
 
-_LAPS_PAGE_SIZE = 20
+_DRIVER_COL = 6  # display columns for the driver label in the personal-best table
 
 
 def _resolve_driver_label(driver_id: str, drivers: dict[int, Driver] | None) -> str:
@@ -542,12 +486,6 @@ def _resolve_driver_label(driver_id: str, drivers: dict[int, Driver] | None) -> 
     except ValueError:
         pass
     return driver_id
-
-
-def _ms_to_str(ms: int) -> str:
-    m, rem = divmod(ms, 60000)
-    s = rem / 1000
-    return f"{m}:{s:06.3f}"
 
 
 def _parse_lap_time_ms(time_str: str | None) -> int | None:
@@ -563,56 +501,6 @@ def _parse_lap_time_ms(time_str: str | None) -> int | None:
         return int(float(time_str) * 1000)
     except (ValueError, IndexError):
         return None
-
-
-def format_laps_summary(
-    race: Race | None,
-    laps: list[LapTime],
-    ctx: RenderContext,
-    drivers: dict[int, Driver] | None = None,
-) -> str:
-    """Per-driver best lap time and average — the default laps view."""
-    title = _esc(race.name) if race else t("common.race_fallback_title", ctx.lang)
-    lines = [t("race_data.laps_summary_header", ctx.lang, title=title) + "\n"]
-
-    by_driver: dict[str, list[LapTime]] = {}
-    for lap in laps:
-        by_driver.setdefault(lap.driver_id, []).append(lap)
-
-    rows = []
-    for driver_id, driver_laps in sorted(by_driver.items()):
-        times_ms = []
-        for lap in driver_laps:
-            if lap.time:
-                ms = _parse_lap_time_ms(lap.time)
-            elif lap.lap_duration is not None:
-                ms = int(lap.lap_duration * 1000)
-            else:
-                ms = None
-            times_ms.append(ms)
-
-        valid = [t_ms for t_ms in times_ms if t_ms is not None]
-        if not valid:
-            continue
-        best_ms = min(valid)
-        avg_ms = sum(valid) // len(valid)
-
-        rows.append((driver_id, _ms_to_str(best_ms), _ms_to_str(avg_ms), len(driver_laps), best_ms))
-
-    rows.sort(key=lambda r: r[4])
-    for driver_id, best, avg, count, _ in rows:
-        label = _resolve_driver_label(driver_id, drivers)
-        lines.append(
-            t(
-                "race_data.laps_summary_row",
-                ctx.lang,
-                label=_esc(label),
-                best=best,
-                avg=avg,
-                count=count,
-            )
-        )
-    return "\n".join(lines)
 
 
 def _fmt_sector(val: float | None) -> str:
@@ -632,147 +520,101 @@ def _fmt_lap_duration(val: float | None, time_str: str | None) -> str:
     return "—"
 
 
-def format_laps_by_lap(
-    race: Race | None,
-    laps: list[LapTime],
-    lap_number: int,
-    total_laps: int,
-    ctx: RenderContext,
-    drivers: dict[int, Driver] | None = None,
-) -> str:
-    """All drivers' times for a single lap number, with sector times."""
-    title = _esc(race.name) if race else t("common.race_fallback_title", ctx.lang)
-    lines = [
-        t("race_data.lap_header", ctx.lang, title=title, lap=lap_number, total=total_laps) + "\n"
-    ]
-
-    lap_entries = [lap for lap in laps if lap.lap_number == lap_number]
-
-    # Handle timing anomalies: append placeholder rows for active drivers who are missing data
-    driver_max_lap = {}
-    driver_min_lap = {}
-    for lap in laps:
-        d_id = lap.driver_id
-        driver_max_lap[d_id] = max(driver_max_lap.get(d_id, 0), lap.lap_number)
-        driver_min_lap[d_id] = min(driver_min_lap.get(d_id, 999), lap.lap_number)
-
-    existing_drivers = {e.driver_id for e in lap_entries}
-    for d_id in sorted(driver_max_lap.keys()):
-        if driver_min_lap[d_id] <= lap_number <= driver_max_lap[d_id]:
-            if d_id not in existing_drivers:
-                lap_entries.append(
-                    LapTime(
-                        lap_number=lap_number,
-                        driver_id=d_id,
-                        position=None,
-                        time=None,
-                        duration_sector_1=None,
-                        duration_sector_2=None,
-                        duration_sector_3=None,
-                        lap_duration=None,
-                    )
-                )
-
-    lap_entries.sort(key=lambda x: (x.position or 999, x.driver_id))
-
-    has_sectors = any(e.duration_sector_1 is not None for e in lap_entries)
-    if has_sectors:
-        lines.append(t("race_data.lap_table_header", ctx.lang))
-        for entry in lap_entries:
-            pos = f"P{entry.position}" if entry.position else " —"
-            s1 = _fmt_sector(entry.duration_sector_1)
-            s2 = _fmt_sector(entry.duration_sector_2)
-            s3 = _fmt_sector(entry.duration_sector_3)
-            lap_t = _fmt_lap_duration(entry.lap_duration, entry.time)
-
-            label = _resolve_driver_label(entry.driver_id, drivers)
-
-            lines.append(f"`{pos:>3} {label:<4} {s1}│{s2}│{s3}│{lap_t}`")
-    else:
-        for entry in lap_entries:
-            pos = f"P{entry.position}" if entry.position else "—"
-            time_str = _fmt_lap_duration(entry.lap_duration, entry.time)
-
-            label = _resolve_driver_label(entry.driver_id, drivers)
-
-            lines.append(f"`{pos:>4}`  {_esc(label):<6} `{time_str}`")
-
-    if not lap_entries:
-        lines.append(t("race_data.no_lap_entries", ctx.lang))
-
-    if lap_number == 1:
-        lines.append(t("race_data.note_lap1", ctx.lang))
-    else:
-        lines.append(t("race_data.note_timing", ctx.lang))
-
-    return "\n".join(lines)
+def _complete_lap_seconds(lap: LapTime) -> float | None:
+    if lap.lap_duration is not None:
+        return lap.lap_duration
+    ms = _parse_lap_time_ms(lap.time)
+    return None if ms is None else ms / 1000.0
 
 
-def format_laps_by_driver(
-    race: Race | None,
-    laps: list[LapTime],
-    driver_id: str,
-    page: int,
-    ctx: RenderContext,
-    drivers: dict[int, Driver] | None = None,
-) -> str:
-    """One driver's lap times, paginated, with sector times."""
-    title = _esc(race.name) if race else t("common.race_fallback_title", ctx.lang)
-    driver_laps = sorted(
-        [lap for lap in laps if lap.driver_id == driver_id], key=lambda x: x.lap_number
-    )
-    total = len(driver_laps)
-    start = page * _LAPS_PAGE_SIZE
-    end = start + _LAPS_PAGE_SIZE
-    page_laps = driver_laps[start:end]
+def _car_number_from_result(result: dict) -> int | None:
+    """Join key from a JSONB race-result dict. Skip missing/non-digit numbers."""
+    driver = result.get("driver") or {}
+    num = driver.get("permanent_number")
+    if num is None:
+        return None
+    s = str(num)
+    if not s.isdigit():
+        return None
+    return int(s)
 
-    label = driver_id
+
+def _lap_car_number(driver_id: str) -> int | None:
     try:
-        num = int(driver_id)
-        if drivers and num in drivers:
-            d = drivers[num]
-            label = f"{d.full_name} ({d.code})" if d.code else d.full_name
-    except ValueError:
-        pass
+        return int(driver_id)
+    except (TypeError, ValueError):
+        return None
 
+
+def format_laps_summary(
+    race: Race | None,
+    laps: list[LapTime],
+    ctx: RenderContext,
+    drivers: dict[int, Driver] | None = None,
+    race_results: list[dict] | None = None,
+) -> str:
+    """Per-driver personal-best S1/S2/S3/lap (independent mins). Sort by best lap.
+
+    DNF join is JSONB dict access: ``r["driver"]["permanent_number"]`` + numeric
+    OpenF1 ``lap.driver_id``. Missing/non-digit numbers skip the tag (no crash).
+    DNS (in results, no laps) still appears as a dashed row + DNF.
+    """
+    title = _esc(race.name) if race else t("common.race_fallback_title", ctx.lang)
     lines = [
-        t("race_data.driver_laps_header", ctx.lang, title=title, label=_esc(label)) + "\n"
+        t("race_data.laps_summary_header", ctx.lang, title=title) + "\n",
+        t("race_data.laps_table_header", ctx.lang),
     ]
+    dnf_tag = t("race_data.dnf_tag", ctx.lang)
 
-    has_sectors = any(e.duration_sector_1 is not None for e in page_laps)
-    if has_sectors:
-        lines.append(t("race_data.driver_table_header", ctx.lang))
-        for lap in page_laps:
-            s1 = _fmt_sector(lap.duration_sector_1)
-            s2 = _fmt_sector(lap.duration_sector_2)
-            s3 = _fmt_sector(lap.duration_sector_3)
-            lap_t = _fmt_lap_duration(lap.lap_duration, lap.time)
-            lines.append(f"`L{lap.lap_number:>2}  {s1}│{s2}│{s3}│{lap_t}`")
-    else:
-        for lap in page_laps:
-            time_str = _fmt_lap_duration(lap.lap_duration, lap.time)
-            lines.append(
-                t(
-                    "race_data.driver_lap_row",
-                    ctx.lang,
-                    lap=f"{lap.lap_number:>3}",
-                    time=time_str,
-                )
-            )
+    status_by_num: dict[int, str] = {}
+    for r in race_results or []:
+        if not isinstance(r, dict):
+            continue
+        n = _car_number_from_result(r)
+        if n is None:
+            continue
+        status_by_num[n] = r.get("status") or ""
 
-    if total > _LAPS_PAGE_SIZE:
-        pages = (total + _LAPS_PAGE_SIZE - 1) // _LAPS_PAGE_SIZE
+    by_driver: dict[str, list[LapTime]] = {}
+    for lap in laps:
+        by_driver.setdefault(lap.driver_id, []).append(lap)
+
+    rows: list[tuple[float | None, str, float | None, float | None, float | None, bool]] = []
+    seen_nums: set[int] = set()
+    for driver_id, driver_laps in by_driver.items():
+        s1s = [lap.duration_sector_1 for lap in driver_laps if lap.duration_sector_1 is not None]
+        s2s = [lap.duration_sector_2 for lap in driver_laps if lap.duration_sector_2 is not None]
+        s3s = [lap.duration_sector_3 for lap in driver_laps if lap.duration_sector_3 is not None]
+        completes = [s for lap in driver_laps if (s := _complete_lap_seconds(lap)) is not None]
+        best_s1 = min(s1s) if s1s else None
+        best_s2 = min(s2s) if s2s else None
+        best_s3 = min(s3s) if s3s else None
+        best_lap = min(completes) if completes else None
+        num = _lap_car_number(driver_id)
+        if num is not None:
+            seen_nums.add(num)
+        status = status_by_num.get(num) if num is not None else None
+        tagged = status is not None and not is_classified_finish(status)
+        rows.append((best_lap, driver_id, best_s1, best_s2, best_s3, tagged))
+
+    for num, status in status_by_num.items():
+        if num in seen_nums:
+            continue
+        tagged = not is_classified_finish(status)
+        rows.append((None, str(num), None, None, None, tagged))
+
+    rows.sort(key=lambda r: (r[0] is None, r[0] if r[0] is not None else 0.0))
+
+    for best_lap, driver_id, best_s1, best_s2, best_s3, tagged in rows:
+        label = _pad_display(_resolve_driver_label(driver_id, drivers), _DRIVER_COL)
+        lap_str = _fmt_lap_duration(best_lap, None)
+        suffix = f" {dnf_tag}" if tagged else ""
         lines.append(
-            t("race_data.page_footer", ctx.lang, page=page + 1, pages=pages, total=total)
+            f"`{label} {_fmt_sector(best_s1)}│{_fmt_sector(best_s2)}│{_fmt_sector(best_s3)}│{lap_str}{suffix}`"
         )
+
     lines.append(t("race_data.note_timing", ctx.lang))
     return "\n".join(lines)
-
-
-def format_laps_driver_picker(race: Race | None, ctx: RenderContext) -> str:
-    """Header text for the driver selection page."""
-    title = _esc(race.name) if race else t("common.race_fallback_title", ctx.lang)
-    return t("race_data.driver_picker_header", ctx.lang, title=title)
 
 
 # ---------- Driver / Circuit ----------
@@ -838,9 +680,7 @@ def format_circuit_info(circuit, recent_races: list | None, ctx: RenderContext) 
     if recent_races:
         lines.append(t("extras.recent_winners", ctx.lang))
         for race in recent_races[:5]:
-            lines.append(
-                t("extras.recent_row", ctx.lang, season=race.season, name=_esc(race.name))
-            )
+            lines.append(t("extras.recent_row", ctx.lang, season=race.season, name=_esc(race.name)))
     if circuit.url:
         safe_url = circuit.url.replace("(", "%28").replace(")", "%29")
         lines.append(t("extras.wikipedia", ctx.lang, url=safe_url))

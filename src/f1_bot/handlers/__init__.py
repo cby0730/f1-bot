@@ -10,6 +10,7 @@ from f1_bot.handlers import (
     results,
     round_picker,
     schedule,
+    settings,
     standings,
     start,
     timezone,
@@ -27,6 +28,7 @@ def register_all_handlers(app: Application) -> None:
     round_picker.register(app)
     extras.register(app)
     compare.register(app)
+    settings.register(app)
     timezone.register(app)
     language.register(app)
     notifications.register(app)

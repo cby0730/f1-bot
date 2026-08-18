@@ -8,7 +8,6 @@ from telegram.ext import Application, CallbackQueryHandler, CommandHandler, Cont
 
 from f1_bot.formatting.i18n import t
 from f1_bot.formatting.messages import (
-    format_countdown_msg,
     format_next_race,
     format_next_session,
     format_schedule,
@@ -39,17 +38,13 @@ async def next_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     try:
         races, bounds, season = await load_schedule_and_bounds(context)
     except RuntimeError:
-        await update.effective_message.reply_text(
-            no_data_message("common.noun_upcoming_race", ctx)
-        )
+        await update.effective_message.reply_text(no_data_message("common.noun_upcoming_race", ctx))
         return
 
     today = datetime.datetime.now(tz=datetime.UTC).date()
     upcoming = [r for r in races if r.date >= today]
     if not upcoming:
-        await update.effective_message.reply_text(
-            no_data_message("common.noun_upcoming_race", ctx)
-        )
+        await update.effective_message.reply_text(no_data_message("common.noun_upcoming_race", ctx))
         return
 
     race = upcoming[0]
@@ -170,7 +165,7 @@ async def _next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 # ---------------------------------------------------------------------------
-# /schedule and /countdown (unchanged — single-view)
+# /schedule (single-view) and /countdown (hidden alias of /next)
 # ---------------------------------------------------------------------------
 
 
@@ -189,18 +184,8 @@ async def schedule_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 async def countdown_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    repo = context.bot_data["repo"]
-    ctx = await resolve_context(update, repo)
-    season = datetime.date.today().year
-    race = await repo.get_next_race(season)
-    if not race:
-        await update.effective_message.reply_text(
-            no_data_message("common.noun_upcoming_race", ctx)
-        )
-        return
-    await update.effective_message.reply_text(
-        format_countdown_msg(race, ctx), parse_mode=ParseMode.MARKDOWN
-    )
+    """Hidden alias of /next — weekend overview + session buttons, not a dedicated countdown."""
+    await next_handler(update, context)
 
 
 # ---------------------------------------------------------------------------

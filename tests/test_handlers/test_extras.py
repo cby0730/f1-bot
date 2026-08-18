@@ -106,6 +106,11 @@ async def test_driver_handler_match_found_shows_profile():
     text = update.effective_message.reply_text.await_args.args[0]
     assert "Lewis Hamilton" in text
     assert "HAM" in text
+    markup = update.effective_message.reply_text.await_args.kwargs.get("reply_markup")
+    assert markup is not None
+    data = [b.callback_data for row in markup.inline_keyboard for b in row]
+    assert "cmp:a:hamilton" in data
+    assert "drv:list" in data
 
 
 async def test_driver_handler_no_match_shows_not_found():
@@ -215,8 +220,9 @@ async def test_extras_callback_driver_detail():
     assert "HAM" in text
     reply_markup = update.callback_query.edit_message_text.await_args.kwargs.get("reply_markup")
     assert reply_markup is not None
-    button = reply_markup.inline_keyboard[0][0]
-    assert button.callback_data == "drv:list"
+    data = [b.callback_data for row in reply_markup.inline_keyboard for b in row]
+    assert "cmp:a:hamilton" in data
+    assert "drv:list" in data
 
 
 async def test_extras_callback_driver_list():

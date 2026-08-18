@@ -27,10 +27,6 @@ SCHEDULE: dict[str, dict[str, str]] = {
         "en": "{marker} *R{round}* {name}\n       {time}",
         "zh-Hant": "{marker} *R{round}* {name}\n       {time}",
     },
-    "schedule.countdown_msg": {
-        "en": "⏱ *{name}*\nCountdown: *{countdown}*\nRace: {time}",
-        "zh-Hant": "⏱ *{name}*\n倒數：*{countdown}*\n正賽：{time}",
-    },
     "schedule.next_session_header": {
         "en": "{icon} *Next {label}: {name}*",
         "zh-Hant": "{icon} *下一節{label}：{name}*",

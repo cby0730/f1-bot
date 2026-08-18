@@ -167,14 +167,25 @@ def test_every_key_has_matching_placeholders_across_languages():
 
 
 def test_command_menu_catalog_is_complete_and_translated():
-    """16 commands, each with a `commands.<name>` key in both languages, and the
+    """9 visible commands, each with a `commands.<name>` key in both languages, and the
     zh-Hant description is a real translation (differs from the English one).
 
     WHY: `set_my_commands` silently ignores a mismatched list, so a missing or
     untranslated command description would never fail at runtime — only this
     assertion catches it.
     """
-    assert len(COMMAND_ORDER) == 16
+    assert len(COMMAND_ORDER) == 9
+    assert list(COMMAND_ORDER) == [
+        "start",
+        "next",
+        "schedule",
+        "results",
+        "standings",
+        "driver",
+        "circuit",
+        "remind",
+        "settings",
+    ]
     for name in COMMAND_ORDER:
         key = f"commands.{name}"
         assert key in CATALOG, f"missing menu key for /{name}"

@@ -1,4 +1,4 @@
-"""Tests for /title command and title callback — wiring, toggle, per-table alignment."""
+"""Tests for /title — hidden alias of /standings; stale title:* still render the strip."""
 
 from unittest.mock import AsyncMock, MagicMock
 
@@ -49,7 +49,6 @@ def _constructor_standings():
 
 
 def _schedule():
-    """A minimal 4-round schedule; rounds 3,4 remain after round_after=2."""
     return [
         Race(
             season=2026,
@@ -88,27 +87,23 @@ def _update():
     return update
 
 
-async def test_title_handler_shows_wdc_with_toggle_keyboard():
+async def test_title_handler_renders_standings_view():
+    """/title is an alias: standings table + strip, new keyboard uses standings:."""
     repo = _repo(driver_st=_driver_standings())
     update = _update()
 
     await title_handler(update, _context(repo))
 
-    assert update.effective_message.reply_text.await_count == 1
-    kwargs = update.effective_message.reply_text.await_args.kwargs
     text = update.effective_message.reply_text.await_args.args[0]
-    assert "WDC" in text
     assert "Verstappen" in text
-    # PTB stores tuples-of-tuples; assert two toggle buttons with the title: namespace.
-    kb = kwargs["reply_markup"]
+    assert "Driver Standings" in text
+    kb = update.effective_message.reply_text.await_args.kwargs["reply_markup"]
     row = kb.inline_keyboard[0]
-    assert len(row) == 2
-    assert row[0].callback_data == "title:wdc"
-    assert row[1].callback_data == "title:wcc"
+    assert row[0].callback_data == "standings:wdc"
+    assert row[1].callback_data == "standings:wcc"
 
 
 async def test_title_handler_empty_standings_short_circuits():
-    """Empty standings → no_data; the cutoff read + schedule are NOT reached."""
     repo = _repo(driver_st=[])
     update = _update()
 
@@ -121,7 +116,7 @@ async def test_title_handler_empty_standings_short_circuits():
 
 
 async def test_title_callback_wcc_uses_constructors_cutoff():
-    """title:wcc must read get_standings_round(season, 'constructors') — per-table alignment."""
+    """Stale title:wcc must still read the constructors snapshot — not 404, not drivers."""
     repo = _repo(constructor_st=_constructor_standings())
     query = MagicMock()
     query.answer = AsyncMock()
@@ -136,7 +131,8 @@ async def test_title_callback_wcc_uses_constructors_cutoff():
     repo.get_standings_round.assert_awaited_once_with(2026, "constructors")
     text = query.edit_message_text.call_args.args[0]
     assert "McLaren" in text
-    assert "🏭" in text
+    kb = query.edit_message_text.call_args.kwargs["reply_markup"]
+    assert kb.inline_keyboard[0][0].callback_data == "standings:wdc"
 
 
 async def test_title_callback_wdc_uses_drivers_cutoff():
@@ -166,7 +162,6 @@ async def test_title_callback_swallows_bad_request():
     update = MagicMock()
     update.callback_query = query
 
-    # Must not raise.
     await title_callback(update, _context(repo))
     query.answer.assert_called_once()
     query.edit_message_text.assert_called_once()
