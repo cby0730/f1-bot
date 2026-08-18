@@ -406,6 +406,36 @@ def test_format_laps_dnf_join_on_dict_permanent_number():
     assert "16" in text
 
 
+def test_format_laps_lapped_is_classified_not_dnf():
+    """2026 Jolpica emits 'Lapped' for classified cars a lap down, not '+1 Lap'.
+
+    WHY: Hungarian GP 2026 stored 7 Finished + 12 Lapped + 3 Retired. Treating
+    Lapped as DNF painted 15 DNF tags on a race with three retirements.
+    """
+    laps = [
+        LapTime(lap_number=1, driver_id="4", lap_duration=82.0),  # NOR Finished
+        LapTime(lap_number=1, driver_id="10", lap_duration=83.0),  # GAS Lapped
+        LapTime(lap_number=1, driver_id="81", lap_duration=84.0),  # PIA Retired
+    ]
+    results = [
+        {"status": "Finished", "driver": {"permanent_number": "4"}},
+        {"status": "Lapped", "driver": {"permanent_number": "10"}},
+        {"status": "Retired", "driver": {"permanent_number": "81"}},
+    ]
+    text = format_laps_summary(_race(), laps, RenderContext(), race_results=results)
+    by_id = {}
+    for line in text.splitlines():
+        if not line.startswith("`"):
+            continue
+        body = line.strip("`")
+        label = body[:6].strip()
+        by_id[label] = "DNF" in body
+    assert by_id["4"] is False
+    assert by_id["10"] is False
+    assert by_id["81"] is True
+    assert text.count("DNF") == 1
+
+
 def test_format_laps_missing_number_no_crash_no_false_dnf():
     laps = [LapTime(lap_number=1, driver_id="HAM", lap_duration=91.0)]
     results = [{"status": "Collision", "driver": {"permanent_number": "not-a-number"}}]

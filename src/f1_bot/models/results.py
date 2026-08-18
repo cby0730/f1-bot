@@ -75,10 +75,16 @@ class PitStop(BaseModel):
     pit_in_time: str | None = None
 
 
-def is_classified_finish(status: str) -> bool:
-    """Whitelist finish classification: 'Finished' or lapped ('+N Lap(s)').
+# Jolpica/Ergast classified-finish strings. 2026 replaced ``+N Lap(s)`` with
+# the single token ``Lapped``; keep the ``+`` prefix for older seasons.
+_CLASSIFIED_STATUSES = frozenset({"Finished", "Lapped"})
 
-    Everything else — every failure string — is a DNF. Whitelisting keeps an unseen
-    failure string from ever being misread as a finish.
+
+def is_classified_finish(status: str) -> bool:
+    """Whitelist finish classification.
+
+    ``Finished`` (lead lap) and ``Lapped`` / ``+N Lap(s)`` (classified, a lap
+    down) are finishes. Everything else — Retired, Accident, DNS, … — is a DNF.
+    Whitelisting keeps an unseen failure string from being misread as a finish.
     """
-    return status == "Finished" or status.startswith("+")
+    return status in _CLASSIFIED_STATUSES or status.startswith("+")

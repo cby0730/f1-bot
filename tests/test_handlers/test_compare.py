@@ -80,15 +80,19 @@ A, B = "max_verstappen", "norris"
 def test_dnf_whitelist_accident_is_dnf_lap_is_finished():
     """Whitelist rule: an unseen failure string must never read as a finish.
 
-    'Accident' → DNF; '+1 Lap' (lapped but classified) → finished. Guards against
-    regressing the whitelist into a blacklist that would misclassify novel strings.
+    'Accident' → DNF; '+1 Lap' and 2026's 'Lapped' (classified, a lap down) →
+    finished. Guards against regressing the whitelist into a blacklist that
+    would misclassify novel strings, and against treating Jolpica's 2026
+    'Lapped' token as a retirement.
     """
     assert is_classified_finish("Finished") is True
+    assert is_classified_finish("Lapped") is True  # 2026 Jolpica; not '+1 Lap'
     assert is_classified_finish("+1 Lap") is True
     assert is_classified_finish("+2 Laps") is True
     assert is_classified_finish("Accident") is False
     assert is_classified_finish("Engine") is False
     assert is_classified_finish("Retired") is False
+    assert is_classified_finish("Did not start") is False
 
 
 async def test_dnf_counted_in_aggregate():
@@ -96,6 +100,17 @@ async def test_dnf_counted_in_aggregate():
     repo = _repo(last_round=1, race={1: [_result(A, 1), _result(B, 18, "Accident")]})
     stats = await _aggregate(repo, 2026, A, B)
     assert stats["dnfs"] == (0, 1)
+
+
+async def test_lapped_is_not_counted_as_dnf_in_aggregate():
+    """A classified lapped finish must not increment the DNFs row.
+
+    WHY: same 2026 Jolpica 'Lapped' token that falsely DNF-tagged Hungarian GP laps.
+    """
+    repo = _repo(last_round=1, race={1: [_result(A, 1), _result(B, 8, "Lapped")]})
+    stats = await _aggregate(repo, 2026, A, B)
+    assert stats["dnfs"] == (0, 0)
+    assert stats["race"] == (1, 0)
 
 
 # --- Sprint inclusion -------------------------------------------------------
