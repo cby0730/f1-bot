@@ -122,6 +122,26 @@ async def test_sync_standings_survives_exception():
     repo.save_constructor_standings.assert_not_awaited()
 
 
+async def test_sync_standings_saves_when_cutoff_raises():
+    """get_schedule_bounds lives outside the per-table try — a throw there
+    used to skip both saves, then the bot still started polling."""
+    standings = _sample_driver_standings()
+    c_standings = _sample_constructor_standings()
+    jolpica = MagicMock()
+    jolpica.get_driver_standings = AsyncMock(return_value=standings)
+    jolpica.get_constructor_standings = AsyncMock(return_value=c_standings)
+    repo = MagicMock()
+    repo.save_driver_standings = AsyncMock()
+    repo.save_constructor_standings = AsyncMock()
+    repo.get_schedule_bounds = AsyncMock(side_effect=RuntimeError("schedule json corrupt"))
+
+    await sync_standings(jolpica, repo)
+
+    year = date.today().year
+    repo.save_driver_standings.assert_awaited_once_with(year, standings, round_after=0)
+    repo.save_constructor_standings.assert_awaited_once_with(year, c_standings, round_after=0)
+
+
 # --- sync_drivers_and_circuits ---
 
 
@@ -728,6 +748,33 @@ class TestStartupSync:
 
         mock_sess.assert_awaited_once()
         mock_laps.assert_awaited_once()
+        repo.set_sync_metadata.assert_not_awaited()
+
+    async def test_jolpica_results_failure_still_syncs_standings(self):
+        """Results throwing must not skip standings — polling starts anyway."""
+        jolpica, openf1, repo = MagicMock(), MagicMock(), MagicMock()
+        repo.set_sync_metadata = AsyncMock()
+        race = _sample_race()
+
+        with (
+            patch("f1_bot.scheduler.jobs.run_driver_id_backfill_migration", new_callable=AsyncMock),
+            patch(
+                "f1_bot.scheduler.jobs.sync_schedule", new_callable=AsyncMock, return_value=[race]
+            ),
+            patch(
+                "f1_bot.scheduler.jobs.sync_results_window",
+                new_callable=AsyncMock,
+                side_effect=RuntimeError("combine_race_dt failed"),
+            ),
+            patch("f1_bot.scheduler.jobs.sync_standings", new_callable=AsyncMock) as mock_stand,
+            patch("f1_bot.scheduler.jobs.sync_drivers_and_circuits", new_callable=AsyncMock),
+            patch("f1_bot.scheduler.jobs.sync_pitstops_window", new_callable=AsyncMock),
+            patch("f1_bot.scheduler.jobs.sync_openf1_session_results", new_callable=AsyncMock),
+            patch("f1_bot.scheduler.jobs.sync_openf1_laps", new_callable=AsyncMock),
+        ):
+            await startup_sync(jolpica, openf1, repo)
+
+        mock_stand.assert_awaited_once()
         repo.set_sync_metadata.assert_not_awaited()
 
     async def test_openf1_group_failure_does_not_block_jolpica(self):
