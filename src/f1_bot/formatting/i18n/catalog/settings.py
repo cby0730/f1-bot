@@ -14,18 +14,6 @@ SETTINGS: dict[str, dict[str, str]] = {
     "settings.btn_timezone": {"en": "🌍 Timezone", "zh-Hant": "🌍 時區"},
     "settings.btn_language": {"en": "🌐 Language / 語言", "zh-Hant": "🌐 Language / 語言"},
     # --- /timezone -----------------------------------------------------------
-    "settings.tz_unknown": {
-        "en": (
-            "❌ Unknown timezone: `{tz}`\n\n"
-            "Use a standard IANA name like `Asia/Taipei`, `Europe/London`, `America/New_York`.\n"
-            "Or just type /settings to pick from a list."
-        ),
-        "zh-Hant": (
-            "❌ 無法辨識的時區：`{tz}`\n\n"
-            "請使用標準 IANA 名稱，例如 `Asia/Taipei`、`Europe/London`、`America/New_York`。\n"
-            "或直接輸入 /settings 從清單中選擇。"
-        ),
-    },
     "settings.tz_unknown_short": {
         "en": "❌ Unknown timezone: `{tz}`\n\nPlease try /settings again.",
         "zh-Hant": "❌ 無法辨識的時區：`{tz}`\n\n請重新輸入 /settings。",
@@ -59,10 +47,6 @@ SETTINGS: dict[str, dict[str, str]] = {
     "settings.lang_saved": {
         "en": "✅ Language set to *{lang}*",
         "zh-Hant": "✅ 語言已設定為 *{lang}*",
-    },
-    "settings.lang_unknown": {
-        "en": "❌ Unknown language: `{lang}`\n\nUse /settings to pick from the list.",
-        "zh-Hant": "❌ 無法辨識的語言：`{lang}`\n\n請使用 /settings 從清單中選擇。",
     },
     "settings.lang_name_en": {"en": "English", "zh-Hant": "English"},
     "settings.lang_name_zh_hant": {"en": "繁體中文", "zh-Hant": "繁體中文"},

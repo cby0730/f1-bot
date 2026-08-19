@@ -14,9 +14,9 @@ user-facing literals — all text goes through `t(key, ctx.lang, **kwargs)`.
 | `/schedule` | `handlers/schedule.py` |
 | `/results` | `handlers/results.py` — State A also links Pit + Laps |
 | `/standings` | `handlers/standings.py` — WDC/WCC table + 2-line clinch strip (two-clocks via `get_standings_round`). `/title` is a hidden alias; stale `title:*` still renders this view |
-| `/driver`, `/circuit` | `handlers/extras.py` — profile/info with fuzzy matching; driver profile has Compare. `/compare` is a hidden alias that still opens pick-A |
+| `/driver`, `/circuit` | `handlers/extras.py` — interactive pickers over current-season data; driver profile has Compare. `/compare` is a hidden alias that still opens pick-A |
 | `/remind` | `handlers/notifications.py` — view/manage session reminders |
-| `/settings` | `handlers/settings.py` — hub (`set:tz` / `set:lang` edit in place). `/timezone` and `/language` stay as pickers |
+| `/settings` | `handlers/settings.py` — hub (`set:tz` / `set:lang` edit in place). `/timezone` and `/language` stay as pickers (typed args ignored) |
 | `/pitstops`, `/laps` | `handlers/race_data.py` — also reachable from `/results`; Back returns to results State A |
 
 ## Callback data formats

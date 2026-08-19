@@ -3,7 +3,6 @@ from telegram.constants import ParseMode
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
 from f1_bot.formatting.i18n import SHIPPED_LANGS, lang_name, t
-from f1_bot.formatting.messages import _esc
 from f1_bot.handlers.context import resolve_context
 
 _CB_SET = "lang:set:"
@@ -33,18 +32,6 @@ def language_keyboard(current: str) -> InlineKeyboardMarkup:
 async def language_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     repo = context.bot_data["repo"]
     ctx = await resolve_context(update, repo)
-
-    # Direct input: /language zh-Hant
-    if context.args:
-        code = context.args[0]
-        if code not in SHIPPED_LANGS:
-            await update.effective_message.reply_text(
-                t("settings.lang_unknown", ctx.lang, lang=_esc(code)),
-                parse_mode=ParseMode.MARKDOWN,
-            )
-            return
-        await _save_lang(repo, update.effective_user.id, code, update)
-        return
 
     await update.effective_message.reply_text(
         t("settings.lang_picker", ctx.lang, lang=lang_name(ctx.lang, ctx.lang)),
@@ -77,10 +64,10 @@ async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             t("common.invalid_selection", ctx.lang), parse_mode=ParseMode.MARKDOWN
         )
         return
-    await _save_lang(repo, update.effective_user.id, code, update, via_callback=query)
+    await _save_lang(repo, update.effective_user.id, code, query)
 
 
-async def _save_lang(repo, telegram_id: int, code: str, update, via_callback=None) -> None:
+async def _save_lang(repo, telegram_id: int, code: str, query) -> None:
     """Persist the choice and confirm in the **newly chosen** language.
 
     Confirming in the old language would be the one message guaranteed to be
@@ -88,10 +75,7 @@ async def _save_lang(repo, telegram_id: int, code: str, update, via_callback=Non
     """
     await repo.set_user_language(telegram_id, code)
     text = t("settings.lang_saved", code, lang=lang_name(code, code))
-    if via_callback:
-        await via_callback.edit_message_text(text, parse_mode=ParseMode.MARKDOWN)
-    else:
-        await update.effective_message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN)
 
 
 def register(app: Application) -> None:
