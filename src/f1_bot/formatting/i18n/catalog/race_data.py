@@ -28,6 +28,4 @@ RACE_DATA: dict[str, dict[str, str]] = {
         "en": "\n*Note: Timing data from live feeds may occasionally be incomplete.*",
         "zh-Hant": "\n*註：即時計時資料偶爾可能不完整。*",
     },
-    # --- buttons / toasts ----------------------------------------------------
-    "race_data.no_lap_data": {"en": "No lap data available", "zh-Hant": "無單圈資料"},
 }
