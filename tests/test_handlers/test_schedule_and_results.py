@@ -216,8 +216,8 @@ async def test_results_handler_shows_last_completed_round():
     # Should have two-state keyboard with session filter buttons
     markup = update.effective_message.reply_text.await_args.kwargs.get("reply_markup")
     assert isinstance(markup, InlineKeyboardMarkup)
-    # Overview keyboard now has 3 rows (pager row + 2 filter rows) because completed rounds > 1
-    assert len(markup.inline_keyboard) == 3
+    # Overview keyboard has 4 rows: pager + 2 filter rows + Pit/Laps (completed rounds > 1)
+    assert len(markup.inline_keyboard) == 4
     # Check the pager row
     pager_row = markup.inline_keyboard[0]
     assert len(pager_row) == 2  # Prev (◀) and current label
@@ -302,9 +302,16 @@ async def test_schedule_handler_shows_all_races():
     assert "Italian Grand Prix" in text
 
 
-async def test_countdown_handler_shows_countdown():
+async def test_countdown_handler_shows_next_race_overview():
+    """/countdown is an alias of /next — weekend overview + countdown line.
+
+    WHY: this is an intentional behaviour change (heavier UX), not a silent
+    equivalent. next_handler reads get_schedule + bounds, not get_next_race.
+    """
     repo = MagicMock()
-    repo.get_next_race = AsyncMock(return_value=_race())
+    races = [_race()]
+    repo.get_schedule = AsyncMock(return_value=races)
+    repo.get_schedule_bounds = AsyncMock(return_value=_bounds(races))
     repo.get_user_timezone = AsyncMock(return_value="UTC")
     update = _update()
 
@@ -312,6 +319,9 @@ async def test_countdown_handler_shows_countdown():
 
     text = update.effective_message.reply_text.await_args.args[0]
     assert "Countdown" in text
+    assert "Next Race" in text
+    markup = update.effective_message.reply_text.await_args.kwargs.get("reply_markup")
+    assert isinstance(markup, InlineKeyboardMarkup)
 
 
 async def test_get_next_race_utc_alignment(repo, monkeypatch):

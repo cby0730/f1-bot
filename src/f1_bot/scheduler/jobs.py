@@ -2,8 +2,9 @@
 
 Hourly sync:
   1) Jolpica: full-season schedule (all rounds)
-  2) Jolpica: race/qualifying/sprint results for past 1-month window
-  3) Jolpica: standings, drivers, constructors
+  2) Jolpica: standings, drivers, constructors (cheap; before results so a
+     results throw cannot leave /standings empty while the bot is already live)
+  3) Jolpica: race/qualifying/sprint results for past 1-month window
   4) OpenF1: session_result for FP1/FP2/FP3/SQ within past 1 month
      — skip any session still inside live window (session_end + 30min > now)
   5) OpenF1: lap timings for completed races in past 1 month
@@ -126,17 +127,31 @@ async def sync_results_window(jolpica, repo, races: list, full: bool = False) ->
         log.info("results_synced", season=season, round=rnd)
 
 
+async def _standings_cutoff(repo, season: int) -> int:
+    """round_after for the snapshot we are about to save.
+
+    Isolated so a schedule-bounds failure cannot abort the Jolpica fetch — an
+    uncaught throw here used to skip both tables, then startup_sync still
+    started polling and /standings rendered ``common.no_data``.
+    """
+    try:
+        bounds = await repo.get_schedule_bounds(season)
+        return bounds.get("last_completed_round") or 0
+    except Exception as e:
+        log.warning("standings_cutoff_failed", error=str(e))
+        return 0
+
+
 async def sync_standings(jolpica, repo) -> None:
     """Sync driver and constructor standings."""
     season = datetime.date.today().year
-    bounds = await repo.get_schedule_bounds(season)
-    round_after = bounds.get("last_completed_round") or 0
+    round_after = await _standings_cutoff(repo, season)
 
     try:
         standings = await jolpica.get_driver_standings()
         if standings:
             await repo.save_driver_standings(season, standings, round_after=round_after)
-            log.info("driver_standings_synced", count=len(standings))
+            log.info("driver_standings_synced", count=len(standings), round_after=round_after)
     except Exception as e:
         log.warning("driver_standings_sync_failed", error=str(e))
 
@@ -144,7 +159,7 @@ async def sync_standings(jolpica, repo) -> None:
         standings = await jolpica.get_constructor_standings()
         if standings:
             await repo.save_constructor_standings(season, standings, round_after=round_after)
-            log.info("constructor_standings_synced", count=len(standings))
+            log.info("constructor_standings_synced", count=len(standings), round_after=round_after)
     except Exception as e:
         log.warning("constructor_standings_sync_failed", error=str(e))
 
@@ -414,11 +429,14 @@ async def startup_sync(jolpica, openf1, repo) -> None:
             log.warning("startup_sync_no_schedule")
 
     async def jolpica_group() -> None:
+        # Catalog fetches first. sync_results_window can raise outside its
+        # per-round try (combine_race_dt / find_race_session); gather() then
+        # marks the group failed but main.py still starts polling.
+        await sync_standings(jolpica, repo)
+        await sync_drivers_and_circuits(jolpica, repo)
         if races:
             await sync_results_window(jolpica, repo, races, full=True)
             await sync_pitstops_window(jolpica, repo, races, full=True)
-        await sync_standings(jolpica, repo)
-        await sync_drivers_and_circuits(jolpica, repo)
 
     async def openf1_group() -> None:
         if races:
@@ -454,11 +472,11 @@ async def hourly_sync(context: ContextTypes.DEFAULT_TYPE) -> None:
         races = await repo.get_schedule(season)
 
     async def jolpica_group() -> None:
+        await sync_standings(jolpica, repo)
+        await sync_drivers_and_circuits(jolpica, repo)
         if races:
             await sync_results_window(jolpica, repo, races)
             await sync_pitstops_window(jolpica, repo, races)
-        await sync_standings(jolpica, repo)
-        await sync_drivers_and_circuits(jolpica, repo)
 
     async def openf1_group() -> None:
         if races:

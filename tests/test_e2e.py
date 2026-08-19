@@ -2,7 +2,7 @@
 Comprehensive offline E2E test suite for f1-bot.
 Contains 26 scenarios implementing full coverage of all bot features.
 All external calls (Jolpica, OpenF1, and Telegram Bot API) are fully mocked via pytest-httpx.
-Postgres is used via the mango_pg dev container.
+Postgres is used via the ``mango_test`` database (not the bot's ``mango``).
 """
 
 import json
@@ -15,11 +15,11 @@ import pytest
 from telegram import Update
 
 from f1_bot.config import Settings
+from f1_bot.main import build_app
 
 _TEST_DATABASE_URL = os.environ.get(
-    "F1BOT_DATABASE_URL", "postgresql://mango:mango@localhost:31055/mango"
+    "F1BOT_TEST_DATABASE_URL", "postgresql://mango:mango@localhost:31055/mango_test"
 )
-from f1_bot.main import build_app  # noqa: E402
 
 # Define Bot Details for Mocking
 TELEGRAM_TOKEN = "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
@@ -315,6 +315,21 @@ def has_reply_markup(httpx_mock) -> bool:
     return "reply_markup" in body
 
 
+def extract_reply_markup(httpx_mock) -> dict:
+    """Parse the last send/edit reply_markup JSON into a dict."""
+    requests = httpx_mock.get_requests()
+    send_msg_reqs = [
+        r for r in requests if "sendMessage" in str(r.url) or "editMessageText" in str(r.url)
+    ]
+    if not send_msg_reqs:
+        raise ValueError("No sendMessage or editMessageText request was captured by httpx_mock.")
+    body = _parse_tg_request_body(send_msg_reqs[-1])
+    markup = body.get("reply_markup")
+    if isinstance(markup, str):
+        markup = json.loads(markup)
+    return markup or {}
+
+
 # ==============================================================================
 # CATEGORY A: Core Bot Commands & Basic Navigation (6 scenarios)
 # ==============================================================================
@@ -328,17 +343,21 @@ async def test_scenario_01_start_command(e2e_app, httpx_mock):
 
     reply_text = extract_reply_message(httpx_mock)
     assert "Welcome to *F1 Bot*" in reply_text
-    assert "/help" in reply_text
+    assert "/settings" in reply_text
+    assert "/next" in reply_text
+    markup = extract_reply_markup(httpx_mock)
+    data = [b["callback_data"] for row in markup["inline_keyboard"] for b in row]
+    assert "lang:picker" in data
 
 
 @pytest.mark.asyncio
 async def test_scenario_02_help_command(e2e_app, httpx_mock):
-    """Scenario 2: /help command E2E"""
+    """Scenario 2: /help is unregistered — typing it must not reply."""
+    before = [r.url for r in httpx_mock.get_requests() if "sendMessage" in str(r.url)]
     update = make_tg_update(e2e_app, "/help")
     await e2e_app.process_update(update)
-
-    reply_text = extract_reply_message(httpx_mock)
-    assert "F1 Bot Commands" in reply_text
+    after = [r.url for r in httpx_mock.get_requests() if "sendMessage" in str(r.url)]
+    assert after == before
 
 
 @pytest.mark.asyncio
@@ -793,7 +812,7 @@ async def test_scenario_23_laps_from_db(e2e_app, httpx_mock):
     repo = e2e_app.bot_data["repo"]
     from f1_bot.models.results import LapTime
 
-    laps = [LapTime(lap_number=45, driver_id="hamilton", time="1:18.293", position=1)]
+    laps = [LapTime(lap_number=45, driver_id="44", time="1:18.293", position=1)]
     await repo.save_lap_timings(_SEASON, 15, laps)
 
     update = make_tg_update(e2e_app, "/laps")
@@ -890,3 +909,147 @@ async def test_scenario_26_global_error_recovery(e2e_app, httpx_mock):
 
     reply_text = extract_reply_message(httpx_mock)
     assert "Something went wrong. Please try again in a moment." in reply_text
+
+
+@pytest.mark.asyncio
+async def test_scenario_27_settings_hub(e2e_app, httpx_mock):
+    """/settings shows two hub buttons; set:lang edits in place."""
+    update = make_tg_update(e2e_app, "/settings")
+    await e2e_app.process_update(update)
+
+    reply_text = extract_reply_message(httpx_mock)
+    assert "Settings" in reply_text
+    markup = extract_reply_markup(httpx_mock)
+    data = [b["callback_data"] for row in markup["inline_keyboard"] for b in row]
+    assert data == ["set:tz", "set:lang"]
+
+    cb_update = make_tg_callback_query_update(e2e_app, "set:lang")
+    await e2e_app.process_update(cb_update)
+    reply_text = extract_reply_message(httpx_mock)
+    assert "Language" in reply_text
+    markup = extract_reply_markup(httpx_mock)
+    data = [b["callback_data"] for row in markup["inline_keyboard"] for b in row]
+    assert "lang:set:en" in data
+    assert "lang:set:zh-Hant" in data
+
+
+@pytest.mark.asyncio
+async def test_scenario_28_standings_includes_clinch_strip(e2e_app, httpx_mock):
+    """/standings includes remaining-line or CLINCHED/magic-number, not a bare table."""
+    from f1_bot.models.driver import Driver, DriverStanding
+
+    repo = e2e_app.bot_data["repo"]
+    standings = [
+        DriverStanding(
+            position=1,
+            points=400.0,
+            wins=10,
+            driver=Driver(
+                driver_id="ver", given_name="Max", family_name="Verstappen", nationality="Dutch"
+            ),
+            constructor_name="Red Bull",
+        ),
+        DriverStanding(
+            position=2,
+            points=200.0,
+            wins=2,
+            driver=Driver(
+                driver_id="nor", given_name="Lando", family_name="Norris", nationality="British"
+            ),
+            constructor_name="McLaren",
+        ),
+    ]
+    await repo.save_driver_standings(_SEASON, standings, round_after=15)
+
+    update = make_tg_update(e2e_app, "/standings")
+    await e2e_app.process_update(update)
+
+    reply_text = extract_reply_message(httpx_mock)
+    assert "Verstappen" in reply_text
+    assert "races" in reply_text
+    assert "Magic number" in reply_text or "CLINCHED" in reply_text
+
+
+@pytest.mark.asyncio
+async def test_scenario_29_title_alias_matches_standings(e2e_app, httpx_mock):
+    """/title renders the standings view (same shape as /standings)."""
+    from f1_bot.models.driver import Driver, DriverStanding
+
+    repo = e2e_app.bot_data["repo"]
+    standings = [
+        DriverStanding(
+            position=1,
+            points=400.0,
+            wins=10,
+            driver=Driver(
+                driver_id="ver", given_name="Max", family_name="Verstappen", nationality="Dutch"
+            ),
+            constructor_name="Red Bull",
+        ),
+        DriverStanding(
+            position=2,
+            points=200.0,
+            wins=2,
+            driver=Driver(
+                driver_id="nor", given_name="Lando", family_name="Norris", nationality="British"
+            ),
+            constructor_name="McLaren",
+        ),
+    ]
+    await repo.save_driver_standings(_SEASON, standings, round_after=15)
+
+    update = make_tg_update(e2e_app, "/title")
+    await e2e_app.process_update(update)
+
+    reply_text = extract_reply_message(httpx_mock)
+    assert "Driver Standings" in reply_text
+    assert "Verstappen" in reply_text
+    markup = extract_reply_markup(httpx_mock)
+    data = [b["callback_data"] for row in markup["inline_keyboard"] for b in row]
+    assert "standings:wdc" in data
+    assert "standings:wcc" in data
+
+
+@pytest.mark.asyncio
+async def test_scenario_30_results_pit_then_back(e2e_app, httpx_mock):
+    """Results State A Pit tap → pit text then Back → results."""
+    from f1_bot.models.constructor import Constructor
+    from f1_bot.models.driver import Driver
+    from f1_bot.models.results import PitStop, RaceResult
+
+    repo = e2e_app.bot_data["repo"]
+    results = [
+        RaceResult(
+            position=1,
+            grid=1,
+            laps=50,
+            status="Finished",
+            points=25.0,
+            driver=Driver(
+                driver_id="ham", given_name="Lewis", family_name="Hamilton", nationality="British"
+            ),
+            constructor=Constructor(constructor_id="mer", name="Mercedes", nationality="German"),
+        )
+    ]
+    await repo.save_race_results(_SEASON, 15, results)
+    await repo.save_pit_stops(
+        _SEASON, 15, [PitStop(driver_id="hamilton", lap=12, stop_number=1, duration=22.4)]
+    )
+
+    update = make_tg_update(e2e_app, "/results")
+    await e2e_app.process_update(update)
+    markup = extract_reply_markup(httpx_mock)
+    data = [b["callback_data"] for row in markup["inline_keyboard"] for b in row]
+    assert "pit:15" in data
+    assert "lap:15:s" in data
+
+    cb_update = make_tg_callback_query_update(e2e_app, "pit:15")
+    await e2e_app.process_update(cb_update)
+    reply_text = extract_reply_message(httpx_mock)
+    assert "Pit Stops" in reply_text
+    assert "22.4" in reply_text
+
+    cb_back = make_tg_callback_query_update(e2e_app, "res:back:_:15")
+    await e2e_app.process_update(cb_back)
+    reply_text = extract_reply_message(httpx_mock)
+    assert "Lewis Hamilton" in reply_text or "Grand Prix" in reply_text

@@ -44,47 +44,37 @@ async def test_post_init_sets_commands():
     default_menu = default_args[0]
     assert "language_code" not in default_kwargs
 
-    # Every registered menu must carry all 16 commands. Telegram silently *ignores*
-    # a set_my_commands list whose length mismatches, so a wrong count would not fail
-    # loudly on its own — assert it here.
-    assert len(default_menu) == 16
+    # Every registered menu must carry all 9 visible commands. Telegram silently
+    # *ignores* a set_my_commands list whose length mismatches, so a wrong count
+    # would not fail loudly on its own — assert it here.
+    assert len(default_menu) == 9
 
-    # Assert specific commands exist in the default list, including the new /language.
     cmd_names = {c.command for c in default_menu}
     expected_commands = {
         "start",
-        "help",
         "next",
         "schedule",
-        "countdown",
-        "timezone",
-        "language",
-        "standings",
-        "title",
         "results",
-        "pitstops",
-        "laps",
+        "standings",
         "driver",
         "circuit",
-        "compare",
         "remind",
+        "settings",
     }
     assert cmd_names == expected_commands
 
     # Collect the per-language registrations by their language_code kwarg.
     by_lang = {
-        kwargs["language_code"]: args[0]
-        for args, kwargs in calls
-        if "language_code" in kwargs
+        kwargs["language_code"]: args[0] for args, kwargs in calls if "language_code" in kwargs
     }
     assert set(by_lang) == {lang.split("-")[0] for lang in SHIPPED_LANGS}
 
-    # The zh-Hant menu must be registered and localized: same 16 commands, but the
+    # The zh-Hant menu must be registered and localized: same 9 commands, but the
     # descriptions differ from the English default — proving translations were applied
     # and not silently falling back to English.
     # Telegram receives "zh" (ISO 639-1) even though catalog key is "zh-Hant".
     zh_menu = by_lang["zh"]
-    assert len(zh_menu) == 16
+    assert len(zh_menu) == 9
     assert {c.command for c in zh_menu} == expected_commands
     default_descs = {c.command: c.description for c in default_menu}
     zh_descs = {c.command: c.description for c in zh_menu}

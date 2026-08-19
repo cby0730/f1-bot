@@ -5,6 +5,7 @@ from telegram.constants import ParseMode
 from telegram.error import BadRequest
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
+from f1_bot.formatting.context import RenderContext
 from f1_bot.formatting.i18n import t
 from f1_bot.formatting.messages import (
     format_constructor_standings,
@@ -12,6 +13,7 @@ from f1_bot.formatting.messages import (
     no_data_message,
 )
 from f1_bot.handlers.context import resolve_context
+from f1_bot.utils.championship import remaining_events
 
 _WDC = "standings:wdc"
 _WCC = "standings:wcc"
@@ -29,16 +31,37 @@ def _toggle_keyboard(lang: str) -> InlineKeyboardMarkup:
     )
 
 
+async def _render_table(repo, season: int, table: str, ctx: RenderContext) -> str | None:
+    """Standings table plus two-line clinch strip, aligned to this table's snapshot.
+
+    Remaining events come from ``get_standings_round(season, table)`` — never
+    ``now()`` / ``get_schedule_bounds()``. Empty standings return None so those
+    reads are not made.
+    """
+    if table == "drivers":
+        standings = await repo.get_driver_standings(season)
+        fmt = format_driver_standings
+    else:
+        standings = await repo.get_constructor_standings(season)
+        fmt = format_constructor_standings
+    if not standings:
+        return None
+    n = await repo.get_standings_round(season, table)
+    races = await repo.get_schedule(season)
+    rem_races, rem_sprints = remaining_events(races or [], n or 0)
+    return fmt(standings, season, rem_races, rem_sprints, ctx)
+
+
 async def standings_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     repo = context.bot_data["repo"]
     ctx = await resolve_context(update, repo)
     season = datetime.date.today().year
-    standings = await repo.get_driver_standings(season)
-    if not standings:
+    text = await _render_table(repo, season, "drivers", ctx)
+    if text is None:
         await update.effective_message.reply_text(no_data_message("common.noun_standings", ctx))
         return
     await update.effective_message.reply_text(
-        format_driver_standings(standings, season, ctx),
+        text,
         parse_mode=ParseMode.MARKDOWN,
         reply_markup=_toggle_keyboard(ctx.lang),
     )
@@ -50,21 +73,10 @@ async def standings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
     repo = context.bot_data["repo"]
     ctx = await resolve_context(update, repo)
     season = datetime.date.today().year
-    if query.data == _WDC:
-        standings = await repo.get_driver_standings(season)
-        text = (
-            format_driver_standings(standings, season, ctx)
-            if standings
-            else no_data_message("common.noun_standings", ctx)
-        )
-    else:
-        standings = await repo.get_constructor_standings(season)
-        text = (
-            format_constructor_standings(standings, season, ctx)
-            if standings
-            else no_data_message("common.noun_standings", ctx)
-        )
-
+    table = "drivers" if query.data == _WDC else "constructors"
+    text = await _render_table(repo, season, table, ctx)
+    if text is None:
+        text = no_data_message("common.noun_standings", ctx)
     try:
         await query.edit_message_text(
             text, parse_mode=ParseMode.MARKDOWN, reply_markup=_toggle_keyboard(ctx.lang)

@@ -32,13 +32,20 @@ Read those first; this file only records non-obvious environment caveats.
   `Application started`.
 
 - **Tests need the DB and (some) network.** Unit tests (`pytest -m "not integration"`)
-  use the local Postgres and skip gracefully if it is unavailable. `integration` and
-  `tests/test_smoke.py` make real HTTP calls to Jolpica/OpenF1, which works from this
-  environment.
+  use a separate `mango_test` database (created on first pytest run; override with
+  `F1BOT_TEST_DATABASE_URL`) and skip gracefully if Postgres is unavailable. They
+  must **not** share `mango` with a running bot — the fixtures `TRUNCATE` every
+  public table after each test, which would empty `/standings` for a live process.
+  `integration` and `tests/test_smoke.py` make real HTTP calls to Jolpica/OpenF1,
+  which works from this environment.
 
-- **No CI test/lint gate; merging to `main` deploys to production.** The GitHub
-  workflows do not run tests or lint — `.github/workflows/deploy.yml` SSHes into the
-  OCI VM and runs `docker compose up -d --build` on every push to `main`, so a merge
-  ships straight to prod. The only automated quality gate is `.pre-commit-config.yaml`
-  (ruff, ruff-format, gitleaks, hadolint, pip-audit), and only when installed locally.
-  Run lint + tests yourself before committing (see `CLAUDE.md`).
+- **PRs target `develop`, never `main`.** Open and merge pull requests against
+  `develop`. `main` is production: `.github/workflows/deploy.yml` SSHes into the
+  OCI VM and runs `docker compose up -d --build` on every push to `main`. Do not
+  open a PR into `main`; promote `develop` → `main` only as an explicit release
+  merge.
+
+- **No CI test/lint gate.** The GitHub workflows do not run tests or lint. The only
+  automated quality gate is `.pre-commit-config.yaml` (ruff, ruff-format, gitleaks,
+  hadolint, pip-audit), and only when installed locally. Run lint + tests yourself
+  before committing (see `CLAUDE.md`).
