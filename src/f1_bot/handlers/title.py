@@ -7,10 +7,9 @@ Stale ``title:wdc`` / ``title:wcc`` keyboards still render the standings view
 from telegram import Update
 from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
 
-from f1_bot.handlers.standings import standings_callback, standings_handler
+from f1_bot.handlers.standings import render_standings_callback, standings_handler
 
 _WDC = "title:wdc"
-_WCC = "title:wcc"
 
 
 async def title_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -19,11 +18,8 @@ async def title_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def title_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    if query.data == _WDC:
-        query.data = "standings:wdc"
-    elif query.data == _WCC:
-        query.data = "standings:wcc"
-    await standings_callback(update, context)
+    table = "drivers" if query.data == _WDC else "constructors"
+    await render_standings_callback(update, context, table)
 
 
 def register(app: Application) -> None:
