@@ -32,8 +32,7 @@ def t(key: str, lang: str, /, **kwargs) -> str:
 def lang_name(lang: str, display_lang: str = DEFAULT_LANG) -> str:
     """Human-readable name of `lang`, rendered in `display_lang`.
 
-    Unknown codes echo back verbatim so a hand-typed `/language xx` shows what the
-    user actually typed.
+    Unknown codes echo back verbatim.
     """
     key = f"settings.lang_name_{lang.replace('-', '_').lower()}"
     if key not in CATALOG:

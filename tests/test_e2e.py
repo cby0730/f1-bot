@@ -439,27 +439,37 @@ async def test_scenario_06_timezone_interactive_flow(e2e_app, httpx_mock):
 
 
 @pytest.mark.asyncio
-async def test_scenario_07_direct_timezone_valid(e2e_app, httpx_mock):
-    """Scenario 7: Direct timezone set with valid IANA name."""
+async def test_scenario_07_timezone_args_ignored_valid(e2e_app, httpx_mock):
+    """Scenario 7: leftover IANA args still show the picker and do not save."""
+    repo = e2e_app.bot_data["repo"]
+    tz_before = await repo.get_user_timezone(MOCK_USER_ID)
+
     update = make_tg_update(e2e_app, "/timezone Europe/London")
     await e2e_app.process_update(update)
 
     reply_text = extract_reply_message(httpx_mock)
-    assert "Timezone set to *Europe/London*" in reply_text
+    assert "Choose your region:" in reply_text
+    assert "Timezone set to" not in reply_text
 
-    repo = e2e_app.bot_data["repo"]
-    tz = await repo.get_user_timezone(MOCK_USER_ID)
-    assert tz == "Europe/London"
+    tz_after = await repo.get_user_timezone(MOCK_USER_ID)
+    assert tz_after == tz_before
 
 
 @pytest.mark.asyncio
-async def test_scenario_08_direct_timezone_invalid(e2e_app, httpx_mock):
-    """Scenario 8: Direct timezone set with invalid name."""
+async def test_scenario_08_timezone_args_ignored_invalid(e2e_app, httpx_mock):
+    """Scenario 8: garbage leftover args still show the picker, not an unknown-tz error."""
+    repo = e2e_app.bot_data["repo"]
+    tz_before = await repo.get_user_timezone(MOCK_USER_ID)
+
     update = make_tg_update(e2e_app, "/timezone Mars/Olympus")
     await e2e_app.process_update(update)
 
     reply_text = extract_reply_message(httpx_mock)
-    assert "Unknown timezone" in reply_text
+    assert "Choose your region:" in reply_text
+    assert "Unknown timezone" not in reply_text
+
+    tz_after = await repo.get_user_timezone(MOCK_USER_ID)
+    assert tz_after == tz_before
 
 
 @pytest.mark.asyncio

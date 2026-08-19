@@ -1,17 +1,9 @@
 """/driver, /circuit and /compare."""
 
 EXTRAS: dict[str, dict[str, str]] = {
-    # --- pickers / lookup failures -------------------------------------------
+    # --- pickers -------------------------------------------------------------
     "extras.select_driver": {"en": "🏎 Select a driver:", "zh-Hant": "🏎 請選擇車手："},
     "extras.select_circuit": {"en": "📍 Select a circuit:", "zh-Hant": "📍 請選擇賽道："},
-    "extras.no_driver_match": {
-        "en": "❓ No driver found matching *{query}*. Try a last name or 3-letter code.",
-        "zh-Hant": "❓ 找不到符合 *{query}* 的車手，請改用姓氏或三字母代號。",
-    },
-    "extras.no_circuit_match": {
-        "en": "❓ No circuit found matching *{query}*.",
-        "zh-Hant": "❓ 找不到符合 *{query}* 的賽道。",
-    },
     "extras.driver_not_found": {"en": "Driver not found", "zh-Hant": "找不到車手"},
     "extras.circuit_not_found": {"en": "Circuit not found", "zh-Hant": "找不到賽道"},
     # --- driver profile ------------------------------------------------------

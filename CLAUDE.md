@@ -73,7 +73,6 @@ The 9-command visible menu → handler map and the full `callback_data` pattern 
 | `src/f1_bot/formatting/emoji.py` | `pos_icon`, `flag_icon`, `session_icon`, `flag_color`, `country_code_to_flag` — mapping and flag logic |
 | `src/f1_bot/formatting/timezone.py` | `combine_race_dt()` — combines race date + time into UTC datetime; used by scheduler and repository |
 | `src/f1_bot/utils/rate_limiter.py` | Token bucket; constructor: `RateLimiter(per_second=..., per_period=..., period=...)` |
-| `src/f1_bot/utils/fuzzy_match.py` | `match_driver()` / `match_circuit()` using difflib; scores all fields, takes max |
 | `src/f1_bot/utils/sessions.py` | `find_next_sessions()` / `find_recent_completed_session()` / `normalize_session_key()` / `session_entries()` — session-level timeline logic |
 | `src/f1_bot/utils/logging.py` | structlog setup; `add_taiwan_timestamp` processor; auto-detects TTY for console vs JSON output |
 | `src/f1_bot/handlers/notifications.py` | `/remind` command + `notify:*` callback flow (pick session → pick timing → toggle subscription) |
@@ -181,10 +180,12 @@ don't rely on the guards to prove the migration is complete.
 `key`/`lang` **positional-only** so a catalog template is free to use `{key}` or
 `{lang}` as a placeholder name. Without it, `t("settings.lang_saved", code, lang=...)`
 binds `lang` both positionally and by keyword → `TypeError`, which silently killed
-the *entire* `/language` command (all 3 interpolation sites: `settings.lang_picker`,
-`lang_saved`, `lang_unknown`). Same class as the Pydantic field-shadowing gotcha
-above. The 4 interpolating tests in `tests/test_handlers/test_language.py` are the
-regression guard — they fail loudly if the `/` is removed.
+the *entire* `/language` command (the remaining `{lang}` sites: `settings.lang_picker`
+and `lang_saved`). Same class as the Pydantic field-shadowing gotcha
+above. `test_handler_no_args_shows_picker` and
+`test_callback_set_persists_and_confirms_in_new_language` in
+`tests/test_handlers/test_language.py` are the regression guard — they fail
+loudly if the `/` is removed.
 
 **`t()` failure modes are asymmetric by design:** an *unknown key* raises
 `KeyError` (a programmer typo — loud), while a *known key missing one language*

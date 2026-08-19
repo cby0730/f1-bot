@@ -26,8 +26,8 @@ All F1 data provided by the bot is fetched from the following public APIs:
 * **Title Race**: `/standings` shows whether the championship is still up for grabs — the "magic number" of points the leader needs, or a 🔒 CLINCHED banner once the title is sealed, for both drivers and constructors.
 * **Lap Timings**: Personal-best sector and lap times per driver, with a DNF tag when the race result is unclassified.
 * **Pit Stops**: Pit stop details for each driver per round, including stop count, lap number, and duration — nested under `/results`.
-* **Local Timezone Support**: Automatically translates all session timings to your local timezone (e.g. `Asia/Taipei`) via `/settings`.
-* **Bilingual Interface (English / 繁體中文)**: Every message, button, reminder, and command-menu entry renders in your chosen language — switch any time from `/settings`. Dates, countdowns, and session labels localize too, and reminders arrive in your language.
+* **Local Timezone Support**: Session timings render in the timezone you pick from `/settings` (region, then city).
+* **Bilingual Interface (English / 繁體中文)**: Every message, button, reminder, and command-menu entry renders in your chosen language — switch any time from the `/settings` picker. Dates, countdowns, and session labels localize too, and reminders arrive in your language.
 * **Personalized Notifications**: Subscribe to automated race alerts (15, 30, 60, or 180 minutes before sessions).
 
 ---
@@ -41,7 +41,7 @@ All F1 data provided by the bot is fetched from the following public APIs:
 | `/schedule` | Full season race calendar |
 | `/results` | Results overview with session filters, pit stops, lap times, and round navigation |
 | `/standings` | Toggle between WDC and WCC standings, including title-clinch status |
-| `/driver [name]` | Search driver profiles (fuzzy-matching supported); Compare from the profile |
-| `/circuit [name]` | Search circuit information (fuzzy-matching supported) |
+| `/driver` | Driver profiles — pick from the current-season list; Compare from the profile |
+| `/circuit` | Circuit info — pick from the season calendar |
 | `/remind` | View and manage your active session reminders |
-| `/settings` | Set timezone and language |
+| `/settings` | Timezone and language pickers |

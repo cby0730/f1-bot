@@ -34,7 +34,12 @@ async def test_timezone_handler_no_args_shows_region_picker():
     assert "timezone" in text.lower() or "🌍" in text
 
 
-async def test_timezone_handler_valid_timezone_saves_and_confirms():
+async def test_timezone_handler_extra_args_ignored_shows_picker_no_write():
+    """Valid leftover IANA tokens still show the region picker and do not save.
+
+    WHY: `/timezone Asia/Taipei` used to persist immediately. Extra args must not
+    skip the city list.
+    """
     repo = MagicMock()
     repo.set_user_timezone = AsyncMock()
     update, _ = _update()
@@ -43,24 +48,31 @@ async def test_timezone_handler_valid_timezone_saves_and_confirms():
 
     await timezone_handler(update, ctx)
 
-    # Single-column upsert: (telegram_id, tz) — never a whole UserPreference (which
-    # would carry the language default and clobber the user's saved language).
-    repo.set_user_timezone.assert_called_once_with(123, "Asia/Taipei")
-    text = update.effective_message.reply_text.await_args.args[0]
-    assert "Asia/Taipei" in text
+    repo.set_user_timezone.assert_not_called()
+    text = update.effective_message.reply_text.call_args.args[0]
+    assert "timezone" in text.lower() or "🌍" in text
+    markup = update.effective_message.reply_text.call_args.kwargs.get("reply_markup")
+    assert markup is not None
 
 
-async def test_timezone_handler_invalid_timezone_shows_error():
+async def test_timezone_handler_invalid_extra_args_still_shows_picker():
+    """Garbage leftover tokens are ignored the same way as valid ones.
+
+    WHY: `/timezone Mars/Olympus` used to error. It must now be the picker, not
+    a typed-IANA rejection.
+    """
     repo = MagicMock()
+    repo.set_user_timezone = AsyncMock()
     update, _ = _update()
     ctx = _context(repo)
     ctx.args = ["Mars/Olympus"]
 
     await timezone_handler(update, ctx)
 
-    text = update.effective_message.reply_text.await_args.args[0]
-    assert "❌" in text or "Unknown" in text
     repo.set_user_timezone.assert_not_called()
+    text = update.effective_message.reply_text.call_args.args[0]
+    assert "timezone" in text.lower() or "🌍" in text
+    assert "Unknown" not in text
 
 
 async def test_timezone_callback_region_shows_city_picker():

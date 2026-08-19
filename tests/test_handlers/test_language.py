@@ -17,7 +17,7 @@ from f1_bot.handlers.language import language_callback, language_handler, langua
 # `t("settings.lang_*", ctx.lang, lang=...)` site crashed with
 # `TypeError: t() got multiple values for argument 'lang'` and the ENTIRE /language
 # command was dead. It is now FIXED: `t`'s signature is `def t(key, lang, /, **kwargs)`
-# (positional-only `lang`), so the confirmation/picker/error paths interpolate `{lang}`
+# (positional-only `lang`), so the confirmation/picker paths interpolate `{lang}`
 # cleanly. The xfail markers have been removed accordingly — the assertions below
 # (always the CORRECT, un-weakened behaviour) now pass outright.
 
@@ -118,15 +118,14 @@ async def test_callback_set_persists_and_confirms_in_new_language():
     assert "繁體中文" in text
 
 
-# --- 19. Direct form /language zh-Hant --------------------------------------
+# --- 19. Extra args are ignored ---------------------------------------------
 
 
-async def test_direct_form_valid_code_saves():
-    """`/language zh-Hant` (direct form) saves and confirms in Chinese.
+async def test_handler_extra_args_ignored_shows_picker_no_write():
+    """`/language zh-Hant` (and any other leftover tokens) still shows the picker.
 
-    WHY (regression guard): same `settings.lang_saved` `{lang}` interpolation as the
-    callback path — asserting the Chinese confirmation here catches a reverted
-    positional-only `t()` signature on the command (not just the button) route.
+    WHY: typed codes used to save immediately. Extra args must not persist a
+    language or skip the button UI.
     """
     repo = MagicMock()
     repo.set_user_language = AsyncMock()
@@ -134,30 +133,10 @@ async def test_direct_form_valid_code_saves():
 
     await language_handler(update, context)
 
-    repo.set_user_language.assert_awaited_once_with(123, "zh-Hant")
-    text = update.effective_message.reply_text.await_args.args[0]
-    assert "語言已設定" in text
-
-
-async def test_direct_form_unknown_code_rejected_no_write():
-    """`/language fr` is validated against SHIPPED_LANGS: error, no write.
-
-    WHY: a hand-typed code must not persist an unsupported language.
-
-    WHY (regression guard): the rejection renders `settings.lang_unknown`, which
-    also interpolates `{lang}` (the offending code). This exercises the third and
-    last interpolation site, so a reverted positional-only `t()` is caught on the
-    error path too, not only the happy paths.
-    """
-    repo = MagicMock()
-    repo.set_user_language = AsyncMock()
-    update, context = _cmd(repo, args=["fr"])
-
-    await language_handler(update, context)
-
     repo.set_user_language.assert_not_called()
-    text = update.effective_message.reply_text.await_args.args[0]
-    assert "Unknown language" in text or "❌" in text
+    update.effective_message.reply_text.assert_awaited_once()
+    kb = update.effective_message.reply_text.await_args.kwargs["reply_markup"].inline_keyboard
+    assert {row[0].callback_data for row in kb} == {"lang:set:en", "lang:set:zh-Hant"}
 
 
 # --- 20. Callback guard against spoofed codes ------------------------------
