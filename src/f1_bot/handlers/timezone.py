@@ -85,7 +85,7 @@ async def _save_tz(repo, telegram_id: int, tz_name: str, query, lang: str) -> No
     # Single-column upsert: writing a whole UserPreference here would carry the
     # `language` field's default along and silently reset the user's language.
     await repo.set_user_timezone(telegram_id, tz_name)
-    text = t("settings.tz_saved", lang, tz=tz_name)
+    text = t("settings.tz_saved", lang, tz=_esc(tz_name))
     await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN)
 
 
