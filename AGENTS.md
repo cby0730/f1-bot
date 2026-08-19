@@ -32,9 +32,12 @@ Read those first; this file only records non-obvious environment caveats.
   `Application started`.
 
 - **Tests need the DB and (some) network.** Unit tests (`pytest -m "not integration"`)
-  use the local Postgres and skip gracefully if it is unavailable. `integration` and
-  `tests/test_smoke.py` make real HTTP calls to Jolpica/OpenF1, which works from this
-  environment.
+  use a separate `mango_test` database (created on first pytest run; override with
+  `F1BOT_TEST_DATABASE_URL`) and skip gracefully if Postgres is unavailable. They
+  must **not** share `mango` with a running bot — the fixtures `TRUNCATE` every
+  public table after each test, which would empty `/standings` for a live process.
+  `integration` and `tests/test_smoke.py` make real HTTP calls to Jolpica/OpenF1,
+  which works from this environment.
 
 - **PRs target `develop`, never `main`.** Open and merge pull requests against
   `develop`. `main` is production: `.github/workflows/deploy.yml` SSHes into the

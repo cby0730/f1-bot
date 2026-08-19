@@ -25,7 +25,7 @@ from f1_bot.utils.rate_limiter import RateLimiter
 pytestmark = pytest.mark.integration
 
 _TEST_DATABASE_URL = os.environ.get(
-    "F1BOT_DATABASE_URL", "postgresql://mango:mango@localhost:31055/mango"
+    "F1BOT_TEST_DATABASE_URL", "postgresql://mango:mango@localhost:31055/mango_test"
 )
 
 

@@ -2,7 +2,7 @@
 Comprehensive offline E2E test suite for f1-bot.
 Contains 26 scenarios implementing full coverage of all bot features.
 All external calls (Jolpica, OpenF1, and Telegram Bot API) are fully mocked via pytest-httpx.
-Postgres is used via the mango_pg dev container.
+Postgres is used via the ``mango_test`` database (not the bot's ``mango``).
 """
 
 import json
@@ -15,11 +15,11 @@ import pytest
 from telegram import Update
 
 from f1_bot.config import Settings
+from f1_bot.main import build_app
 
 _TEST_DATABASE_URL = os.environ.get(
-    "F1BOT_DATABASE_URL", "postgresql://mango:mango@localhost:31055/mango"
+    "F1BOT_TEST_DATABASE_URL", "postgresql://mango:mango@localhost:31055/mango_test"
 )
-from f1_bot.main import build_app  # noqa: E402
 
 # Define Bot Details for Mocking
 TELEGRAM_TOKEN = "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
