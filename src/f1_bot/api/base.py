@@ -1,4 +1,5 @@
 import asyncio
+from importlib.metadata import version as package_version
 
 import httpx
 import structlog
@@ -43,7 +44,9 @@ class BaseAPIClient:
         client_kwargs: dict = {
             "base_url": self._base_url,
             "timeout": httpx.Timeout(30.0, connect=10.0),
-            "headers": {"User-Agent": "f1-bot/0.3.1 (github.com/cby0730/f1-bot)"},
+            "headers": {
+                "User-Agent": f"f1-bot/{package_version('f1-bot')} (github.com/cby0730/f1-bot)"
+            },
         }
         if proxy:
             client_kwargs["proxy"] = proxy

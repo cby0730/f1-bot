@@ -21,6 +21,27 @@ def _make_client(base_url="https://example.com") -> BaseAPIClient:
     return BaseAPIClient(base_url, limiter)
 
 
+async def test_user_agent_follows_installed_package_version(monkeypatch):
+    """User-Agent must read the installed dist version, not a copied literal.
+
+    WHY: pyproject.toml and this header previously drifted (the 0.3.0 bump
+    missed the User-Agent). A hardcoded string stays green until the next
+    bump; patching the metadata lookup fails immediately if the header is
+    a literal again.
+    """
+
+    def fake_version(name: str) -> str:
+        assert name == "f1-bot"
+        return "9.9.9"
+
+    monkeypatch.setattr("f1_bot.api.base.package_version", fake_version)
+    client = _make_client()
+    try:
+        assert client._client.headers["user-agent"] == "f1-bot/9.9.9 (github.com/cby0730/f1-bot)"
+    finally:
+        await client.close()
+
+
 async def test_successful_get(httpx_mock: HTTPXMock):
     """A 200 response returns parsed JSON."""
     httpx_mock.add_response(json={"ok": True})
