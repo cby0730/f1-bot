@@ -1,6 +1,6 @@
 [project]
 name = "f1-bot"
-version = "0.3.0"
+version = "0.3.1"
 description = "Your pocket pit wall — a Telegram bot for Formula 1 schedules, results, and standings"
 readme = "README.md"
 authors = [
