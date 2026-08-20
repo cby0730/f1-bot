@@ -37,7 +37,6 @@ EXTRAS: dict[str, dict[str, str]] = {
     "extras.compare_with": {"en": "🆚 Compare with…", "zh-Hant": "🆚 與其他車手比較"},
     "compare.pick_a": {"en": "🆚 Select driver *A*:", "zh-Hant": "🆚 請選擇車手 *A*："},
     "compare.pick_b": {"en": "🆚 Select driver *B*:", "zh-Hant": "🆚 請選擇車手 *B*："},
-    "compare.restart": {"en": "🔙 Compare again", "zh-Hant": "🔙 重新比較"},
     "compare.swap_opponent": {"en": "🔄 Swap opponent", "zh-Hant": "🔄 更換對手"},
     "compare.header": {"en": "🆚 *{a}*  vs  *{b}*", "zh-Hant": "🆚 *{a}*  對決  *{b}*"},
     "compare.no_data": {

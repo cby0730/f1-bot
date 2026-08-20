@@ -133,6 +133,33 @@ async def test_timezone_callback_set_saves_timezone():
     assert "Europe/London" in text
 
 
+async def test_timezone_callback_set_escapes_underscore_in_iana_id():
+    """IANA ids with `_` must be Markdown-escaped in the confirmation, not in storage.
+
+    WHY: `America/New_York` (and Los_Angeles, Sao_Paulo, Mexico_City) are official
+    picker buttons. Unescaped `{tz}` inside `*{tz}*` is an unterminated italic
+    under legacy ParseMode.MARKDOWN, so Telegram rejects the confirmation after
+    the preference has already been written.
+    """
+    repo = MagicMock()
+    repo.set_user_timezone = AsyncMock()
+    query = MagicMock()
+    query.answer = AsyncMock()
+    query.edit_message_text = AsyncMock()
+    query.data = "tz:set:America/New_York"
+    update = MagicMock()
+    update.callback_query = query
+    update.effective_user.id = 456
+    ctx = _context(repo)
+
+    await timezone_callback(update, ctx)
+
+    repo.set_user_timezone.assert_called_once_with(456, "America/New_York")
+    text = query.edit_message_text.call_args.args[0]
+    assert r"America/New\_York" in text
+    assert r"*America/New\_York*" in text
+
+
 async def test_timezone_callback_rejects_invalid_timezone():
     """Crafted callback data with an invalid tz must not save anything."""
     repo = MagicMock()

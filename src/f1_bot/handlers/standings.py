@@ -67,13 +67,14 @@ async def standings_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     )
 
 
-async def standings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def render_standings_callback(
+    update: Update, context: ContextTypes.DEFAULT_TYPE, table: str
+) -> None:
     query = update.callback_query
     await query.answer()
     repo = context.bot_data["repo"]
     ctx = await resolve_context(update, repo)
     season = datetime.date.today().year
-    table = "drivers" if query.data == _WDC else "constructors"
     text = await _render_table(repo, season, table, ctx)
     if text is None:
         text = no_data_message("common.noun_standings", ctx)
@@ -83,6 +84,12 @@ async def standings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
         )
     except BadRequest:
         pass
+
+
+async def standings_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    query = update.callback_query
+    table = "drivers" if query.data == _WDC else "constructors"
+    await render_standings_callback(update, context, table)
 
 
 def register(app: Application) -> None:
