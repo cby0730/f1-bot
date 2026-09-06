@@ -73,3 +73,18 @@ class PitStop(BaseModel):
     duration: float | None = None  # total pit stop duration in seconds
     pit_out_time: str | None = None
     pit_in_time: str | None = None
+
+
+# Jolpica/Ergast classified-finish strings. 2026 replaced ``+N Lap(s)`` with
+# the single token ``Lapped``; keep the ``+`` prefix for older seasons.
+_CLASSIFIED_STATUSES = frozenset({"Finished", "Lapped"})
+
+
+def is_classified_finish(status: str) -> bool:
+    """Whitelist finish classification.
+
+    ``Finished`` (lead lap) and ``Lapped`` / ``+N Lap(s)`` (classified, a lap
+    down) are finishes. Everything else — Retired, Accident, DNS, … — is a DNF.
+    Whitelisting keeps an unseen failure string from being misread as a finish.
+    """
+    return status in _CLASSIFIED_STATUSES or status.startswith("+")

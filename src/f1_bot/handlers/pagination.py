@@ -237,6 +237,7 @@ def results_overview_keyboard(
     Row 1: Pager (◀ R10/24 ▶) - optional, only if len(completed_rounds) > 1
     Row 2: FP1 FP2 FP3 Q
     Row 3: SQ SPR Race All
+    Row 4: Pit  Laps  (race telemetry; State B does not get this row)
     Active session is highlighted with · markers.
     """
     rows = []
@@ -276,6 +277,14 @@ def results_overview_keyboard(
 
     rows.append(practice_row)
     rows.append(competitive_row)
+    rows.append(
+        [
+            InlineKeyboardButton(t("results.btn_pit", lang), callback_data=f"pit:{current_round}"),
+            InlineKeyboardButton(
+                t("results.btn_laps", lang), callback_data=f"lap:{current_round}:s"
+            ),
+        ]
+    )
     return InlineKeyboardMarkup(rows)
 
 

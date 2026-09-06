@@ -1,6 +1,6 @@
 """Championship clinch math for /title — pure, DB-free, directly unit-testable.
 
-Mirrors the other pure-logic utils (``utils/sessions.py``, ``utils/fuzzy_match.py``).
+Mirrors the other pure-logic utils (``utils/sessions.py``).
 All /title math lives here so the formatters stay layout-only and the boundary cases
 (magic-number-of-1, tie-stays-open) can be asserted on integers, not rendered strings.
 """

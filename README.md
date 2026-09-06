@@ -23,11 +23,11 @@ All F1 data provided by the bot is fetched from the following public APIs:
 * **Two-State Interactive UI**: `/next` and `/results` use a clean two-state button navigation layout, letting users switch between round overview and filtered sessions effortlessly.
 * **Rich Race Data**:
   * **Standings**: Real-time driver standings (WDC) and constructor standings (WCC) toggles.
-  * **Title Race**: See whether the championship is still up for grabs — the "magic number" of points the leader needs to make it mathematically impossible for anyone to catch them, or a 🔒 CLINCHED banner once the title is sealed, for both drivers and constructors.
-  * **Lap Timings**: View lap times with precise sector-by-sector data, searchable either by lap number or by driver.
-  * **Pit Stops**: See pit stop details for each driver per round, including stop count, lap number, and duration.
-* **Local Timezone Support**: Automatically translates all session timings to your local timezone (e.g. `Asia/Taipei`) using `/timezone`.
-* **Bilingual Interface (English / 繁體中文)**: Every message, button, reminder, and command-menu entry renders in your chosen language — switch any time with `/language`. Dates, countdowns, and session labels localize too, and reminders arrive in your language.
+* **Title Race**: `/standings` shows whether the championship is still up for grabs — the "magic number" of points the leader needs, or a 🔒 CLINCHED banner once the title is sealed, for both drivers and constructors.
+* **Lap Timings**: Personal-best sector and lap times per driver, with a DNF tag when the race result is unclassified.
+* **Pit Stops**: Pit stop details for each driver per round, including stop count, lap number, and duration — nested under `/results`.
+* **Local Timezone Support**: Session timings render in the timezone you pick from `/settings` (region, then city).
+* **Bilingual Interface (English / 繁體中文)**: Every message, button, reminder, and command-menu entry renders in your chosen language — switch any time from the `/settings` picker. Dates, countdowns, and session labels localize too, and reminders arrive in your language.
 * **Personalized Notifications**: Subscribe to automated race alerts (15, 30, 60, or 180 minutes before sessions).
 
 ---
@@ -36,17 +36,12 @@ All F1 data provided by the bot is fetched from the following public APIs:
 
 | Command | Description |
 |---|---|
-| `/start`, `/help` | Welcome message and command overview |
+| `/start` | Welcome message and command overview |
 | `/next` | Next session overview with interactive filter buttons (FP1–Race) |
 | `/schedule` | Full season race calendar |
-| `/countdown` | Countdown to the next session or race |
-| `/results` | Results overview with session filters and round navigation |
-| `/pitstops` | Pit stop data per round with round navigation |
-| `/laps` | Lap times with sector-by-sector details |
-| `/standings` | Toggle between WDC and WCC standings |
-| `/title` | See if the championship is decided yet — how many points the leader needs to seal it, or who has already clinched |
-| `/driver [name]` | Search driver profiles (fuzzy-matching supported) |
-| `/circuit [name]` | Search circuit information (fuzzy-matching supported) |
-| `/timezone` | Set your local timezone (e.g., `/timezone Asia/Taipei`) |
-| `/language` | Switch the interface language — English or 繁體中文 (e.g., `/language zh-Hant`) |
+| `/results` | Results overview with session filters, pit stops, lap times, and round navigation |
+| `/standings` | Toggle between WDC and WCC standings, including title-clinch status |
+| `/driver` | Driver profiles — pick from the current-season list; Compare from the profile |
+| `/circuit` | Circuit info — pick from the season calendar |
 | `/remind` | View and manage your active session reminders |
+| `/settings` | Timezone and language pickers |

@@ -94,7 +94,12 @@ async def test_driver_handler_no_args_shows_menu():
     assert "Hamilton" in button.text
 
 
-async def test_driver_handler_match_found_shows_profile():
+async def test_driver_handler_extra_args_still_shows_menu():
+    """Typed leftover args must not search — always the picker.
+
+    WHY: `/driver hamilton` used to fuzzy-match a profile. Extra tokens are now
+    ignored so muscle memory cannot skip the menu.
+    """
     repo = MagicMock()
     repo.get_driver_standings = AsyncMock(return_value=[_standing()])
     ctx = _context(repo)
@@ -103,22 +108,12 @@ async def test_driver_handler_match_found_shows_profile():
 
     await driver_handler(update, ctx)
 
-    text = update.effective_message.reply_text.await_args.args[0]
-    assert "Lewis Hamilton" in text
-    assert "HAM" in text
-
-
-async def test_driver_handler_no_match_shows_not_found():
-    repo = MagicMock()
-    repo.get_driver_standings = AsyncMock(return_value=[_standing()])
-    ctx = _context(repo)
-    ctx.args = ["xyznosuchdriver"]
-    update = _update()
-
-    await driver_handler(update, ctx)
-
-    text = update.effective_message.reply_text.await_args.args[0]
-    assert "No driver found" in text or "❓" in text
+    text = update.effective_message.reply_text.await_args.kwargs.get("text", "")
+    if not text:
+        text = update.effective_message.reply_text.await_args.args[0]
+    assert "Select a driver" in text
+    reply_markup = update.effective_message.reply_text.await_args.kwargs.get("reply_markup")
+    assert reply_markup.inline_keyboard[0][0].callback_data == "drv:detail:hamilton"
 
 
 async def test_driver_handler_repo_exception_shows_no_data():
@@ -158,31 +153,25 @@ async def test_circuit_handler_no_args_shows_menu():
     assert "Monte-Carlo" in button.text
 
 
-async def test_circuit_handler_match_found_shows_circuit_info():
+async def test_circuit_handler_extra_args_still_shows_menu():
+    """Typed leftover args must not search — always the picker.
+
+    WHY: `/circuit monaco` used to fuzzy-match. Extra tokens are now ignored.
+    """
     repo = MagicMock()
-    repo.get_schedule = AsyncMock(return_value=[_race()])
+    repo.get_circuits_for_season = AsyncMock(return_value=[(1, _circuit())])
     ctx = _context(repo)
     ctx.args = ["monaco"]
     update = _update()
 
     await circuit_handler(update, ctx)
 
-    text = update.effective_message.reply_text.await_args.args[0]
-    assert "Circuit de Monaco" in text
-    assert "Monte-Carlo" in text
-
-
-async def test_circuit_handler_no_match_shows_not_found():
-    repo = MagicMock()
-    repo.get_schedule = AsyncMock(return_value=[_race()])
-    ctx = _context(repo)
-    ctx.args = ["xyznosuchcircuit12345678"]
-    update = _update()
-
-    await circuit_handler(update, ctx)
-
-    text = update.effective_message.reply_text.await_args.args[0]
-    assert "No circuit found" in text or "❓" in text
+    text = update.effective_message.reply_text.await_args.kwargs.get("text", "")
+    if not text:
+        text = update.effective_message.reply_text.await_args.args[0]
+    assert "Select a circuit" in text
+    reply_markup = update.effective_message.reply_text.await_args.kwargs.get("reply_markup")
+    assert reply_markup.inline_keyboard[0][0].callback_data == "circ:detail:monaco"
 
 
 async def test_circuit_handler_repo_exception_shows_no_data():
@@ -215,8 +204,9 @@ async def test_extras_callback_driver_detail():
     assert "HAM" in text
     reply_markup = update.callback_query.edit_message_text.await_args.kwargs.get("reply_markup")
     assert reply_markup is not None
-    button = reply_markup.inline_keyboard[0][0]
-    assert button.callback_data == "drv:list"
+    data = [b.callback_data for row in reply_markup.inline_keyboard for b in row]
+    assert "cmp:a:hamilton" in data
+    assert "drv:list" in data
 
 
 async def test_extras_callback_driver_list():
@@ -310,26 +300,6 @@ async def test_circuit_handler_no_args_empty_db():
     assert "circuit list" in text.lower()
 
 
-async def test_driver_handler_deduplication():
-    repo = MagicMock()
-    # Force query search fallback by providing empty standings
-    repo.get_driver_standings = AsyncMock(return_value=[])
-
-    # Create two duplicate drivers inside the mapping
-    d1 = _driver()
-    d2 = _driver()
-    repo.get_drivers_by_id_map = AsyncMock(return_value={"1": d1, "2": d2})
-
-    ctx = _context(repo)
-    ctx.args = ["hamilton"]
-    update = _update()
-
-    await driver_handler(update, ctx)
-
-    text = update.effective_message.reply_text.await_args.args[0]
-    assert "Lewis Hamilton" in text
-
-
 async def test_extras_callback_single_answer_not_found():
     repo = MagicMock()
     repo.get_driver_standings = AsyncMock(return_value=[])
@@ -351,18 +321,3 @@ async def test_extras_callback_single_answer_exception():
     await _extras_callback(update, ctx)
 
     update.callback_query.answer.assert_called_once_with(text="An error occurred", show_alert=True)
-
-
-async def test_circuit_handler_single_query():
-    repo = MagicMock()
-    repo.get_schedule = AsyncMock(return_value=[_race()])
-    repo.get_circuits_for_season = AsyncMock()
-
-    ctx = _context(repo)
-    ctx.args = ["monaco"]
-    update = _update()
-
-    await circuit_handler(update, ctx)
-
-    repo.get_schedule.assert_called_once_with(2026)
-    repo.get_circuits_for_season.assert_not_called()

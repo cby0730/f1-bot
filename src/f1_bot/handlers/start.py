@@ -43,13 +43,5 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
     )
 
 
-async def help_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    ctx = await resolve_context(update, context.bot_data["repo"])
-    await update.effective_message.reply_text(
-        t("start.help", ctx.lang), parse_mode=ParseMode.MARKDOWN
-    )
-
-
 def register(app: Application) -> None:
     app.add_handler(CommandHandler("start", start_handler))
-    app.add_handler(CommandHandler("help", help_handler))

@@ -34,7 +34,12 @@ async def test_timezone_handler_no_args_shows_region_picker():
     assert "timezone" in text.lower() or "🌍" in text
 
 
-async def test_timezone_handler_valid_timezone_saves_and_confirms():
+async def test_timezone_handler_extra_args_ignored_shows_picker_no_write():
+    """Valid leftover IANA tokens still show the region picker and do not save.
+
+    WHY: `/timezone Asia/Taipei` used to persist immediately. Extra args must not
+    skip the city list.
+    """
     repo = MagicMock()
     repo.set_user_timezone = AsyncMock()
     update, _ = _update()
@@ -43,24 +48,31 @@ async def test_timezone_handler_valid_timezone_saves_and_confirms():
 
     await timezone_handler(update, ctx)
 
-    # Single-column upsert: (telegram_id, tz) — never a whole UserPreference (which
-    # would carry the language default and clobber the user's saved language).
-    repo.set_user_timezone.assert_called_once_with(123, "Asia/Taipei")
-    text = update.effective_message.reply_text.await_args.args[0]
-    assert "Asia/Taipei" in text
+    repo.set_user_timezone.assert_not_called()
+    text = update.effective_message.reply_text.call_args.args[0]
+    assert "timezone" in text.lower() or "🌍" in text
+    markup = update.effective_message.reply_text.call_args.kwargs.get("reply_markup")
+    assert markup is not None
 
 
-async def test_timezone_handler_invalid_timezone_shows_error():
+async def test_timezone_handler_invalid_extra_args_still_shows_picker():
+    """Garbage leftover tokens are ignored the same way as valid ones.
+
+    WHY: `/timezone Mars/Olympus` used to error. It must now be the picker, not
+    a typed-IANA rejection.
+    """
     repo = MagicMock()
+    repo.set_user_timezone = AsyncMock()
     update, _ = _update()
     ctx = _context(repo)
     ctx.args = ["Mars/Olympus"]
 
     await timezone_handler(update, ctx)
 
-    text = update.effective_message.reply_text.await_args.args[0]
-    assert "❌" in text or "Unknown" in text
     repo.set_user_timezone.assert_not_called()
+    text = update.effective_message.reply_text.call_args.args[0]
+    assert "timezone" in text.lower() or "🌍" in text
+    assert "Unknown" not in text
 
 
 async def test_timezone_callback_region_shows_city_picker():
@@ -119,6 +131,33 @@ async def test_timezone_callback_set_saves_timezone():
     repo.set_user_timezone.assert_called_once_with(456, "Europe/London")
     text = query.edit_message_text.call_args.args[0]
     assert "Europe/London" in text
+
+
+async def test_timezone_callback_set_escapes_underscore_in_iana_id():
+    """IANA ids with `_` must be Markdown-escaped in the confirmation, not in storage.
+
+    WHY: `America/New_York` (and Los_Angeles, Sao_Paulo, Mexico_City) are official
+    picker buttons. Unescaped `{tz}` inside `*{tz}*` is an unterminated italic
+    under legacy ParseMode.MARKDOWN, so Telegram rejects the confirmation after
+    the preference has already been written.
+    """
+    repo = MagicMock()
+    repo.set_user_timezone = AsyncMock()
+    query = MagicMock()
+    query.answer = AsyncMock()
+    query.edit_message_text = AsyncMock()
+    query.data = "tz:set:America/New_York"
+    update = MagicMock()
+    update.callback_query = query
+    update.effective_user.id = 456
+    ctx = _context(repo)
+
+    await timezone_callback(update, ctx)
+
+    repo.set_user_timezone.assert_called_once_with(456, "America/New_York")
+    text = query.edit_message_text.call_args.args[0]
+    assert r"America/New\_York" in text
+    assert r"*America/New\_York*" in text
 
 
 async def test_timezone_callback_rejects_invalid_timezone():

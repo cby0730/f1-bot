@@ -12,12 +12,12 @@ from f1_bot.formatting.messages import format_driver_comparison
 from f1_bot.handlers.compare import (
     _aggregate,
     _compare_callback,
-    _finished,
     _menu_keyboard,
     _real_drivers,
     compare_handler,
 )
 from f1_bot.models.driver import Driver, DriverStanding
+from f1_bot.models.results import is_classified_finish
 
 # --- Builders ---------------------------------------------------------------
 
@@ -80,15 +80,19 @@ A, B = "max_verstappen", "norris"
 def test_dnf_whitelist_accident_is_dnf_lap_is_finished():
     """Whitelist rule: an unseen failure string must never read as a finish.
 
-    'Accident' → DNF; '+1 Lap' (lapped but classified) → finished. Guards against
-    regressing the whitelist into a blacklist that would misclassify novel strings.
+    'Accident' → DNF; '+1 Lap' and 2026's 'Lapped' (classified, a lap down) →
+    finished. Guards against regressing the whitelist into a blacklist that
+    would misclassify novel strings, and against treating Jolpica's 2026
+    'Lapped' token as a retirement.
     """
-    assert _finished("Finished") is True
-    assert _finished("+1 Lap") is True
-    assert _finished("+2 Laps") is True
-    assert _finished("Accident") is False
-    assert _finished("Engine") is False
-    assert _finished("Retired") is False
+    assert is_classified_finish("Finished") is True
+    assert is_classified_finish("Lapped") is True  # 2026 Jolpica; not '+1 Lap'
+    assert is_classified_finish("+1 Lap") is True
+    assert is_classified_finish("+2 Laps") is True
+    assert is_classified_finish("Accident") is False
+    assert is_classified_finish("Engine") is False
+    assert is_classified_finish("Retired") is False
+    assert is_classified_finish("Did not start") is False
 
 
 async def test_dnf_counted_in_aggregate():
@@ -96,6 +100,17 @@ async def test_dnf_counted_in_aggregate():
     repo = _repo(last_round=1, race={1: [_result(A, 1), _result(B, 18, "Accident")]})
     stats = await _aggregate(repo, 2026, A, B)
     assert stats["dnfs"] == (0, 1)
+
+
+async def test_lapped_is_not_counted_as_dnf_in_aggregate():
+    """A classified lapped finish must not increment the DNFs row.
+
+    WHY: same 2026 Jolpica 'Lapped' token that falsely DNF-tagged Hungarian GP laps.
+    """
+    repo = _repo(last_round=1, race={1: [_result(A, 1), _result(B, 8, "Lapped")]})
+    stats = await _aggregate(repo, 2026, A, B)
+    assert stats["dnfs"] == (0, 0)
+    assert stats["race"] == (1, 0)
 
 
 # --- Sprint inclusion -------------------------------------------------------
@@ -394,6 +409,11 @@ async def test_happy_path_step1_to_result():
     text = q2.edit_message_text.await_args.kwargs["text"]
     assert "Verstappen" in text and "Norris" in text
     assert "Race+Spr" in text  # populated table, not the empty message
+    result_kb = q2.edit_message_text.await_args.kwargs["reply_markup"]
+    result_data = [b.callback_data for row in result_kb.inline_keyboard for b in row]
+    assert f"cmp:a:{A}" in result_data
+    assert f"drv:detail:{A}" in result_data
+    assert "cmp:list" not in result_data
 
 
 async def test_compare_handler_no_repo_shows_no_data():
@@ -406,3 +426,24 @@ async def test_compare_handler_no_repo_shows_no_data():
     await compare_handler(update, ctx)
 
     update.effective_message.reply_text.assert_awaited_once()
+
+
+async def test_cmp_list_still_opens_pick_a():
+    """Legacy cmp:list (old Compare again buttons) still opens the pick-A grid."""
+    drivers_map = {1: _driver(A, "Verstappen", "1"), 4: _driver(B, "Norris", "4")}
+    repo = _repo(last_round=0, drivers_map=drivers_map)
+    query = AsyncMock()
+    query.data = "cmp:list"
+    update = MagicMock()
+    update.callback_query = query
+    ctx = MagicMock()
+    ctx.bot_data = {"repo": repo}
+
+    await _compare_callback(update, ctx)
+
+    text = query.edit_message_text.await_args.kwargs["text"]
+    assert "Select driver" in text
+    kb = query.edit_message_text.await_args.kwargs["reply_markup"]
+    data = [b.callback_data for row in kb.inline_keyboard for b in row]
+    assert f"cmp:a:{A}" in data
+    assert f"cmp:a:{B}" in data

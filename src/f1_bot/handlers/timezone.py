@@ -38,19 +38,6 @@ async def timezone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     repo = context.bot_data["repo"]
     ctx = await resolve_context(update, repo)
 
-    # Direct input: /timezone Asia/Taipei
-    if context.args:
-        tz_name = context.args[0]
-        if not is_valid_timezone(tz_name):
-            await update.effective_message.reply_text(
-                t("settings.tz_unknown", ctx.lang, tz=_esc(tz_name)),
-                parse_mode=ParseMode.MARKDOWN,
-            )
-            return
-        await _save_tz(repo, update.effective_user.id, tz_name, update, ctx.lang)
-        return
-
-    # Show region picker
     await update.effective_message.reply_text(
         t("settings.tz_picker", ctx.lang, tz=ctx.tz),
         parse_mode=ParseMode.MARKDOWN,
@@ -91,22 +78,15 @@ async def timezone_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 parse_mode=ParseMode.MARKDOWN,
             )
             return
-        await _save_tz(
-            repo, update.effective_user.id, tz_name, update, ctx.lang, via_callback=query
-        )
+        await _save_tz(repo, update.effective_user.id, tz_name, query, ctx.lang)
 
 
-async def _save_tz(
-    repo, telegram_id: int, tz_name: str, update, lang: str, via_callback=None
-) -> None:
+async def _save_tz(repo, telegram_id: int, tz_name: str, query, lang: str) -> None:
     # Single-column upsert: writing a whole UserPreference here would carry the
     # `language` field's default along and silently reset the user's language.
     await repo.set_user_timezone(telegram_id, tz_name)
-    text = t("settings.tz_saved", lang, tz=tz_name)
-    if via_callback:
-        await via_callback.edit_message_text(text, parse_mode=ParseMode.MARKDOWN)
-    else:
-        await update.effective_message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+    text = t("settings.tz_saved", lang, tz=_esc(tz_name))
+    await query.edit_message_text(text, parse_mode=ParseMode.MARKDOWN)
 
 
 def register(app: Application) -> None:

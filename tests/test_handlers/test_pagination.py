@@ -145,11 +145,11 @@ class TestResultsOverviewKeyboard:
         for row in kb.inline_keyboard:
             for btn in row:
                 assert not btn.text.startswith("·")
-        assert len(kb.inline_keyboard) == 2
+        assert len(kb.inline_keyboard) == 3
 
     def test_with_pager_row(self):
         kb = results_overview_keyboard(3, completed_rounds=[1, 2, 3, 4])
-        assert len(kb.inline_keyboard) == 3
+        assert len(kb.inline_keyboard) == 4
         pager_row = kb.inline_keyboard[0]
         assert len(pager_row) == 3  # Prev button, middle label, and Next button
         assert pager_row[0].text == "◀"
@@ -174,6 +174,16 @@ class TestResultsOverviewKeyboard:
         kb = results_overview_keyboard(5, completed_rounds=[5], active_key="qualifying")
         btn = kb.inline_keyboard[0][-1]  # Q button (last in practice row)
         assert btn.callback_data == "res:filtered:qualifying:5"
+
+    def test_pit_laps_row_on_state_a(self):
+        kb = results_overview_keyboard(5, completed_rounds=[5])
+        last = kb.inline_keyboard[-1]
+        assert [b.callback_data for b in last] == ["pit:5", "lap:5:s"]
+
+    def test_state_b_does_not_grow_pit_laps_row(self):
+        kb = results_filtered_keyboard(3, [1, 2, 3], "race")
+        data = [b.callback_data for row in kb.inline_keyboard for b in row]
+        assert all(not d.startswith("pit:") and not d.startswith("lap:") for d in data)
 
 
 # ---------------------------------------------------------------------------

@@ -1,4 +1,4 @@
-"""Handlers for /driver and /circuit — fuzzy search or interactive menu over current season data."""
+"""Handlers for /driver and /circuit — interactive menus over current season data."""
 
 import datetime
 
@@ -11,16 +11,27 @@ from f1_bot.formatting.context import RenderContext
 from f1_bot.formatting.emoji import circuit_flag_icon, flag_icon
 from f1_bot.formatting.i18n import t
 from f1_bot.formatting.messages import (
-    _esc,
     format_circuit_info,
     format_driver_profile,
     no_data_message,
 )
 from f1_bot.handlers.context import resolve_context
 from f1_bot.handlers.pagination import two_column_keyboard
-from f1_bot.utils.fuzzy_match import match_circuit, match_driver
 
 log = structlog.get_logger(__name__)
+
+
+def _profile_keyboard(driver_id: str, lang: str) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    t("extras.compare_with", lang), callback_data=f"cmp:a:{driver_id}"
+                )
+            ],
+            [InlineKeyboardButton(t("common.back", lang), callback_data="drv:list")],
+        ]
+    )
 
 
 def _driver_menu_keyboard(drivers: list) -> InlineKeyboardMarkup:
@@ -50,74 +61,23 @@ async def driver_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     ctx = await resolve_context(update, repo) if repo else RenderContext()
     season = datetime.date.today().year
 
-    if not context.args:
-        if not repo:
-            await update.effective_message.reply_text(
-                no_data_message("common.noun_driver_list", ctx)
-            )
-            return
-        try:
-            standings = await repo.get_driver_standings(season)
-        except Exception:
-            standings = []
-
-        if not standings:
-            await update.effective_message.reply_text(
-                no_data_message("common.noun_driver_list", ctx)
-            )
-            return
-
-        drivers = [s.driver for s in sorted(standings, key=lambda s: s.position)]
-        keyboard = _driver_menu_keyboard(drivers)
-        await update.effective_message.reply_text(
-            t("extras.select_driver", ctx.lang),
-            reply_markup=keyboard,
-            parse_mode=ParseMode.MARKDOWN,
-        )
-        return
-
-    query = " ".join(context.args)
     if not repo:
         await update.effective_message.reply_text(no_data_message("common.noun_driver_list", ctx))
         return
-
     try:
         standings = await repo.get_driver_standings(season)
-        drivers = [s.driver for s in standings]
     except Exception:
         standings = []
-        drivers = []
 
-    if not drivers:
-        try:
-            drivers_map = await repo.get_drivers_by_id_map(season)
-            seen_ids = set()
-            drivers = []
-            for d in drivers_map.values():
-                if d.driver_id not in seen_ids:
-                    seen_ids.add(d.driver_id)
-                    drivers.append(d)
-        except Exception:  # noqa: S110
-            pass
-
-    if not drivers:
+    if not standings:
         await update.effective_message.reply_text(no_data_message("common.noun_driver_list", ctx))
         return
 
-    driver = match_driver(query, drivers)
-    if not driver:
-        await update.effective_message.reply_text(
-            t("extras.no_driver_match", ctx.lang, query=_esc(query)),
-            parse_mode=ParseMode.MARKDOWN,
-        )
-        return
-
-    standing = None
-    if standings:
-        standing = next((s for s in standings if s.driver.driver_id == driver.driver_id), None)
-
+    drivers = [s.driver for s in sorted(standings, key=lambda s: s.position)]
+    keyboard = _driver_menu_keyboard(drivers)
     await update.effective_message.reply_text(
-        format_driver_profile(driver, standing, ctx),
+        t("extras.select_driver", ctx.lang),
+        reply_markup=keyboard,
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -127,64 +87,22 @@ async def circuit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     ctx = await resolve_context(update, repo) if repo else RenderContext()
     season = datetime.date.today().year
 
-    if not context.args:
-        if not repo:
-            await update.effective_message.reply_text(
-                no_data_message("common.noun_circuit_list", ctx)
-            )
-            return
-        try:
-            round_circuits = await repo.get_circuits_for_season(season)
-        except Exception:
-            round_circuits = []
-
-        if not round_circuits:
-            await update.effective_message.reply_text(
-                no_data_message("common.noun_circuit_list", ctx)
-            )
-            return
-
-        keyboard = _circuit_menu_keyboard(round_circuits)
-        await update.effective_message.reply_text(
-            t("extras.select_circuit", ctx.lang),
-            reply_markup=keyboard,
-            parse_mode=ParseMode.MARKDOWN,
-        )
-        return
-
-    query = " ".join(context.args)
     if not repo:
         await update.effective_message.reply_text(no_data_message("common.noun_circuit_list", ctx))
         return
-
     try:
-        schedule = await repo.get_schedule(season)
+        round_circuits = await repo.get_circuits_for_season(season)
     except Exception:
-        schedule = []
+        round_circuits = []
 
-    if not schedule:
+    if not round_circuits:
         await update.effective_message.reply_text(no_data_message("common.noun_circuit_list", ctx))
         return
 
-    seen = set()
-    circuits = []
-    for r in schedule:
-        if r.circuit.circuit_id not in seen:
-            seen.add(r.circuit.circuit_id)
-            circuits.append(r.circuit)
-
-    circuit = match_circuit(query, circuits)
-    if not circuit:
-        await update.effective_message.reply_text(
-            t("extras.no_circuit_match", ctx.lang, query=_esc(query)),
-            parse_mode=ParseMode.MARKDOWN,
-        )
-        return
-
-    recent_races = [r for r in schedule if r.circuit.circuit_id == circuit.circuit_id]
-
+    keyboard = _circuit_menu_keyboard(round_circuits)
     await update.effective_message.reply_text(
-        format_circuit_info(circuit, recent_races, ctx),
+        t("extras.select_circuit", ctx.lang),
+        reply_markup=keyboard,
         parse_mode=ParseMode.MARKDOWN,
     )
 
@@ -251,9 +169,7 @@ async def _extras_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -
                     return
 
                 text = format_driver_profile(driver, standing, ctx)
-                keyboard = InlineKeyboardMarkup(
-                    [[InlineKeyboardButton(t("common.back", ctx.lang), callback_data="drv:list")]]
-                )
+                keyboard = _profile_keyboard(driver.driver_id, ctx.lang)
                 await query.answer()
                 await query.edit_message_text(
                     text=text,
