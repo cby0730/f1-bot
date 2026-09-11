@@ -60,14 +60,13 @@ The 9-command visible menu → handler map and the full `callback_data` pattern 
 | `src/f1_bot/scheduler/manager.py` | Registers single `hourly_sync` job via `run_repeating`; owns `_POLL_INTERVAL` |
 | `src/f1_bot/handlers/pagination.py` | Shared keyboard builders: `next_overview_keyboard`, `next_filtered_keyboard`, `results_overview_keyboard`, `results_filtered_keyboard`, `round_keyboard`, `schedule_keyboard`; also `round_picker_keyboard`/`round_picker_text` and the round-set helpers (`upcoming_rounds`, `get_completed_rounds_for_session`) the picker reuses |
 | `src/f1_bot/handlers/round_picker.py` | Round picker overlay handler (`rpk:` callbacks); `_compute_navigable_rounds(origin, ...)` maps the `origin` token back to the caller's navigable rounds |
-| `src/f1_bot/handlers/compare.py` | `/compare` command + `cmp:*` callback; aggregates current-season race+sprint results into a two-driver head-to-head. Reads PostgreSQL only |
-| `src/f1_bot/handlers/title.py` | Hidden `/title` alias of `/standings`; stale `title:*` keyboards still render the standings view (clinch strip). Reads PostgreSQL only |
+| `src/f1_bot/handlers/compare.py` | `cmp:a` / `cmp:b` from a driver profile; aggregates current-season race+sprint results into a two-driver head-to-head. Reads PostgreSQL only |
 | `src/f1_bot/utils/championship.py` | Pure clinch math (DB-free): `remaining_events`, `max_remaining_points`, `clinch_status`, `ClinchStatus`; point constants `WDC_RACE_MAX`/`WDC_SPRINT_MAX` (25/8), `WCC_RACE_MAX`/`WCC_SPRINT_MAX` (43/15) |
 | `src/f1_bot/formatting/i18n/core.py` | `t(key, lang, /, **kwargs)` (the `/` is load-bearing — see gotcha), `lang_name()`, `check_catalog_complete()`, `SHIPPED_LANGS` (`en`, `zh-Hant`), `DEFAULT_LANG` |
 | `src/f1_bot/formatting/i18n/catalog/` | The message catalog, split by domain (`common`, `schedule`, `results`, `standings`, `race_data`, `extras`, `notifications`, `settings`, `start`, `commands`, `datetime`). Nested dict, language on the inner level; `__init__.py` merges them and raises on a duplicate key |
 | `src/f1_bot/formatting/context.py` | `RenderContext(lang, tz)` frozen dataclass — the render-time seam threaded into every formatter |
 | `src/f1_bot/handlers/context.py` | `resolve_context(update, repo, default_lang)` — the single source of truth for "which language + tz for this request" |
-| `src/f1_bot/handlers/language.py` | `/language` command + `lang:*` callbacks; `language_keyboard()` is reused by `start.py`'s welcome button |
+| `src/f1_bot/handlers/language.py` | `lang:set:` callbacks + `language_keyboard()` reused by `/settings` `set:lang` |
 | `src/f1_bot/handlers/settings.py` | `/settings` hub; `set:tz` / `set:lang` edit onto the existing timezone and language pickers |
 | `src/f1_bot/formatting/messages.py` | All message formatters (`format_schedule`, `format_driver_standings`, `format_constructor_standings`, `format_session_results`, `_clinch_strip`, etc.). Every one takes `ctx: RenderContext` as its last arg |
 | `src/f1_bot/formatting/emoji.py` | `pos_icon`, `flag_icon`, `session_icon`, `flag_color`, `country_code_to_flag` — mapping and flag logic |
@@ -145,7 +144,7 @@ runs under pytest-cov.
 
 **Notification DELETE strategy:** `mark_notifications_sent()` DELETEs rows instead of setting `notified=TRUE`. This prevents row accumulation and avoids unique constraint conflicts on re-subscription. `save_notification()` uses `ON CONFLICT DO UPDATE SET notified=FALSE, fire_at=EXCLUDED.fire_at` to handle re-subscriptions cleanly.
 
-**`/standings` remaining-events alignment (two-clocks fix):** `/standings` (and the `/title` alias) must derive remaining races/sprints from the **standings snapshot's own `round_after`** (via `repo.get_standings_round(season, table)`), NOT from live `now()` (`get_schedule_bounds()["upcoming_rounds"]`). Points are an hourly snapshot; `upcoming_rounds` flips the moment a race start-time passes — mixing the two lets a near-clinch leader flash a false 🔒 CLINCHED mid-weekend. Each view uses its **own** table's `round_after` (WDC→`standings_drivers`, WCC→`standings_constructors`) because a partial sync can leave the two tables at different rounds. `remaining_events()` **enumerates** `round > N` over `get_schedule()` — never `total - N` (would mis-count on schedule gaps). Wire this in **both** `standings_handler` and `standings_callback`.
+**`/standings` remaining-events alignment (two-clocks fix):** `/standings` must derive remaining races/sprints from the **standings snapshot's own `round_after`** (via `repo.get_standings_round(season, table)`), NOT from live `now()` (`get_schedule_bounds()["upcoming_rounds"]`). Points are an hourly snapshot; `upcoming_rounds` flips the moment a race start-time passes — mixing the two lets a near-clinch leader flash a false 🔒 CLINCHED mid-weekend. Each view uses its **own** table's `round_after` (WDC→`standings_drivers`, WCC→`standings_constructors`) because a partial sync can leave the two tables at different rounds. `remaining_events()` **enumerates** `round > N` over `get_schedule()` — never `total - N` (would mis-count on schedule gaps). Wire this in **both** `standings_handler` and `standings_callback`.
 
 **No user-facing literals in feature code:** every string goes through
 `t(key, ctx.lang, **kwargs)`. Three guard tests enforce this and will fail CI
@@ -180,9 +179,9 @@ don't rely on the guards to prove the migration is complete.
 `key`/`lang` **positional-only** so a catalog template is free to use `{key}` or
 `{lang}` as a placeholder name. Without it, `t("settings.lang_saved", code, lang=...)`
 binds `lang` both positionally and by keyword → `TypeError`, which silently killed
-the *entire* `/language` command (the remaining `{lang}` sites: `settings.lang_picker`
-and `lang_saved`). Same class as the Pydantic field-shadowing gotcha
-above. `test_handler_no_args_shows_picker` and
+language switching (the remaining `{lang}` sites: `settings.lang_picker` via
+`/settings` → `set:lang`, and `lang_saved`). Same class as the Pydantic
+field-shadowing gotcha above. `test_set_lang_renders_lang_picker` and
 `test_callback_set_persists_and_confirms_in_new_language` in
 `tests/test_handlers/test_language.py` are the regression guard — they fail
 loudly if the `/` is removed.

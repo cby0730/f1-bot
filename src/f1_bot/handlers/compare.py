@@ -1,13 +1,7 @@
-"""Handler for /compare — current-season driver head-to-head.
+"""Compare two current-season drivers head-to-head.
 
-Three-step stateless flow (state carried in callback_data, no server-side session):
-
-    /compare  →  Step 1 pick driver A (cmp:a:{id})
-              →  Step 2 pick driver B (cmp:b:{a_id}:{b_id})
-              →  Step 3 result table  (swap opponent → cmp:a:{a}; back → drv:detail:{a})
-
-``cmp:list`` remains as a legacy route to pick-A so old "Compare again" buttons still
-work. New result messages do not emit it.
+Opened from a driver profile (``cmp:a:{id}`` → ``cmp:b:{a}:{b}``). State lives
+in callback_data; there is no slash entry and no pick-A restart.
 
 Reads exclusively from PostgreSQL via ``Repository`` (SQL-only handler pattern).
 All six stats combine the main race and the sprint of each completed round.
@@ -20,12 +14,12 @@ import structlog
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.error import BadRequest
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
+from telegram.ext import Application, CallbackQueryHandler, ContextTypes
 
 from f1_bot.formatting.context import RenderContext
 from f1_bot.formatting.emoji import flag_icon
 from f1_bot.formatting.i18n import t
-from f1_bot.formatting.messages import format_driver_comparison, no_data_message
+from f1_bot.formatting.messages import format_driver_comparison
 from f1_bot.handlers.context import resolve_context
 from f1_bot.handlers.pagination import two_column_keyboard
 from f1_bot.models.results import is_classified_finish
@@ -176,32 +170,6 @@ def _result_keyboard(a_id: str, lang: str) -> InlineKeyboardMarkup:
     )
 
 
-async def compare_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """/compare entry point — render the Step 1 driver grid."""
-    repo = context.bot_data.get("repo")
-    ctx = await resolve_context(update, repo) if repo else RenderContext()
-    season = datetime.date.today().year
-
-    if not repo:
-        await update.effective_message.reply_text(no_data_message("common.noun_driver_list", ctx))
-        return
-
-    try:
-        drivers = await _real_drivers(repo, season)
-    except Exception:
-        drivers = []
-
-    if not drivers:
-        await update.effective_message.reply_text(no_data_message("common.noun_driver_list", ctx))
-        return
-
-    await update.effective_message.reply_text(
-        t("compare.pick_a", ctx.lang),
-        reply_markup=_menu_keyboard(drivers, exclude_id=None, a_id=None),
-        parse_mode=ParseMode.MARKDOWN,
-    )
-
-
 async def _compare_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     if not query or not query.data:
@@ -230,19 +198,7 @@ async def _compare_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     try:
         drivers = await _real_drivers(repo, season)  # every branch needs the current lineup
 
-        if action == "list":
-            if not drivers:
-                await query.answer()
-                await query.edit_message_text(text=no_data_message("common.noun_driver_list", ctx))
-                return
-            await query.answer()
-            await _safe_edit(
-                query,
-                t("compare.pick_a", ctx.lang),
-                _menu_keyboard(drivers, exclude_id=None, a_id=None),
-            )
-
-        elif action == "a":
+        if action == "a":
             await query.answer()
             await _safe_edit(
                 query,
@@ -283,5 +239,4 @@ async def _safe_edit(query, text: str, keyboard: InlineKeyboardMarkup) -> None:
 
 
 def register(app: Application) -> None:
-    app.add_handler(CommandHandler("compare", compare_handler))
     app.add_handler(CallbackQueryHandler(_compare_callback, pattern=r"^cmp:"))

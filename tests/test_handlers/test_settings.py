@@ -36,8 +36,8 @@ async def test_settings_handler_shows_two_buttons():
 async def test_set_lang_edits_in_place():
     """set:lang edits the hub message — it must not reply a new one.
 
-    WHY: lang:picker replies a new message so /start is not swallowed. Reusing
-    that path from /settings would leave the hub sitting above the picker.
+    WHY: the hub must edit in place. A new-message path would leave the hub
+    sitting above the picker.
     """
     repo = MagicMock()
     query = MagicMock()

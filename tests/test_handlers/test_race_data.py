@@ -1,16 +1,11 @@
-"""Tests for /pitstops and /laps handlers (SQL-only reads)."""
+"""Tests for pit-stop and lap callbacks (SQL-only reads, opened from /results)."""
 
 from datetime import date, time, timedelta
 from unittest.mock import AsyncMock, MagicMock
 
 from telegram import InlineKeyboardMarkup
 
-from f1_bot.handlers.race_data import (
-    _laps_callback,
-    _pitstops_callback,
-    laps_handler,
-    pitstops_handler,
-)
+from f1_bot.handlers.race_data import _laps_callback, _pitstops_callback
 from f1_bot.models.race import Circuit, Race
 
 
@@ -59,47 +54,49 @@ def _context(repo):
     return ctx
 
 
-def _update():
+def _cb(data: str):
     update = MagicMock()
-    update.effective_message.reply_text = AsyncMock()
+    update.callback_query.data = data
+    update.callback_query.answer = AsyncMock()
+    update.callback_query.edit_message_text = AsyncMock()
     return update
 
 
-# --- /pitstops ---
+# --- pit: ---
 
 
-async def test_pitstops_handler_no_data_no_schedule():
-    """When schedule is empty, handler shows no-data message."""
+async def test_pitstops_callback_no_schedule():
+    """Empty schedule answers schedule-unavailable; no edit."""
     repo = MagicMock()
     repo.get_schedule = AsyncMock(return_value=[])
     repo.get_schedule_bounds = AsyncMock(return_value=_bounds([]))
-    update = _update()
+    update = _cb("pit:5")
 
-    await pitstops_handler(update, _context(repo))
+    await _pitstops_callback(update, _context(repo))
 
-    text = update.effective_message.reply_text.await_args.args[0]
-    assert "\u26a0" in text or "No" in text.lower()
+    update.callback_query.answer.assert_awaited_once()
+    assert "unavailable" in update.callback_query.answer.await_args.kwargs["text"].lower()
+    update.callback_query.edit_message_text.assert_not_called()
 
 
-async def test_pitstops_handler_with_data_shows_stops():
-    """When Postgres has pit stop data, it is displayed."""
+async def test_pitstops_callback_with_data_shows_stops():
+    """When Postgres has pit stop data, it is displayed on the pit: path."""
     races = [_race(5)]
     repo = MagicMock()
     repo.get_schedule = AsyncMock(return_value=races)
     repo.get_schedule_bounds = AsyncMock(return_value=_bounds(races))
-    # SQL-only: repo returns pre-stored data
     repo.get_pit_stops = AsyncMock(
         return_value=[
             {"driver_id": "HAM", "lap": 20, "stop_number": 1, "duration": 24.5},
             {"driver_id": "VER", "lap": 25, "stop_number": 1, "duration": 22.1},
         ]
     )
-    update = _update()
+    update = _cb("pit:5")
 
-    await pitstops_handler(update, _context(repo))
+    await _pitstops_callback(update, _context(repo))
 
-    call_kwargs = update.effective_message.reply_text.await_args.kwargs
-    text = update.effective_message.reply_text.await_args.args[0]
+    call_kwargs = update.callback_query.edit_message_text.await_args.kwargs
+    text = update.callback_query.edit_message_text.await_args.args[0]
     assert "HAM" in text
     assert "Lap 20" in text
     assert isinstance(call_kwargs.get("reply_markup"), InlineKeyboardMarkup)
@@ -107,22 +104,22 @@ async def test_pitstops_handler_with_data_shows_stops():
     assert "res:back:_:5" in data
 
 
-async def test_pitstops_handler_no_stops_shows_no_data():
-    """When Postgres has no pit stops for the round, shows no-data."""
+async def test_pitstops_callback_no_stops_shows_no_data():
+    """None from get_pit_stops is treated as empty (same as [])."""
     races = [_race(5)]
     repo = MagicMock()
     repo.get_schedule = AsyncMock(return_value=races)
     repo.get_schedule_bounds = AsyncMock(return_value=_bounds(races))
     repo.get_pit_stops = AsyncMock(return_value=None)
-    update = _update()
+    update = _cb("pit:5")
 
-    await pitstops_handler(update, _context(repo))
+    await _pitstops_callback(update, _context(repo))
 
-    text = update.effective_message.reply_text.await_args.args[0]
+    text = update.callback_query.edit_message_text.await_args.args[0]
     assert "\u26a0" in text or "No" in text.lower()
 
 
-async def test_pitstops_handler_uses_cache():
+async def test_pitstops_callback_uses_cache():
     """When repo returns data, no API calls are needed."""
     races = [_race(5)]
     repo = MagicMock()
@@ -131,31 +128,94 @@ async def test_pitstops_handler_uses_cache():
     repo.get_pit_stops = AsyncMock(
         return_value=[{"driver_id": "NOR", "lap": 12, "stop_number": 1, "duration": 21.0}]
     )
-    update = _update()
+    update = _cb("pit:5")
 
-    await pitstops_handler(update, _context(repo))
+    await _pitstops_callback(update, _context(repo))
 
-    text = update.effective_message.reply_text.await_args.args[0]
+    text = update.callback_query.edit_message_text.await_args.args[0]
     assert "NOR" in text
 
 
-# --- /laps ---
+async def test_pitstops_callback_empty_from_results_keeps_back():
+    """No pit data on a results tap still shows Back so the user is not trapped."""
+    races = [_race(5)]
+    repo = MagicMock()
+    repo.get_schedule = AsyncMock(return_value=races)
+    repo.get_schedule_bounds = AsyncMock(return_value=_bounds(races))
+    repo.get_pit_stops = AsyncMock(return_value=[])
+
+    update = _cb("pit:5")
+    await _pitstops_callback(update, _context(repo))
+
+    text = update.callback_query.edit_message_text.await_args.args[0]
+    assert "⚠" in text or "no" in text.lower()
+    kb = update.callback_query.edit_message_text.await_args.kwargs["reply_markup"]
+    cbs = [b.callback_data for row in kb.inline_keyboard for b in row]
+    assert "res:back:_:5" in cbs
 
 
-async def test_laps_handler_no_data_no_schedule():
+async def test_pitstops_callback_round_not_found():
+    """pit:{n} for a round missing from the schedule answers round-not-found."""
+    races = [_race(5)]
+    repo = MagicMock()
+    repo.get_schedule = AsyncMock(return_value=races)
+    bounds = _bounds(races)
+    bounds["last_completed_round"] = 3
+    repo.get_schedule_bounds = AsyncMock(return_value=bounds)
+    update = _cb("pit:3")
+
+    await _pitstops_callback(update, _context(repo))
+
+    update.callback_query.answer.assert_awaited_once()
+    assert "not found" in update.callback_query.answer.await_args.kwargs["text"].lower()
+    update.callback_query.edit_message_text.assert_not_called()
+
+
+async def test_pitstops_callback_invalid_round_value_error():
+    update = _cb("pit:not_an_int")
+    ctx = _context(MagicMock())
+    await _pitstops_callback(update, ctx)
+
+    assert update.callback_query.answer.call_count == 1
+    update.callback_query.answer.assert_called_with(text="Invalid selection", show_alert=True)
+    update.callback_query.edit_message_text.assert_not_called()
+
+
+async def test_pitstops_callback_with_none_last_completed_round():
+    """bounds with None last_completed_round should not crash."""
+    races = [_race(5)]
+    repo = MagicMock()
+    repo.get_schedule = AsyncMock(return_value=races)
+    bounds = _bounds(races)
+    bounds["last_completed_round"] = None
+    repo.get_schedule_bounds = AsyncMock(return_value=bounds)
+    repo.get_pit_stops = AsyncMock(
+        return_value=[{"driver_id": "HAM", "lap": 20, "stop_number": 1, "duration": 24.5}]
+    )
+
+    update = _cb("pit:5")
+    await _pitstops_callback(update, _context(repo))
+    update.callback_query.answer.assert_called()
+
+
+# --- lap: ---
+
+
+async def test_laps_callback_no_schedule():
     repo = MagicMock()
     repo.get_schedule = AsyncMock(return_value=[])
     repo.get_schedule_bounds = AsyncMock(return_value=_bounds([]))
-    update = _update()
+    update = _cb("lap:5:s")
 
-    await laps_handler(update, _context(repo))
+    await _laps_callback(update, _context(repo))
 
-    text = update.effective_message.reply_text.await_args.args[0]
-    assert "\u26a0" in text or "No" in text.lower()
+    update.callback_query.answer.assert_awaited_once()
+    assert "unavailable" in update.callback_query.answer.await_args.kwargs["text"].lower()
+    update.callback_query.edit_message_text.assert_not_called()
 
 
-async def test_laps_handler_shows_summary_with_keyboard():
-    """Default /laps shows summary view with round nav + mode buttons."""
+async def test_laps_callback_shows_summary_with_keyboard():
+    """Default lap:{n}:s shows summary view with round nav + Back."""
     races = [_race(5)]
     repo = MagicMock()
     repo.get_schedule = AsyncMock(return_value=races)
@@ -168,12 +228,12 @@ async def test_laps_handler_shows_summary_with_keyboard():
             {"lap_number": 2, "driver_id": "VER", "time": "1:31.200", "position": 2},
         ]
     )
-    update = _update()
+    update = _cb("lap:5:s")
 
-    await laps_handler(update, _context(repo))
+    await _laps_callback(update, _context(repo))
 
-    call_kwargs = update.effective_message.reply_text.await_args.kwargs
-    text = update.effective_message.reply_text.await_args.args[0]
+    call_kwargs = update.callback_query.edit_message_text.await_args.kwargs
+    text = update.callback_query.edit_message_text.await_args.args[0]
     assert "HAM" in text
     assert "Lap Times" in text
     assert isinstance(call_kwargs.get("reply_markup"), InlineKeyboardMarkup)
@@ -186,21 +246,21 @@ async def test_laps_handler_shows_summary_with_keyboard():
     assert back and back[0].callback_data == "res:back:_:5"
 
 
-async def test_laps_handler_no_laps_shows_no_data():
+async def test_laps_callback_no_laps_shows_no_data():
     races = [_race(5)]
     repo = MagicMock()
     repo.get_schedule = AsyncMock(return_value=races)
     repo.get_schedule_bounds = AsyncMock(return_value=_bounds(races))
     repo.get_lap_timings = AsyncMock(return_value=None)
-    update = _update()
+    update = _cb("lap:5:s")
 
-    await laps_handler(update, _context(repo))
+    await _laps_callback(update, _context(repo))
 
-    text = update.effective_message.reply_text.await_args.args[0]
+    text = update.callback_query.edit_message_text.await_args.args[0]
     assert "\u26a0" in text or "No" in text.lower()
 
 
-async def test_laps_handler_uses_cache():
+async def test_laps_callback_uses_cache():
     """When repo returns lap data, it is displayed directly."""
     races = [_race(5)]
     repo = MagicMock()
@@ -209,21 +269,20 @@ async def test_laps_handler_uses_cache():
     repo.get_lap_timings = AsyncMock(
         return_value=[{"lap_number": 1, "driver_id": "LEC", "time": "1:33.100", "position": 3}]
     )
-    update = _update()
+    update = _cb("lap:5:s")
 
-    await laps_handler(update, _context(repo))
+    await _laps_callback(update, _context(repo))
 
-    text = update.effective_message.reply_text.await_args.args[0]
+    text = update.callback_query.edit_message_text.await_args.args[0]
     assert "LEC" in text
 
 
-async def test_laps_handler_shows_summary_with_lap_duration():
+async def test_laps_callback_shows_summary_with_lap_duration():
     """Verify that lap_duration is used when time is None."""
     races = [_race(5)]
     repo = MagicMock()
     repo.get_schedule = AsyncMock(return_value=races)
     repo.get_schedule_bounds = AsyncMock(return_value=_bounds(races))
-    # OpenF1 style: time is None, lap_duration is set
     repo.get_lap_timings = AsyncMock(
         return_value=[
             {
@@ -242,11 +301,11 @@ async def test_laps_handler_shows_summary_with_lap_duration():
             },
         ]
     )
-    update = _update()
+    update = _cb("lap:5:s")
 
-    await laps_handler(update, _context(repo))
+    await _laps_callback(update, _context(repo))
 
-    text = update.effective_message.reply_text.await_args.args[0]
+    text = update.callback_query.edit_message_text.await_args.args[0]
     assert "HAM" in text
     assert "1:32.456" in text
     assert "VER" in text
@@ -271,11 +330,7 @@ async def test_laps_callback_handles_two_part_data():
         ]
     )
 
-    update = MagicMock()
-    update.callback_query.data = "lap:5"
-    update.callback_query.answer = AsyncMock()
-    update.callback_query.edit_message_text = AsyncMock()
-
+    update = _cb("lap:5")
     await _laps_callback(update, _context(repo))
 
     update.callback_query.answer.assert_called_once()
@@ -286,14 +341,13 @@ async def test_laps_callback_handles_two_part_data():
     assert "1:32.456" in text
 
 
-async def test_laps_handler_resolves_driver_code():
-    """Verify that driver numbers are resolved to codes in summary and details."""
+async def test_laps_callback_resolves_driver_code():
+    """Verify that driver numbers are resolved to codes in the summary."""
     races = [_race(5)]
     repo = MagicMock()
     repo.get_schedule = AsyncMock(return_value=races)
     repo.get_schedule_bounds = AsyncMock(return_value=_bounds(races))
 
-    # Mock drivers_map
     from f1_bot.models.driver import Driver
 
     repo.get_drivers_map = AsyncMock(
@@ -322,11 +376,10 @@ async def test_laps_handler_resolves_driver_code():
         ]
     )
 
-    update = _update()
-    await laps_handler(update, _context(repo))
+    update = _cb("lap:5:s")
+    await _laps_callback(update, _context(repo))
 
-    text = update.effective_message.reply_text.await_args.args[0]
-    # Check that "HAM" and "PIA" are displayed instead of "44" and "81"
+    text = update.callback_query.edit_message_text.await_args.args[0]
     assert "HAM" in text
     assert "PIA" in text
     assert "44" not in text
@@ -355,10 +408,7 @@ async def test_laps_stale_modes_fall_through_to_summary():
     )
 
     for data in ("lap:5:l:1", "lap:5:dp", "lap:5:d:4:0", "lap:5:l", "lap:5:d:VER:abc"):
-        update = MagicMock()
-        update.callback_query.data = data
-        update.callback_query.answer = AsyncMock()
-        update.callback_query.edit_message_text = AsyncMock()
+        update = _cb(data)
         await _laps_callback(update, _context(repo))
         text = update.callback_query.edit_message_text.await_args.args[0]
         assert "Lap Times" in text
@@ -366,28 +416,6 @@ async def test_laps_stale_modes_fall_through_to_summary():
         cbs = [b.callback_data for row in kb.inline_keyboard for b in row]
         assert "res:back:_:5" in cbs
         update.callback_query.answer.assert_called_once()
-
-
-async def test_pitstops_callback_empty_from_results_keeps_back():
-    """No pit data on a results tap still shows Back so the user is not trapped."""
-    races = [_race(5)]
-    repo = MagicMock()
-    repo.get_schedule = AsyncMock(return_value=races)
-    repo.get_schedule_bounds = AsyncMock(return_value=_bounds(races))
-    repo.get_pit_stops = AsyncMock(return_value=[])
-
-    update = MagicMock()
-    update.callback_query.data = "pit:5"
-    update.callback_query.answer = AsyncMock()
-    update.callback_query.edit_message_text = AsyncMock()
-
-    await _pitstops_callback(update, _context(repo))
-
-    text = update.callback_query.edit_message_text.await_args.args[0]
-    assert "⚠" in text or "no" in text.lower()
-    kb = update.callback_query.edit_message_text.await_args.kwargs["reply_markup"]
-    cbs = [b.callback_data for row in kb.inline_keyboard for b in row]
-    assert "res:back:_:5" in cbs
 
 
 async def test_laps_callback_empty_from_results_keeps_back():
@@ -398,11 +426,7 @@ async def test_laps_callback_empty_from_results_keeps_back():
     repo.get_schedule_bounds = AsyncMock(return_value=_bounds(races))
     repo.get_lap_timings = AsyncMock(return_value=[])
 
-    update = MagicMock()
-    update.callback_query.data = "lap:5:s"
-    update.callback_query.answer = AsyncMock()
-    update.callback_query.edit_message_text = AsyncMock()
-
+    update = _cb("lap:5:s")
     await _laps_callback(update, _context(repo))
 
     text = update.callback_query.edit_message_text.await_args.args[0]
@@ -412,60 +436,14 @@ async def test_laps_callback_empty_from_results_keeps_back():
     assert "res:back:_:5" in cbs
 
 
-async def test_pitstops_callback_invalid_round_value_error():
-    from f1_bot.handlers.race_data import _pitstops_callback
-
-    update = MagicMock()
-    update.callback_query.data = "pit:not_an_int"
-    update.callback_query.answer = AsyncMock()
-    update.callback_query.edit_message_text = AsyncMock()
-
-    ctx = _context(MagicMock())
-    await _pitstops_callback(update, ctx)
-
-    assert update.callback_query.answer.call_count == 1
-    update.callback_query.answer.assert_called_with(text="Invalid selection", show_alert=True)
-    update.callback_query.edit_message_text.assert_not_called()
-
-
 async def test_laps_callback_invalid_round_value_error():
-    from f1_bot.handlers.race_data import _laps_callback
-
-    update = MagicMock()
-    update.callback_query.data = "lap:not_an_int:s"
-    update.callback_query.answer = AsyncMock()
-    update.callback_query.edit_message_text = AsyncMock()
-
+    update = _cb("lap:not_an_int:s")
     ctx = _context(MagicMock())
     await _laps_callback(update, ctx)
 
     assert update.callback_query.answer.call_count == 1
     update.callback_query.answer.assert_called_with(text="Invalid selection", show_alert=True)
     update.callback_query.edit_message_text.assert_not_called()
-
-
-# --- None bounds guard ---
-
-
-async def test_pitstops_callback_with_none_last_completed_round():
-    """bounds with None last_completed_round should not crash."""
-    races = [_race(5)]
-    repo = MagicMock()
-    repo.get_schedule = AsyncMock(return_value=races)
-    bounds = _bounds(races)
-    bounds["last_completed_round"] = None
-    repo.get_schedule_bounds = AsyncMock(return_value=bounds)
-    repo.get_pit_stops = AsyncMock(
-        return_value=[{"driver_id": "HAM", "lap": 20, "stop_number": 1, "duration": 24.5}]
-    )
-
-    update = MagicMock()
-    update.callback_query.data = "pit:5"
-    update.callback_query.answer = AsyncMock()
-    update.callback_query.edit_message_text = AsyncMock()
-
-    await _pitstops_callback(update, _context(repo))
-    update.callback_query.answer.assert_called()
 
 
 async def test_laps_callback_with_none_last_completed_round():
@@ -479,20 +457,13 @@ async def test_laps_callback_with_none_last_completed_round():
     repo.get_drivers_map = AsyncMock(return_value={})
     repo.get_lap_timings = AsyncMock(return_value=[])
 
-    update = MagicMock()
-    update.callback_query.data = "lap:5:s"
-    update.callback_query.answer = AsyncMock()
-    update.callback_query.edit_message_text = AsyncMock()
-
+    update = _cb("lap:5:s")
     await _laps_callback(update, _context(repo))
     update.callback_query.answer.assert_called()
 
 
-# --- StopIteration guard ---
-
-
-async def test_laps_handler_missing_round_in_schedule():
-    """When resolve_default_round returns a round not in the schedule, show no-data gracefully."""
+async def test_laps_callback_missing_round_in_schedule():
+    """lap:{n} for a round not in the schedule still shows no-data, no crash."""
     races = [_race(5)]
     repo = MagicMock()
     repo.get_schedule = AsyncMock(return_value=races)
@@ -500,9 +471,10 @@ async def test_laps_handler_missing_round_in_schedule():
     bounds["last_completed_round"] = 3
     repo.get_schedule_bounds = AsyncMock(return_value=bounds)
     repo.get_drivers_map = AsyncMock(return_value={})
+    repo.get_lap_timings = AsyncMock(return_value=[])
 
-    update = _update()
-    await laps_handler(update, _context(repo))
+    update = _cb("lap:3:s")
+    await _laps_callback(update, _context(repo))
 
-    text = update.effective_message.reply_text.await_args.args[0]
+    text = update.callback_query.edit_message_text.await_args.args[0]
     assert "no" in text.lower() or "⚠" in text

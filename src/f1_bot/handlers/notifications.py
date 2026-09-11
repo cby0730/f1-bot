@@ -321,7 +321,7 @@ async def _notify_set(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 # ---------------------------------------------------------------------------
 
 
-async def _remind_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+async def remind_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Show all active reminders for the user."""
     repo = context.bot_data["repo"]
     ctx = await resolve_context(update, repo)
@@ -510,7 +510,7 @@ async def _notify_clearall(update: Update, context: ContextTypes.DEFAULT_TYPE) -
 
 
 def register(app: Application) -> None:
-    app.add_handler(CommandHandler("remind", _remind_command))
+    app.add_handler(CommandHandler("remind", remind_handler))
     app.add_handler(CallbackQueryHandler(_notify_pick, pattern=r"^notify:pick:"))
     app.add_handler(CallbackQueryHandler(_notify_sess, pattern=r"^notify:sess:"))
     app.add_handler(CallbackQueryHandler(_notify_set, pattern=r"^notify:set:"))

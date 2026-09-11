@@ -330,6 +330,57 @@ def extract_reply_markup(httpx_mock) -> dict:
     return markup or {}
 
 
+def _message_requests(httpx_mock):
+    return [
+        r
+        for r in httpx_mock.get_requests()
+        if "sendMessage" in str(r.url) or "editMessageText" in str(r.url)
+    ]
+
+
+def last_message_method(httpx_mock) -> str:
+    """'sendMessage' or 'editMessageText' for the last captured chat message."""
+    reqs = _message_requests(httpx_mock)
+    if not reqs:
+        raise ValueError("No sendMessage or editMessageText request was captured by httpx_mock.")
+    url = str(reqs[-1].url)
+    return "sendMessage" if "sendMessage" in url else "editMessageText"
+
+
+async def _seed_two_drivers(repo) -> None:
+    from f1_bot.models.driver import Driver, DriverStanding
+
+    ver = Driver(
+        driver_id="ver",
+        given_name="Max",
+        family_name="Verstappen",
+        nationality="Dutch",
+        permanent_number="1",
+        code="VER",
+    )
+    nor = Driver(
+        driver_id="nor",
+        given_name="Lando",
+        family_name="Norris",
+        nationality="British",
+        permanent_number="4",
+        code="NOR",
+    )
+    await repo.save_drivers(_SEASON, [ver, nor])
+    await repo.save_driver_standings(
+        _SEASON,
+        [
+            DriverStanding(
+                position=1, points=400.0, wins=10, driver=ver, constructor_name="Red Bull"
+            ),
+            DriverStanding(
+                position=2, points=200.0, wins=2, driver=nor, constructor_name="McLaren"
+            ),
+        ],
+        round_after=15,
+    )
+
+
 # ==============================================================================
 # CATEGORY A: Core Bot Commands & Basic Navigation (6 scenarios)
 # ==============================================================================
@@ -337,27 +388,102 @@ def extract_reply_markup(httpx_mock) -> dict:
 
 @pytest.mark.asyncio
 async def test_scenario_01_start_command(e2e_app, httpx_mock):
-    """Scenario 1: /start command E2E"""
+    """Scenario 1: /start welcome + eight start:* buttons."""
     update = make_tg_update(e2e_app, "/start")
     await e2e_app.process_update(update)
 
     reply_text = extract_reply_message(httpx_mock)
     assert "Welcome to *F1 Bot*" in reply_text
-    assert "/settings" in reply_text
-    assert "/next" in reply_text
+    assert "Settings / 設定" in reply_text
+    assert "/next" not in reply_text
     markup = extract_reply_markup(httpx_mock)
     data = [b["callback_data"] for row in markup["inline_keyboard"] for b in row]
-    assert "lang:picker" in data
+    assert data == [
+        "start:next",
+        "start:schedule",
+        "start:results",
+        "start:standings",
+        "start:driver",
+        "start:circuit",
+        "start:remind",
+        "start:settings",
+    ]
+    assert len(markup["inline_keyboard"]) == 4
+    assert all(len(row) == 2 for row in markup["inline_keyboard"])
+    settings_label = markup["inline_keyboard"][3][1]["text"]
+    assert settings_label == "⚙️ Settings / 設定"
 
 
 @pytest.mark.asyncio
-async def test_scenario_02_help_command(e2e_app, httpx_mock):
-    """Scenario 2: /help is unregistered — typing it must not reply."""
+@pytest.mark.parametrize(
+    "token,needle,expect_markup",
+    [
+        ("next", "Countdown", True),
+        ("schedule", "Season Calendar", False),
+        ("results", "No results available", True),
+        ("standings", "Driver Standings", True),
+        ("driver", "Select a driver", True),
+        ("circuit", "Select a circuit", True),
+        ("remind", "no active reminders", False),
+        ("settings", "Settings", True),
+    ],
+)
+async def test_start_menu_button_launches_new_message(
+    e2e_app, httpx_mock, token, needle, expect_markup
+):
+    """Each /start button replies a new sendMessage (never edits the welcome)."""
+    await _seed_two_drivers(e2e_app.bot_data["repo"])
+    await e2e_app.process_update(make_tg_update(e2e_app, "/start"))
+    await e2e_app.process_update(make_tg_callback_query_update(e2e_app, f"start:{token}"))
+
+    assert last_message_method(httpx_mock) == "sendMessage"
+    reply_text = extract_reply_message(httpx_mock)
+    assert needle.lower() in reply_text.lower()
+    if expect_markup:
+        assert has_reply_markup(httpx_mock)
+        markup = extract_reply_markup(httpx_mock)
+        assert markup.get("inline_keyboard")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "command",
+    [
+        "/help",
+        "/countdown",
+        "/title",
+        "/compare",
+        "/pitstops",
+        "/laps",
+        "/timezone",
+        "/language",
+    ],
+)
+async def test_scenario_02_unregistered_commands_are_silent(e2e_app, httpx_mock, command):
+    """Hidden slash commands (and /help) must not produce any sendMessage."""
     before = [r.url for r in httpx_mock.get_requests() if "sendMessage" in str(r.url)]
-    update = make_tg_update(e2e_app, "/help")
+    update = make_tg_update(e2e_app, command)
     await e2e_app.process_update(update)
     after = [r.url for r in httpx_mock.get_requests() if "sendMessage" in str(r.url)]
     assert after == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "callback_data",
+    ["title:wdc", "lang:picker", "cmp:list", "nsess:x", "qual:x"],
+)
+async def test_dead_callbacks_are_silent(e2e_app, httpx_mock, callback_data):
+    """Deleted stale buttons must not send, edit, or trip the error handler."""
+    before = _message_requests(httpx_mock)
+    await e2e_app.process_update(make_tg_callback_query_update(e2e_app, callback_data))
+    after = _message_requests(httpx_mock)
+    assert after == before
+    error_texts = [
+        extract_reply_message(httpx_mock) if after else "",
+    ]
+    if after != before:
+        assert "Something went wrong" not in error_texts[0]
 
 
 @pytest.mark.asyncio
@@ -371,9 +497,9 @@ async def test_scenario_03_schedule_command(e2e_app, httpx_mock):
 
 
 @pytest.mark.asyncio
-async def test_scenario_04_countdown_command(e2e_app, httpx_mock):
-    """Scenario 4: /countdown command E2E"""
-    update = make_tg_update(e2e_app, "/countdown")
+async def test_scenario_04_next_command(e2e_app, httpx_mock):
+    """Scenario 4: /next command E2E"""
+    update = make_tg_update(e2e_app, "/next")
     await e2e_app.process_update(update)
 
     reply_text = extract_reply_message(httpx_mock)
@@ -382,8 +508,8 @@ async def test_scenario_04_countdown_command(e2e_app, httpx_mock):
 
 
 @pytest.mark.asyncio
-async def test_scenario_05_countdown_no_upcoming_races(e2e_app, httpx_mock):
-    """Scenario 5: /countdown when no upcoming races are scheduled."""
+async def test_scenario_05_next_no_upcoming_races(e2e_app, httpx_mock):
+    """Scenario 5: /next when no upcoming races are scheduled."""
     # Mock a past schedule (year 2020)
     httpx_mock.add_response(
         url="https://api.jolpi.ca/ergast/f1/current.json",
@@ -397,7 +523,7 @@ async def test_scenario_05_countdown_no_upcoming_races(e2e_app, httpx_mock):
     races = await e2e_app.bot_data["jolpica"].get_current_schedule()
     await repo.save_schedule(_SEASON, races)
 
-    update = make_tg_update(e2e_app, "/countdown")
+    update = make_tg_update(e2e_app, "/next")
     await e2e_app.process_update(update)
 
     reply_text = extract_reply_message(httpx_mock)
@@ -406,10 +532,14 @@ async def test_scenario_05_countdown_no_upcoming_races(e2e_app, httpx_mock):
 
 @pytest.mark.asyncio
 async def test_scenario_06_timezone_interactive_flow(e2e_app, httpx_mock):
-    """Scenario 6: Interactive timezone configuration callback workflow."""
-    # 1. Trigger timezone region selection page
-    update = make_tg_update(e2e_app, "/timezone")
+    """Scenario 6: /settings → set:tz → region → city."""
+    update = make_tg_update(e2e_app, "/settings")
     await e2e_app.process_update(update)
+    reply_text = extract_reply_message(httpx_mock)
+    assert "Settings" in reply_text
+
+    cb_hub = make_tg_callback_query_update(e2e_app, "set:tz")
+    await e2e_app.process_update(cb_hub)
     reply_text = extract_reply_message(httpx_mock)
     assert "Choose your region:" in reply_text
 
@@ -434,42 +564,8 @@ async def test_scenario_06_timezone_interactive_flow(e2e_app, httpx_mock):
 
 
 # ==============================================================================
-# CATEGORY B: Timezone Propagation & Commands (4 scenarios)
+# CATEGORY B: Timezone Propagation & Commands
 # ==============================================================================
-
-
-@pytest.mark.asyncio
-async def test_scenario_07_timezone_args_ignored_valid(e2e_app, httpx_mock):
-    """Scenario 7: leftover IANA args still show the picker and do not save."""
-    repo = e2e_app.bot_data["repo"]
-    tz_before = await repo.get_user_timezone(MOCK_USER_ID)
-
-    update = make_tg_update(e2e_app, "/timezone Europe/London")
-    await e2e_app.process_update(update)
-
-    reply_text = extract_reply_message(httpx_mock)
-    assert "Choose your region:" in reply_text
-    assert "Timezone set to" not in reply_text
-
-    tz_after = await repo.get_user_timezone(MOCK_USER_ID)
-    assert tz_after == tz_before
-
-
-@pytest.mark.asyncio
-async def test_scenario_08_timezone_args_ignored_invalid(e2e_app, httpx_mock):
-    """Scenario 8: garbage leftover args still show the picker, not an unknown-tz error."""
-    repo = e2e_app.bot_data["repo"]
-    tz_before = await repo.get_user_timezone(MOCK_USER_ID)
-
-    update = make_tg_update(e2e_app, "/timezone Mars/Olympus")
-    await e2e_app.process_update(update)
-
-    reply_text = extract_reply_message(httpx_mock)
-    assert "Choose your region:" in reply_text
-    assert "Unknown timezone" not in reply_text
-
-    tz_after = await repo.get_user_timezone(MOCK_USER_ID)
-    assert tz_after == tz_before
 
 
 @pytest.mark.asyncio
@@ -800,15 +896,15 @@ async def test_scenario_21_results_back_button(e2e_app, httpx_mock):
 
 @pytest.mark.asyncio
 async def test_scenario_22_pitstops_from_db(e2e_app, httpx_mock):
-    """Scenario 22: /pitstops shows pit stop data from Postgres."""
+    """Scenario 22: pit:15 shows pit stop data from Postgres."""
     repo = e2e_app.bot_data["repo"]
     from f1_bot.models.results import PitStop
 
     stops = [PitStop(driver_id="hamilton", lap=15, stop_number=1, duration=24.567)]
     await repo.save_pit_stops(_SEASON, 15, stops)
 
-    update = make_tg_update(e2e_app, "/pitstops")
-    await e2e_app.process_update(update)
+    cb_update = make_tg_callback_query_update(e2e_app, "pit:15")
+    await e2e_app.process_update(cb_update)
 
     reply_text = extract_reply_message(httpx_mock)
     assert "Pit Stops" in reply_text
@@ -818,15 +914,15 @@ async def test_scenario_22_pitstops_from_db(e2e_app, httpx_mock):
 
 @pytest.mark.asyncio
 async def test_scenario_23_laps_from_db(e2e_app, httpx_mock):
-    """Scenario 23: /laps shows lap data from Postgres."""
+    """Scenario 23: lap:15:s shows lap data from Postgres."""
     repo = e2e_app.bot_data["repo"]
     from f1_bot.models.results import LapTime
 
     laps = [LapTime(lap_number=45, driver_id="44", time="1:18.293", position=1)]
     await repo.save_lap_timings(_SEASON, 15, laps)
 
-    update = make_tg_update(e2e_app, "/laps")
-    await e2e_app.process_update(update)
+    cb_update = make_tg_callback_query_update(e2e_app, "lap:15:s")
+    await e2e_app.process_update(cb_update)
 
     reply_text = extract_reply_message(httpx_mock)
     assert "Lap Times" in reply_text or "Summary" in reply_text
@@ -944,6 +1040,44 @@ async def test_scenario_27_settings_hub(e2e_app, httpx_mock):
 
 
 @pytest.mark.asyncio
+async def test_settings_lang_set_zh_hant_persists(e2e_app, httpx_mock):
+    """Surviving path: /settings → set:lang → lang:set:zh-Hant."""
+    await e2e_app.process_update(make_tg_update(e2e_app, "/settings"))
+    await e2e_app.process_update(make_tg_callback_query_update(e2e_app, "set:lang"))
+    await e2e_app.process_update(make_tg_callback_query_update(e2e_app, "lang:set:zh-Hant"))
+
+    reply_text = extract_reply_message(httpx_mock)
+    assert "語言已設定" in reply_text
+    lang = await e2e_app.bot_data["repo"].get_user_language(MOCK_USER_ID)
+    assert lang == "zh-Hant"
+
+
+@pytest.mark.asyncio
+async def test_driver_profile_compare_flow(e2e_app, httpx_mock):
+    """Surviving path: driver profile → cmp:a → cmp:b."""
+    repo = e2e_app.bot_data["repo"]
+    await _seed_two_drivers(repo)
+
+    await e2e_app.process_update(make_tg_update(e2e_app, "/driver"))
+    reply_text = extract_reply_message(httpx_mock)
+    assert "Select a driver" in reply_text
+
+    await e2e_app.process_update(make_tg_callback_query_update(e2e_app, "drv:detail:ver"))
+    markup = extract_reply_markup(httpx_mock)
+    data = [b["callback_data"] for row in markup["inline_keyboard"] for b in row]
+    assert "cmp:a:ver" in data
+
+    await e2e_app.process_update(make_tg_callback_query_update(e2e_app, "cmp:a:ver"))
+    reply_text = extract_reply_message(httpx_mock)
+    assert "Select driver" in reply_text
+
+    await e2e_app.process_update(make_tg_callback_query_update(e2e_app, "cmp:b:ver:nor"))
+    reply_text = extract_reply_message(httpx_mock)
+    assert "Verstappen" in reply_text
+    assert "Norris" in reply_text
+
+
+@pytest.mark.asyncio
 async def test_scenario_28_standings_includes_clinch_strip(e2e_app, httpx_mock):
     """/standings includes remaining-line or CLINCHED/magic-number, not a bare table."""
     from f1_bot.models.driver import Driver, DriverStanding
@@ -978,46 +1112,6 @@ async def test_scenario_28_standings_includes_clinch_strip(e2e_app, httpx_mock):
     assert "Verstappen" in reply_text
     assert "races" in reply_text
     assert "Magic number" in reply_text or "CLINCHED" in reply_text
-
-
-@pytest.mark.asyncio
-async def test_scenario_29_title_alias_matches_standings(e2e_app, httpx_mock):
-    """/title renders the standings view (same shape as /standings)."""
-    from f1_bot.models.driver import Driver, DriverStanding
-
-    repo = e2e_app.bot_data["repo"]
-    standings = [
-        DriverStanding(
-            position=1,
-            points=400.0,
-            wins=10,
-            driver=Driver(
-                driver_id="ver", given_name="Max", family_name="Verstappen", nationality="Dutch"
-            ),
-            constructor_name="Red Bull",
-        ),
-        DriverStanding(
-            position=2,
-            points=200.0,
-            wins=2,
-            driver=Driver(
-                driver_id="nor", given_name="Lando", family_name="Norris", nationality="British"
-            ),
-            constructor_name="McLaren",
-        ),
-    ]
-    await repo.save_driver_standings(_SEASON, standings, round_after=15)
-
-    update = make_tg_update(e2e_app, "/title")
-    await e2e_app.process_update(update)
-
-    reply_text = extract_reply_message(httpx_mock)
-    assert "Driver Standings" in reply_text
-    assert "Verstappen" in reply_text
-    markup = extract_reply_markup(httpx_mock)
-    data = [b["callback_data"] for row in markup["inline_keyboard"] for b in row]
-    assert "standings:wdc" in data
-    assert "standings:wcc" in data
 
 
 @pytest.mark.asyncio
