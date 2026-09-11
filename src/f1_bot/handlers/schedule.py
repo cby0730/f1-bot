@@ -165,7 +165,7 @@ async def _next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 # ---------------------------------------------------------------------------
-# /schedule (single-view) and /countdown (hidden alias of /next)
+# /schedule (single-view)
 # ---------------------------------------------------------------------------
 
 
@@ -183,30 +183,7 @@ async def schedule_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -
     )
 
 
-async def countdown_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Hidden alias of /next — weekend overview + session buttons, not a dedicated countdown."""
-    await next_handler(update, context)
-
-
-# ---------------------------------------------------------------------------
-# Legacy callback handler for stale old-format inline keyboards
-# ---------------------------------------------------------------------------
-
-
-async def _legacy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle old nsess:/nprac:/nqual:/nspr: callbacks from stale messages."""
-    query = update.callback_query
-    ctx = await resolve_context(update, context.bot_data["repo"])
-    await query.answer(text=t("schedule.outdated_next", ctx.lang), show_alert=True)
-
-
 def register(app: Application) -> None:
     app.add_handler(CommandHandler("next", next_handler))
     app.add_handler(CommandHandler("schedule", schedule_handler))
-    app.add_handler(CommandHandler("countdown", countdown_handler))
     app.add_handler(CallbackQueryHandler(_next_callback, pattern=r"^next:"))
-    # Legacy handlers for stale inline keyboards
-    app.add_handler(CallbackQueryHandler(_legacy_callback, pattern=r"^nsess:"))
-    app.add_handler(CallbackQueryHandler(_legacy_callback, pattern=r"^nprac:"))
-    app.add_handler(CallbackQueryHandler(_legacy_callback, pattern=r"^nqual:"))
-    app.add_handler(CallbackQueryHandler(_legacy_callback, pattern=r"^nspr:"))

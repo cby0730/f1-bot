@@ -1,17 +1,16 @@
-"""Handlers for /pitstops and /laps — SQL-only reads.
+"""Pit-stop and lap-time views — SQL-only reads, opened from /results.
 
-/pitstops: pit stop data from Jolpica (synced by scheduler).
-/laps: one personal-best table from OpenF1 lap timings (synced by scheduler).
+Pit stops come from Jolpica (synced by scheduler). Laps are one personal-best
+table from OpenF1 lap timings (synced by scheduler).
 
-Both views are also reachable from /results State A. Back always returns to
-results State A for that round (intentional hub — including the slash aliases).
+Back always returns to results State A for that round.
 """
 
 import structlog
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.error import BadRequest
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
+from telegram.ext import Application, CallbackQueryHandler, ContextTypes
 
 from f1_bot.formatting.i18n import DEFAULT_LANG, t
 from f1_bot.formatting.messages import (
@@ -22,7 +21,6 @@ from f1_bot.formatting.messages import (
 from f1_bot.handlers.context import resolve_context
 from f1_bot.handlers.pagination import (
     load_schedule_and_bounds,
-    resolve_default_round,
     round_keyboard,
 )
 from f1_bot.models.results import LapTime, PitStop
@@ -41,7 +39,7 @@ def _with_results_back(
 
 
 # ---------------------------------------------------------------------------
-# /pitstops (SQL-only)
+# Pit stops (SQL-only)
 # ---------------------------------------------------------------------------
 
 
@@ -50,37 +48,6 @@ async def _get_pitstops(repo, season: int, rnd: int) -> list[PitStop]:
     if cached:
         return [PitStop.model_validate(s) for s in cached]
     return []
-
-
-async def pitstops_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    repo = context.bot_data["repo"]
-    ctx = await resolve_context(update, repo)
-    try:
-        races, bounds, season = await load_schedule_and_bounds(context)
-    except RuntimeError:
-        await update.effective_message.reply_text(no_data_message("common.noun_schedule", ctx))
-        return
-
-    rnd = resolve_default_round(bounds)
-    if rnd is None:
-        await update.effective_message.reply_text(no_data_message("common.noun_pitstops", ctx))
-        return
-
-    race = next((r for r in races if r.round == rnd), None)
-    if not race:
-        await update.effective_message.reply_text(no_data_message("common.noun_pitstops", ctx))
-        return
-    stops = await _get_pitstops(repo, season, rnd)
-    if not stops:
-        await update.effective_message.reply_text(no_data_message("common.noun_pitstops", ctx))
-        return
-
-    completed = list(range(1, (bounds.get("last_completed_round") or 0) + 1))
-    await update.effective_message.reply_text(
-        format_pitstops(race, stops, rnd, ctx),
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_with_results_back("pit", rnd, completed, ctx.lang),
-    )
 
 
 async def _pitstops_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -129,8 +96,8 @@ async def _pitstops_callback(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 
 # ---------------------------------------------------------------------------
-# /laps — one personal-best table. Stale lap:l / lap:dp / lap:d fall through
-# to the summary (same spirit as nsess:/qual:). lap:{n}:s stays for the picker.
+# Laps — one personal-best table. Stale lap:l / lap:dp / lap:d fall through
+# to the summary. lap:{n}:s stays for the picker.
 # ---------------------------------------------------------------------------
 
 
@@ -159,45 +126,6 @@ async def _laps_text_and_keyboard(repo, race, season: int, rnd: int, bounds: dic
         race_results if isinstance(race_results, list) else None,
     )
     return text, keyboard
-
-
-async def laps_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    repo = context.bot_data["repo"]
-    ctx = await resolve_context(update, repo)
-    try:
-        races, bounds, season = await load_schedule_and_bounds(context)
-    except RuntimeError:
-        await update.effective_message.reply_text(no_data_message("common.noun_schedule", ctx))
-        return
-
-    rnd = resolve_default_round(bounds)
-    if rnd is None:
-        await update.effective_message.reply_text(no_data_message("common.noun_laps", ctx))
-        return
-
-    race = next((r for r in races if r.round == rnd), None)
-    if not race:
-        await update.effective_message.reply_text(no_data_message("common.noun_laps", ctx))
-        return
-    laps = await _get_laps(repo, season, rnd)
-    if not laps:
-        await update.effective_message.reply_text(no_data_message("common.noun_laps", ctx))
-        return
-
-    drivers_map = await repo.get_drivers_map(season)
-    race_results = await repo.get_race_results(season, rnd)
-    completed = list(range(1, (bounds.get("last_completed_round") or 0) + 1))
-    await update.effective_message.reply_text(
-        format_laps_summary(
-            race,
-            laps,
-            ctx,
-            drivers_map,
-            race_results if isinstance(race_results, list) else None,
-        ),
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_with_results_back("lap", rnd, completed, ctx.lang),
-    )
 
 
 async def _laps_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -241,7 +169,5 @@ async def _laps_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 
 def register(app: Application) -> None:
-    app.add_handler(CommandHandler("pitstops", pitstops_handler))
-    app.add_handler(CommandHandler("laps", laps_handler))
     app.add_handler(CallbackQueryHandler(_pitstops_callback, pattern=r"^pit:"))
     app.add_handler(CallbackQueryHandler(_laps_callback, pattern=r"^lap:"))

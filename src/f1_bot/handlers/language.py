@@ -1,18 +1,17 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
+from telegram.ext import Application, CallbackQueryHandler, ContextTypes
 
 from f1_bot.formatting.i18n import SHIPPED_LANGS, lang_name, t
 from f1_bot.handlers.context import resolve_context
 
 _CB_SET = "lang:set:"
-CB_PICKER = "lang:picker"
 
 
 def language_keyboard(current: str) -> InlineKeyboardMarkup:
     """Single-level picker over `SHIPPED_LANGS`, current selection ticked.
 
-    Exposed (not inlined) because `/start`'s welcome button opens the same picker.
+    Exposed (not inlined) because `/settings` `set:lang` opens the same picker.
     No region/group drill-down — with two options that would be pure friction.
     Each language is named in *itself*, so a user stranded in a language they
     cannot read can still find their way back.
@@ -29,35 +28,17 @@ def language_keyboard(current: str) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(rows)
 
 
-async def language_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    repo = context.bot_data["repo"]
-    ctx = await resolve_context(update, repo)
-
-    await update.effective_message.reply_text(
-        t("settings.lang_picker", ctx.lang, lang=lang_name(ctx.lang, ctx.lang)),
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=language_keyboard(ctx.lang),
-    )
-
-
 async def language_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
     await query.answer()
     repo = context.bot_data["repo"]
 
-    if query.data == CB_PICKER:
-        # Opened from /start's welcome button. Reply with a *new* message rather
-        # than editing: the welcome carries the whole command list, and swallowing
-        # it to show a two-button picker would be a bad trade.
-        ctx = await resolve_context(update, repo)
-        await update.effective_message.reply_text(
-            t("settings.lang_picker", ctx.lang, lang=lang_name(ctx.lang, ctx.lang)),
-            parse_mode=ParseMode.MARKDOWN,
-            reply_markup=language_keyboard(ctx.lang),
-        )
+    if not query.data or not query.data.startswith(_CB_SET):
+        # Stale `lang:picker` (and any other leftover `lang:` payload) is a dead
+        # button: answered so the client spinner stops, but no edit / no toast.
         return
 
-    code = query.data[len(_CB_SET) :] if query.data.startswith(_CB_SET) else ""
+    code = query.data[len(_CB_SET) :]
     if code not in SHIPPED_LANGS:
         ctx = await resolve_context(update, repo)
         await query.edit_message_text(
@@ -79,5 +60,4 @@ async def _save_lang(repo, telegram_id: int, code: str, query) -> None:
 
 
 def register(app: Application) -> None:
-    app.add_handler(CommandHandler("language", language_handler))
     app.add_handler(CallbackQueryHandler(language_callback, pattern=r"^lang:"))

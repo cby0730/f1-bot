@@ -1,8 +1,7 @@
 """/settings hub — launch pad onto the existing timezone and language pickers.
 
-``set:tz`` and ``set:lang`` *edit* the hub message in place. ``lang:picker`` (the
-/start welcome button) is a different path that *replies a new message* so the
-welcome is not swallowed — do not reuse it here.
+``set:tz`` and ``set:lang`` *edit* the hub message in place. Language save
+confirms on this message; it does not refresh an earlier `/start` welcome.
 """
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
