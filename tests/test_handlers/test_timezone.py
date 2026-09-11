@@ -1,78 +1,14 @@
-"""Tests for /timezone handler and callback."""
+"""Tests for timezone callback (opened from /settings)."""
 
 from unittest.mock import AsyncMock, MagicMock
 
-from f1_bot.handlers.timezone import timezone_callback, timezone_handler
+from f1_bot.handlers.timezone import timezone_callback
 
 
 def _context(repo):
     ctx = MagicMock()
     ctx.bot_data = {"repo": repo}
     return ctx
-
-
-def _update(args=None):
-    update = MagicMock()
-    update.effective_user.id = 123
-    update.effective_message.reply_text = AsyncMock()
-    ctx = MagicMock()
-    ctx.args = args or []
-    return update, ctx
-
-
-async def test_timezone_handler_no_args_shows_region_picker():
-    repo = MagicMock()
-    repo.get_user_timezone = AsyncMock(return_value="UTC")
-    update, _ = _update()
-    ctx = _context(repo)
-    ctx.args = []
-
-    await timezone_handler(update, ctx)
-
-    update.effective_message.reply_text.assert_called_once()
-    text = update.effective_message.reply_text.call_args.args[0]
-    assert "timezone" in text.lower() or "🌍" in text
-
-
-async def test_timezone_handler_extra_args_ignored_shows_picker_no_write():
-    """Valid leftover IANA tokens still show the region picker and do not save.
-
-    WHY: `/timezone Asia/Taipei` used to persist immediately. Extra args must not
-    skip the city list.
-    """
-    repo = MagicMock()
-    repo.set_user_timezone = AsyncMock()
-    update, _ = _update()
-    ctx = _context(repo)
-    ctx.args = ["Asia/Taipei"]
-
-    await timezone_handler(update, ctx)
-
-    repo.set_user_timezone.assert_not_called()
-    text = update.effective_message.reply_text.call_args.args[0]
-    assert "timezone" in text.lower() or "🌍" in text
-    markup = update.effective_message.reply_text.call_args.kwargs.get("reply_markup")
-    assert markup is not None
-
-
-async def test_timezone_handler_invalid_extra_args_still_shows_picker():
-    """Garbage leftover tokens are ignored the same way as valid ones.
-
-    WHY: `/timezone Mars/Olympus` used to error. It must now be the picker, not
-    a typed-IANA rejection.
-    """
-    repo = MagicMock()
-    repo.set_user_timezone = AsyncMock()
-    update, _ = _update()
-    ctx = _context(repo)
-    ctx.args = ["Mars/Olympus"]
-
-    await timezone_handler(update, ctx)
-
-    repo.set_user_timezone.assert_not_called()
-    text = update.effective_message.reply_text.call_args.args[0]
-    assert "timezone" in text.lower() or "🌍" in text
-    assert "Unknown" not in text
 
 
 async def test_timezone_callback_region_shows_city_picker():

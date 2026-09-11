@@ -7,7 +7,6 @@ from telegram import InlineKeyboardMarkup
 
 from f1_bot.handlers.results import results_handler
 from f1_bot.handlers.schedule import (
-    countdown_handler,
     next_handler,
     schedule_handler,
 )
@@ -284,7 +283,7 @@ async def test_results_handler_sql_only_no_api_calls():
 
 
 # ---------------------------------------------------------------------------
-# /schedule and /countdown (unchanged)
+# /schedule
 # ---------------------------------------------------------------------------
 
 
@@ -300,28 +299,6 @@ async def test_schedule_handler_shows_all_races():
 
     text = update.effective_message.reply_text.await_args.args[0]
     assert "Italian Grand Prix" in text
-
-
-async def test_countdown_handler_shows_next_race_overview():
-    """/countdown is an alias of /next — weekend overview + countdown line.
-
-    WHY: this is an intentional behaviour change (heavier UX), not a silent
-    equivalent. next_handler reads get_schedule + bounds, not get_next_race.
-    """
-    repo = MagicMock()
-    races = [_race()]
-    repo.get_schedule = AsyncMock(return_value=races)
-    repo.get_schedule_bounds = AsyncMock(return_value=_bounds(races))
-    repo.get_user_timezone = AsyncMock(return_value="UTC")
-    update = _update()
-
-    await countdown_handler(update, _context(repo=repo))
-
-    text = update.effective_message.reply_text.await_args.args[0]
-    assert "Countdown" in text
-    assert "Next Race" in text
-    markup = update.effective_message.reply_text.await_args.kwargs.get("reply_markup")
-    assert isinstance(markup, InlineKeyboardMarkup)
 
 
 async def test_get_next_race_utc_alignment(repo, monkeypatch):

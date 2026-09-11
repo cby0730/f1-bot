@@ -14,7 +14,6 @@ from f1_bot.handlers.compare import (
     _compare_callback,
     _menu_keyboard,
     _real_drivers,
-    compare_handler,
 )
 from f1_bot.models.driver import Driver, DriverStanding
 from f1_bot.models.results import is_classified_finish
@@ -414,36 +413,3 @@ async def test_happy_path_step1_to_result():
     assert f"cmp:a:{A}" in result_data
     assert f"drv:detail:{A}" in result_data
     assert "cmp:list" not in result_data
-
-
-async def test_compare_handler_no_repo_shows_no_data():
-    """/compare with no repo wired → graceful no-data message, no crash."""
-    ctx = MagicMock()
-    ctx.bot_data = {}
-    update = MagicMock()
-    update.effective_message.reply_text = AsyncMock()
-
-    await compare_handler(update, ctx)
-
-    update.effective_message.reply_text.assert_awaited_once()
-
-
-async def test_cmp_list_still_opens_pick_a():
-    """Legacy cmp:list (old Compare again buttons) still opens the pick-A grid."""
-    drivers_map = {1: _driver(A, "Verstappen", "1"), 4: _driver(B, "Norris", "4")}
-    repo = _repo(last_round=0, drivers_map=drivers_map)
-    query = AsyncMock()
-    query.data = "cmp:list"
-    update = MagicMock()
-    update.callback_query = query
-    ctx = MagicMock()
-    ctx.bot_data = {"repo": repo}
-
-    await _compare_callback(update, ctx)
-
-    text = query.edit_message_text.await_args.kwargs["text"]
-    assert "Select driver" in text
-    kb = query.edit_message_text.await_args.kwargs["reply_markup"]
-    data = [b.callback_data for row in kb.inline_keyboard for b in row]
-    assert f"cmp:a:{A}" in data
-    assert f"cmp:a:{B}" in data
