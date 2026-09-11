@@ -36,7 +36,7 @@ All F1 data provided by the bot is fetched from the following public APIs:
 
 | Command | Description |
 |---|---|
-| `/start` | Welcome message and command overview |
+| `/start` | Short welcome and eight-button menu |
 | `/next` | Next session overview with interactive filter buttons (FP1–Race) |
 | `/schedule` | Full season race calendar |
 | `/results` | Results overview with session filters, pit stops, lap times, and round navigation |
