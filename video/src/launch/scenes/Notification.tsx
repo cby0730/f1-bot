@@ -28,10 +28,15 @@ export const Notification: React.FC<{
     ? progress(frame, WRAP + LOCK_SLIDE, BANNER_IN)
     : progress(frame, 8, 8);
   const labelFade = morph ? interpolate(wrapT, [0, 1], [1, 0]) : 0;
-  const press = fadeOutAfter ? progress(frame, fadeOutAfter, 8) : 0;
-  const open = fadeOutAfter ? progress(frame, fadeOutAfter + 8, RISE - 8) : 0;
-  const exit = fadeOutAfter ? interpolate(open, [0, 1], [1, 0]) : 1;
+  const press = fadeOutAfter ? progress(frame, fadeOutAfter, 6) : 0;
+  const unlock = fadeOutAfter
+    ? interpolate(frame, [fadeOutAfter + 6, fadeOutAfter + RISE], [0, 1], {
+        ...clamp,
+        easing: Easing.bezier(0.22, 1, 0.36, 1),
+      })
+    : 0;
   const bannerPress = interpolate(press, [0, 0.5, 1], [1, 0.88, 0.94]);
+  const phoneY = interpolate(unlock, [0, 1], [0, -1120]);
 
   const width = interpolate(wrapT, [0, 1], [CHAT_W, PHONE_W]);
   const height = interpolate(wrapT, [0, 1], [CHAT_H, PHONE_H]);
@@ -47,7 +52,7 @@ export const Notification: React.FC<{
         height,
         overflow: "hidden",
         position: "relative",
-        transform: `scale(${interpolate(open, [0, 1], [1, 1.1])})`,
+        transform: `translateY(${phoneY}px)`,
         width,
       }}
     >
@@ -193,7 +198,6 @@ export const Notification: React.FC<{
           backgroundColor: colors.bg,
           fontFamily: inter,
           justifyContent: "center",
-          opacity: exit,
         }}
       >
         {phone}
@@ -202,7 +206,7 @@ export const Notification: React.FC<{
   }
 
   return (
-    <AbsoluteFill style={{ backgroundColor: colors.bg, opacity: exit }}>
+    <AbsoluteFill style={{ backgroundColor: "transparent" }}>
       <Stage label={remind.label} headline={remind.headline} labelOpacity={labelFade}>
         {phone}
       </Stage>

@@ -44,15 +44,15 @@ export const Full: React.FC = () => {
       <Sequence durationInFrames={THREAD_DURATION} from={THREAD_FROM} name="Thread">
         <ThreadAct />
       </Sequence>
+      <Sequence durationInFrames={FULL_SEQ.settings} from={AT.settings} name="Settings">
+        <Settings />
+      </Sequence>
       <Sequence
         durationInFrames={FULL_SEQ.notification}
         from={AT.notification}
         name="Notification"
       >
         <Notification morph fadeOutAfter={HOLD.notification} />
-      </Sequence>
-      <Sequence durationInFrames={FULL_SEQ.settings} from={AT.settings} name="Settings">
-        <Settings />
       </Sequence>
       <Sequence durationInFrames={FULL_SEQ.cta} from={AT.cta} name="CTA">
         <CTA />

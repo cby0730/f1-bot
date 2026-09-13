@@ -6,7 +6,7 @@ export const PHONE_MORPH = 72;
 export const WRAP = 24;
 export const LOCK_SLIDE = 24;
 export const BANNER_IN = 24;
-export const PLANE = 48;
+export const PLANE = 24;
 export const SETTINGS_FLICK = 10;
 
 export const HOLD = {
