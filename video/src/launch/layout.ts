@@ -9,19 +9,19 @@ export const PHONE_H = 980;
 export const PHONE_LEFT = (FRAME_W - PHONE_W) / 2;
 export const PHONE_TOP = (FRAME_H - PHONE_H) / 2;
 
-/** 30min chip — right column of the Remind 2×2 grid. */
+/** 30min chip — measured from the Remind hold still. */
 export const PLANE_FROM = {
-  x: CHAT_LEFT + 22 + (CHAT_W - 44) / 2 + 10 + (CHAT_W - 44) / 4,
-  y: 652,
+  x: 1144,
+  y: 572,
 };
 
 /** Lock-screen Telegram tile. */
 export const PLANE_TO = {
-  x: PHONE_LEFT + 24 + 16 + 16,
-  y: PHONE_TOP + 28 + 28 + 36 + 92 + 10 + 22 + 48 + 16 + 16,
+  x: 758,
+  y: 368,
 };
 
 export const PLANE_ARC = {
-  x: (PLANE_FROM.x + PLANE_TO.x) / 2 - 40,
-  y: 260,
+  x: 980,
+  y: 220,
 };

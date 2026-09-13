@@ -33,7 +33,7 @@ export const Notification: React.FC<{
     <AbsoluteFill
       style={{
         alignItems: "center",
-        backgroundColor: colors.bg,
+        backgroundColor: dockIconAt ? "transparent" : colors.bg,
         fontFamily: inter,
         justifyContent: "center",
         opacity: exit,
@@ -48,7 +48,13 @@ export const Notification: React.FC<{
           height: 980,
           overflow: "hidden",
           position: "relative",
-          scale: interpolate(frame, [0, 16], [0.94, 1], {
+          opacity: dockIconAt
+            ? interpolate(frame, [4, 9], [0, 1], {
+                extrapolateLeft: "clamp",
+                extrapolateRight: "clamp",
+              })
+            : 1,
+          scale: interpolate(frame, [dockIconAt ? 4 : 0, 16], [0.92, 1], {
             extrapolateLeft: "clamp",
             extrapolateRight: "clamp",
             easing: Easing.bezier(0.16, 1, 0.3, 1),

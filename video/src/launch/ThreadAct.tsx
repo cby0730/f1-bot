@@ -1,6 +1,6 @@
 import { AbsoluteFill, interpolate, Sequence, useCurrentFrame } from "remotion";
 import { next, remind, start } from "./copy";
-import { clamp, flickY, progress } from "./motion";
+import { clamp, flickEase, flickY, progress } from "./motion";
 import { NextPanel } from "./panels/NextPanel";
 import { RemindPanel } from "./panels/RemindPanel";
 import { StartPanel } from "./panels/StartPanel";
@@ -17,8 +17,8 @@ const planeFrom = remindFrom + FULL_SEQ.remind - PLANE;
 export const ThreadAct: React.FC = () => {
   const frame = useCurrentFrame();
   const rise = progress(frame, 0, RISE);
-  const f1 = progress(frame, flick1, FLICK);
-  const f2 = progress(frame, flick2, FLICK);
+  const f1 = progress(frame, flick1, FLICK, flickEase);
+  const f2 = progress(frame, flick2, FLICK, flickEase);
   const leave = progress(frame, planeFrom, PLANE);
 
   const startY = frame < flick1 ? 0 : flickY(f1, "out");
@@ -36,7 +36,12 @@ export const ThreadAct: React.FC = () => {
   return (
     <AbsoluteFill
       style={{
-        opacity: interpolate(frame, [planeFrom, planeFrom + PLANE], [1, 0], clamp),
+        opacity: interpolate(
+          frame,
+          [planeFrom + 4, planeFrom + PLANE],
+          [1, 0],
+          clamp,
+        ),
         transform: `translateY(${interpolate(leave, [0, 1], [0, -36])}px)`,
       }}
     >

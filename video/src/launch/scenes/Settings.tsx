@@ -1,6 +1,6 @@
 import { AbsoluteFill, interpolate, useCurrentFrame } from "remotion";
 import { settings } from "../copy";
-import { clamp, flickY, progress } from "../motion";
+import { clamp, flickEase, flickY, progress } from "../motion";
 import { PickerPanel } from "../panels/PickerPanel";
 import { FALL, RISE, SETTINGS_FLICK } from "../timings";
 import { Stage } from "../ui/Stage";
@@ -9,7 +9,7 @@ import { TelegramThread, ThreadPanel } from "../ui/TelegramChat";
 export const Settings: React.FC = () => {
   const frame = useCurrentFrame();
   const rise = progress(frame, 0, RISE);
-  const flick = progress(frame, 45, SETTINGS_FLICK);
+  const flick = progress(frame, 45, SETTINGS_FLICK, flickEase);
   const fall = progress(frame, 90, FALL);
 
   const tzY = frame < 45 ? 0 : flickY(flick, "out");

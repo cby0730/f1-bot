@@ -1,7 +1,7 @@
 import { Easing, interpolate } from "remotion";
 
 export const easeOut = Easing.bezier(0.16, 1, 0.3, 1);
-export const flickEase = Easing.bezier(0.22, 1, 0.36, 1);
+export const flickEase = Easing.inOut(Easing.cubic);
 
 export const clamp = {
   extrapolateLeft: "clamp" as const,
