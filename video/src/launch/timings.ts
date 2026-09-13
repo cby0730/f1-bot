@@ -1,12 +1,12 @@
 /** Holds stay readable. Hero cuts are longer so the morph and plane can be seen. */
 
-export const RISE = 10;
+export const RISE = 24;
 export const FLICK = 16;
 export const PHONE_MORPH = 72;
 export const WRAP = 24;
 export const LOCK_SLIDE = 24;
 export const BANNER_IN = 24;
-export const PLANE = 36;
+export const PLANE = 48;
 export const SETTINGS_FLICK = 10;
 
 export const HOLD = {

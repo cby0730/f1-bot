@@ -7,19 +7,8 @@ export const CHAT_LEFT = (FRAME_W - CHAT_W) / 2;
 export const PHONE_W = 500;
 export const PHONE_H = 980;
 
-/** F1 avatar on the Settings chat header, nudged up so takeoff reads. */
+/** F1 avatar on the Settings chat header. Takeoff only; the plane then rushes the camera. */
 export const PLANE_FROM = {
   x: CHAT_LEFT + 50,
   y: 288,
-};
-
-/** Telegram tile left of the CTA handle. */
-export const PLANE_TO = {
-  x: 660,
-  y: 618,
-};
-
-export const PLANE_ARC = {
-  x: 1320,
-  y: 110,
 };

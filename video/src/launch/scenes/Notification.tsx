@@ -5,7 +5,7 @@ import { CHAT_W, PHONE_H, PHONE_W } from "../layout";
 import { clamp, progress } from "../motion";
 import { RemindPanel } from "../panels/RemindPanel";
 import { colors } from "../theme";
-import { BANNER_IN, LOCK_SLIDE, WRAP } from "../timings";
+import { BANNER_IN, LOCK_SLIDE, RISE, WRAP } from "../timings";
 import { Stage } from "../ui/Stage";
 import { ChatHeader } from "../ui/TelegramChat";
 import { TelegramIcon } from "../ui/TelegramIcon";
@@ -28,9 +28,10 @@ export const Notification: React.FC<{
     ? progress(frame, WRAP + LOCK_SLIDE, BANNER_IN)
     : progress(frame, 8, 8);
   const labelFade = morph ? interpolate(wrapT, [0, 1], [1, 0]) : 0;
-  const exit = fadeOutAfter
-    ? interpolate(frame, [fadeOutAfter, fadeOutAfter + 10], [1, 0], clamp)
-    : 1;
+  const press = fadeOutAfter ? progress(frame, fadeOutAfter, 8) : 0;
+  const open = fadeOutAfter ? progress(frame, fadeOutAfter + 8, RISE - 8) : 0;
+  const exit = fadeOutAfter ? interpolate(open, [0, 1], [1, 0]) : 1;
+  const bannerPress = interpolate(press, [0, 0.5, 1], [1, 0.88, 0.94]);
 
   const width = interpolate(wrapT, [0, 1], [CHAT_W, PHONE_W]);
   const height = interpolate(wrapT, [0, 1], [CHAT_H, PHONE_H]);
@@ -46,6 +47,7 @@ export const Notification: React.FC<{
         height,
         overflow: "hidden",
         position: "relative",
+        transform: `scale(${interpolate(open, [0, 1], [1, 1.1])})`,
         width,
       }}
     >
@@ -141,7 +143,8 @@ export const Notification: React.FC<{
             marginTop: 48,
             opacity: bannerT,
             padding: "16px 16px 18px",
-            transform: `translateY(${interpolate(bannerT, [0, 1], [20, 0])}px)`,
+            transform: `translateY(${interpolate(bannerT, [0, 1], [20, 0])}px) scale(${bannerPress})`,
+            transformOrigin: "50% 50%",
           }}
         >
           <div

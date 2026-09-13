@@ -41,7 +41,8 @@ export const ThreadAct: React.FC = () => {
         <div
           style={{
             opacity: rise,
-            transform: `translateY(${interpolate(rise, [0, 1], [220, 0])}px)`,
+            transform: `scale(${interpolate(rise, [0, 1], [0.84, 1])})`,
+            transformOrigin: "50% 0%",
           }}
         >
           <TelegramThread>

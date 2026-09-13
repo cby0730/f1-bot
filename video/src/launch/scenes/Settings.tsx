@@ -8,7 +8,7 @@ import { TelegramThread, ThreadPanel } from "../ui/TelegramChat";
 
 export const Settings: React.FC = () => {
   const frame = useCurrentFrame();
-  const rise = progress(frame, 0, RISE);
+  const open = progress(frame, 0, RISE);
   const flick = progress(frame, 45, SETTINGS_FLICK, flickEase);
 
   const tzY = frame < 45 ? 0 : flickY(flick, "out");
@@ -21,14 +21,16 @@ export const Settings: React.FC = () => {
       }}
     >
       <Stage
+        bgOpacity={open}
         label={settings.label}
         headline={settings.headline}
-        labelOpacity={interpolate(rise, [0, 1], [0.35, 1])}
+        labelOpacity={interpolate(open, [0, 1], [0, 1])}
       >
         <div
           style={{
-            opacity: rise,
-            transform: `translateY(${interpolate(rise, [0, 1], [200, 0])}px)`,
+            opacity: open,
+            transform: `scale(${interpolate(open, [0, 1], [0.66, 1])})`,
+            transformOrigin: "50% 50%",
           }}
         >
           <TelegramThread>

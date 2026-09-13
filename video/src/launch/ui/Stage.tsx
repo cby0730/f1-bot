@@ -8,14 +8,16 @@ export const Stage: React.FC<{
   readonly headline: string;
   readonly children?: React.ReactNode;
   readonly labelOpacity?: number;
-}> = ({ label, headline, children, labelOpacity }) => {
+  readonly bgOpacity?: number;
+}> = ({ label, headline, children, labelOpacity, bgOpacity = 1 }) => {
   const frame = useCurrentFrame();
   const enter = interpolate(frame, [0, 6], [0, 1], { ...clamp, easing: easeOut });
 
   return (
     <div
       style={{
-        backgroundColor: colors.bg,
+        backgroundColor:
+          bgOpacity >= 1 ? colors.bg : `rgba(7, 8, 12, ${bgOpacity})`,
         display: "flex",
         flexDirection: "column",
         fontFamily: inter,

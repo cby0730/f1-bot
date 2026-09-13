@@ -1,47 +1,44 @@
 import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from "remotion";
-import { PLANE_ARC, PLANE_FROM, PLANE_TO } from "../layout";
+import { FRAME_H, FRAME_W, PLANE_FROM } from "../layout";
 import { clamp } from "../motion";
 import { PLANE } from "../timings";
-import { TelegramIcon } from "./TelegramIcon";
+import { PaperPlane } from "./PaperPlane";
 
-const bezier = (t: number, a: number, b: number, c: number) =>
-  (1 - t) * (1 - t) * a + 2 * (1 - t) * t * b + t * t * c;
-
-const flightEase = Easing.inOut(Easing.cubic);
+const rush = Easing.inOut(Easing.cubic);
 
 export const PlaneFlight: React.FC<{
-  readonly from?: { x: number; y: number };
-  readonly to?: { x: number; y: number };
-  readonly arc?: { x: number; y: number };
   readonly durationInFrames?: number;
-}> = ({
-  from = PLANE_FROM,
-  to = PLANE_TO,
-  arc = PLANE_ARC,
-  durationInFrames = PLANE,
-}) => {
+}> = ({ durationInFrames = PLANE }) => {
   const frame = useCurrentFrame();
   const t = interpolate(frame, [0, durationInFrames], [0, 1], {
     ...clamp,
-    easing: flightEase,
+    easing: rush,
   });
-  const x = bezier(t, from.x, arc.x, to.x);
-  const y = bezier(t, from.y, arc.y, to.y);
-  const size = interpolate(t, [0, 0.45, 1], [64, 112, 52]);
-  const rotate = interpolate(t, [0, 1], [-28, 8]);
+
+  const x = interpolate(t, [0, 0.3, 1], [PLANE_FROM.x, FRAME_W / 2, FRAME_W / 2]);
+  const y = interpolate(
+    t,
+    [0, 0.3, 0.65, 1],
+    [PLANE_FROM.y, FRAME_H * 0.42, FRAME_H * 0.5, FRAME_H * 0.7],
+  );
+  const scale = interpolate(t, [0, 0.28, 0.55, 1], [0.14, 0.95, 2.5, 7.4]);
+  const rotate = interpolate(t, [0, 1], [-14, 8]);
+  const opacity = interpolate(t, [0, 0.05, 0.78, 1], [0, 1, 1, 0], clamp);
 
   return (
     <AbsoluteFill style={{ pointerEvents: "none", zIndex: 8 }}>
       <div
         style={{
-          filter: "drop-shadow(0 16px 28px rgba(42, 171, 238, 0.55))",
-          left: x - size / 2,
+          filter: "drop-shadow(0 28px 40px rgba(0, 0, 0, 0.45))",
+          left: x,
+          opacity,
           position: "absolute",
-          top: y - size / 2,
-          transform: `rotate(${rotate}deg)`,
+          top: y,
+          transform: `translate(-50%, -45%) rotate(${rotate}deg) scale(${scale})`,
+          transformOrigin: "50% 70%",
         }}
       >
-        <TelegramIcon size={size} />
+        <PaperPlane />
       </div>
     </AbsoluteFill>
   );
