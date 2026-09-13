@@ -1,7 +1,7 @@
 import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from "remotion";
 import { lockDate, lockPeriod, lockTime, pushBody, remind } from "../copy";
 import { inter } from "../fonts";
-import { CHAT_W, PHONE_H, PHONE_W } from "../layout";
+import { CHAT_W, FRAME_H, PHONE_H, PHONE_W } from "../layout";
 import { clamp, progress } from "../motion";
 import { RemindPanel } from "../panels/RemindPanel";
 import { colors } from "../theme";
@@ -36,7 +36,7 @@ export const Notification: React.FC<{
       })
     : 0;
   const bannerPress = interpolate(press, [0, 0.5, 1], [1, 0.88, 0.94]);
-  const phoneY = interpolate(unlock, [0, 1], [0, -1120]);
+  const lockUp = interpolate(unlock, [0, 1], [0, -(FRAME_H + 160)]);
 
   const width = interpolate(wrapT, [0, 1], [CHAT_W, PHONE_W]);
   const height = interpolate(wrapT, [0, 1], [CHAT_H, PHONE_H]);
@@ -52,7 +52,6 @@ export const Notification: React.FC<{
         height,
         overflow: "hidden",
         position: "relative",
-        transform: `translateY(${phoneY}px)`,
         width,
       }}
     >
@@ -187,6 +186,20 @@ export const Notification: React.FC<{
           </div>
         </div>
       </div>
+
+      <div
+        style={{
+          backgroundColor: "rgba(255, 255, 255, 0.38)",
+          borderRadius: 999,
+          bottom: 18,
+          height: 6,
+          left: "50%",
+          marginLeft: -64,
+          opacity: interpolate(lockT, [0.45, 1], [0, 1], clamp),
+          position: "absolute",
+          width: 128,
+        }}
+      />
     </div>
   );
 
@@ -206,7 +219,12 @@ export const Notification: React.FC<{
   }
 
   return (
-    <AbsoluteFill style={{ backgroundColor: "transparent" }}>
+    <AbsoluteFill
+      style={{
+        backgroundColor: "transparent",
+        transform: `translateY(${lockUp}px)`,
+      }}
+    >
       <Stage label={remind.label} headline={remind.headline} labelOpacity={labelFade}>
         {phone}
       </Stage>
