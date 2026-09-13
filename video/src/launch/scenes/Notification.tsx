@@ -100,6 +100,7 @@ export const Notification: React.FC<{
           backgroundColor: colors.surface,
           inset: 0,
           opacity: settingsInside,
+          paddingTop: interpolate(wrapT, [0, 1], [0, 64]),
           position: "absolute",
           zIndex: 1,
         }}
