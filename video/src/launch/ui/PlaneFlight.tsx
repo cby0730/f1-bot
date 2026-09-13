@@ -18,7 +18,7 @@ export const PlaneFlight: React.FC<{
           left: FRAME_W / 2,
           position: "absolute",
           top: y,
-          transform: "translate(-50%, -50%) rotate(180deg)",
+          transform: "translate(-50%, -50%)",
         }}
       >
         <PaperPlane width={1500} />
