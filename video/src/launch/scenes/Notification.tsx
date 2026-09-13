@@ -5,7 +5,7 @@ import { CHAT_W, FRAME_H, PHONE_H, PHONE_W } from "../layout";
 import { clamp, progress } from "../motion";
 import { RemindPanel } from "../panels/RemindPanel";
 import { colors } from "../theme";
-import { BANNER_IN, LOCK_SLIDE, RISE, WRAP } from "../timings";
+import { BANNER_IN, LOCK_SLIDE, UNLOCK, WRAP } from "../timings";
 import { Stage } from "../ui/Stage";
 import { ChatHeader } from "../ui/TelegramChat";
 import { TelegramIcon } from "../ui/TelegramIcon";
@@ -30,12 +30,12 @@ export const Notification: React.FC<{
   const labelFade = morph ? interpolate(wrapT, [0, 1], [1, 0]) : 0;
   const press = fadeOutAfter ? progress(frame, fadeOutAfter, 6) : 0;
   const unlock = fadeOutAfter
-    ? interpolate(frame, [fadeOutAfter + 6, fadeOutAfter + RISE], [0, 1], {
+    ? interpolate(frame, [fadeOutAfter + 6, fadeOutAfter + UNLOCK], [0, 1], {
         ...clamp,
         easing: Easing.inOut(Easing.cubic),
       })
     : 0;
-  const bannerPress = interpolate(press, [0, 0.5, 1], [1, 0.88, 0.94]);
+  const bannerPress = interpolate(press, [0, 0.45, 1], [1, 0.82, 0.95]);
   const lockUp = interpolate(unlock, [0, 1], [0, -(FRAME_H + 160)]);
 
   const width = interpolate(wrapT, [0, 1], [CHAT_W, PHONE_W]);
