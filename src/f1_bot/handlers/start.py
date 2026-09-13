@@ -2,7 +2,8 @@
 
 Each ``start:{token}`` callback reuses the existing command handler via
 ``update.effective_message.reply_text``, so the tap opens a *new* message and
-does not duplicate any render logic.
+does not duplicate any render logic. The callback resolves the user's language
+only on the invalid-token branch — the dispatched handler already does it once.
 """
 
 from telegram import InlineKeyboardButton, LinkPreviewOptions, Update
@@ -63,16 +64,23 @@ async def start_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> N
 
 async def _start_menu_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     query = update.callback_query
-    ctx = await resolve_context(update, context.bot_data["repo"])
     try:
         token = query.data.split(":", 1)[1]
     except (ValueError, IndexError, AttributeError):
+        token = None
+
+    handler = _DISPATCH.get(token) if token else None
+    if handler is None:
+        # Only the error toast needs the user's language; the happy path leaves
+        # the single resolve_context call to the dispatched handler.
+        ctx = await resolve_context(update, context.bot_data["repo"])
         await query.answer(text=t("common.invalid_selection", ctx.lang), show_alert=True)
         return
 
-    handler = _DISPATCH.get(token)
-    if handler is None:
-        await query.answer(text=t("common.invalid_selection", ctx.lang), show_alert=True)
+    if update.effective_message is None:
+        # Telegram reports the welcome as InaccessibleMessage (>48h old or
+        # deleted); there is nothing to reply to, so treat it as a dead button.
+        await query.answer()
         return
 
     await query.answer()

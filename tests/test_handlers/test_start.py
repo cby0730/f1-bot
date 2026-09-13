@@ -140,6 +140,34 @@ async def test_known_token_answers_exactly_once_then_dispatches():
     update.effective_message.reply_text.assert_awaited_once()
 
 
+async def test_known_token_does_not_resolve_context_itself(monkeypatch):
+    """The dispatched handler resolves lang/tz once; the menu callback must not
+    add a second user_preferences round-trip per tap."""
+    calls = []
+
+    async def _spy(update, repo, default_lang="en"):
+        calls.append(update)
+        return RenderContext()
+
+    monkeypatch.setattr("f1_bot.handlers.start.resolve_context", _spy)
+    update, context, query = _callback("start:settings")
+    await _start_menu_callback(update, context)
+    assert calls == []
+    update.effective_message.reply_text.assert_awaited_once()
+
+
+async def test_inaccessible_welcome_is_a_silent_dead_button():
+    """PTB yields effective_message=None for an InaccessibleMessage (>48h old or
+    deleted); there is nothing to reply to, so answer quietly and do not dispatch."""
+    update, context, query = _callback("start:settings")
+    reply_text = update.effective_message.reply_text
+    update.effective_message = None
+    await _start_menu_callback(update, context)
+    query.answer.assert_awaited_once_with()
+    reply_text.assert_not_called()
+    query.edit_message_text.assert_not_called()
+
+
 async def test_start_settings_dispatch_does_not_edit_welcome():
     update, context, query = _callback("start:settings")
     await _start_menu_callback(update, context)
