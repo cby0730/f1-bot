@@ -2,7 +2,7 @@ import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from "remotion";
 import { lockDate, lockPeriod, lockTime, pushBody, remind, settings } from "../copy";
 import { inter } from "../fonts";
 import { CHAT_W, PHONE_H, PHONE_W } from "../layout";
-import { clamp, progress } from "../motion";
+import { clamp, easeOut, progress } from "../motion";
 import { PickerPanel } from "../panels/PickerPanel";
 import { RemindPanel } from "../panels/RemindPanel";
 import { colors } from "../theme";
@@ -13,10 +13,9 @@ import {
   WRAP,
 } from "../timings";
 import { Stage } from "../ui/Stage";
-import { ChatHeader } from "../ui/TelegramChat";
+import { CHAT_H, ChatHeader } from "../ui/TelegramChat";
 import { TelegramIcon } from "../ui/TelegramIcon";
 
-const CHAT_H = 596;
 const slide = {
   ...clamp,
   easing: Easing.inOut(Easing.cubic),
@@ -41,7 +40,10 @@ export const Notification: React.FC<{
   const unwrapT =
     unwrapFrom === undefined
       ? 0
-      : interpolate(frame, [unwrapFrom, unwrapFrom + WRAP], [0, 1], slide);
+      : interpolate(frame, [unwrapFrom, unwrapFrom + WRAP - 1], [0, 1], {
+          ...clamp,
+          easing: easeOut,
+        });
 
   const reversing = unlockFrom !== undefined && frame >= unlockFrom;
   const unwrapping = unwrapFrom !== undefined && frame >= unwrapFrom;
@@ -69,7 +71,7 @@ export const Notification: React.FC<{
       style={{
         backgroundColor: "#111318",
         borderRadius: radius,
-        boxShadow: "0 30px 90px rgba(0, 0, 0, 0.55)",
+        boxShadow: `0 ${interpolate(wrapT, [0, 1], [28, 30])}px ${interpolate(wrapT, [0, 1], [80, 90])}px rgba(0, 0, 0, ${interpolate(wrapT, [0, 1], [0.5, 0.55])})`,
         fontFamily: inter,
         height,
         overflow: "hidden",

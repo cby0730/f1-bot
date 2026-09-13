@@ -2,7 +2,9 @@ import { inter } from "../fonts";
 import { colors } from "../theme";
 
 export const CHAT_WIDTH = 760;
+export const HEADER_H = 76;
 export const THREAD_BODY_HEIGHT = 520;
+export const CHAT_H = HEADER_H + THREAD_BODY_HEIGHT;
 
 export const ChatHeader: React.FC = () => {
   return (
@@ -10,8 +12,11 @@ export const ChatHeader: React.FC = () => {
       style={{
         alignItems: "center",
         backgroundColor: colors.surfaceLift,
+        boxSizing: "border-box",
         display: "flex",
+        flexShrink: 0,
         gap: 14,
+        height: HEADER_H,
         padding: "18px 22px",
       }}
     >
@@ -80,6 +85,7 @@ export const TelegramThread: React.FC<{
         borderRadius: 36,
         boxShadow: "0 28px 80px rgba(0, 0, 0, 0.5)",
         fontFamily: inter,
+        height: CHAT_H,
         overflow: "hidden",
         width,
       }}
