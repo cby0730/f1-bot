@@ -1,10 +1,10 @@
 /** Readable holds. Overlaps are padded onto the outgoing beat so Full stays 22.5s. */
 
 export const RISE = 10;
-export const FLICK = 10;
-export const PLANE = 12;
+export const FLICK = 16;
+export const PLANE = 18;
 export const FALL = 10;
-export const SETTINGS_FLICK = 6;
+export const SETTINGS_FLICK = 10;
 
 export const HOLD = {
   hook: 60,
