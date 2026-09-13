@@ -349,6 +349,25 @@ async def test_malformed_callback_answers_invalid_selection():
     assert query.answer.await_args.kwargs.get("text") == "Invalid selection"
 
 
+async def test_stale_cmp_list_is_a_silent_dead_button():
+    """Old 'Compare again' buttons (cmp:list) must stop the spinner but neither
+    alert nor edit — the button was deliberately deleted, not replaced."""
+    query = AsyncMock()
+    query.data = "cmp:list"
+    update = MagicMock()
+    update.callback_query = query
+    repo = MagicMock()
+    repo.get_driver_standings = AsyncMock()
+    ctx = MagicMock()
+    ctx.bot_data = {"repo": repo}
+
+    await _compare_callback(update, ctx)
+
+    query.answer.assert_awaited_once_with()
+    query.edit_message_text.assert_not_called()
+    repo.get_driver_standings.assert_not_called()
+
+
 async def test_callback_answered_exactly_once_on_result():
     """query.answer() is called exactly once per invocation (PTB double-answer footgun)."""
     drivers_map = {1: _driver(A, "Verstappen", "1"), 4: _driver(B, "Norris", "4")}

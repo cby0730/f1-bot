@@ -1,7 +1,9 @@
 """Compare two current-season drivers head-to-head.
 
 Opened from a driver profile (``cmp:a:{id}`` → ``cmp:b:{a}:{b}``). State lives
-in callback_data; there is no slash entry and no pick-A restart.
+in callback_data; there is no slash entry and no pick-A restart. Any other
+``cmp:`` payload (the stale ``cmp:list`` "Compare again" button) is a dead
+button: answered so the spinner stops, no alert, no edit.
 
 Reads exclusively from PostgreSQL via ``Repository`` (SQL-only handler pattern).
 All six stats combine the main race and the sprint of each completed round.
@@ -185,6 +187,9 @@ async def _compare_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             a_id = parts[2]
         elif action == "b":
             a_id, b_id = parts[2], parts[3]
+        else:
+            await query.answer()
+            return
     except (ValueError, IndexError):
         await query.answer(text=t("common.invalid_selection", ctx.lang), show_alert=True)
         return
@@ -206,7 +211,7 @@ async def _compare_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 _menu_keyboard(drivers, exclude_id=a_id, a_id=a_id),
             )
 
-        elif action == "b":
+        else:
             by_id = {d.driver_id: d for d in drivers}
             a, b = by_id.get(a_id), by_id.get(b_id)
             if a is None or b is None:
@@ -218,8 +223,6 @@ async def _compare_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
             await _safe_edit(
                 query, format_driver_comparison(a, b, stats, ctx), _result_keyboard(a_id, ctx.lang)
             )
-        else:
-            await query.answer(text=t("common.invalid_selection", ctx.lang), show_alert=True)
     except Exception:
         log.exception("compare_callback_failed")
         try:
