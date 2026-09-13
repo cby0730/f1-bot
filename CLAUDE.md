@@ -108,7 +108,7 @@ pytest-asyncio/anyio/pytest-httpx. Use the `coverage run` recipe at the top of
 this file; it runs the full suite clean. Production is unaffected — the bot never
 runs under pytest-cov.
 
-**Legacy callback handlers:** `schedule.py` and `results.py` register legacy callback patterns (e.g., `nsess:`, `qual:`) that respond with "please use /next" — these handle stale inline keyboards from before the refactoring.
+**Dead callbacks are intentionally unregistered:** stale buttons from deleted flows (`title:*`, `nsess:*`, `nprac:*`, `nqual:*`, `nspr:*`, `qual:*`, `spr:*`, `sr:*`) have **no** handler and get no "outdated" toast — do not add a catch-all. `lang:picker` and `cmp:list` are answered with a bare `query.answer()` (no alert, no edit) only because a live prefix pattern (`^lang:` / `^cmp:`) still catches them. `tests/test_handlers/test_command_surface.py` pins the registered pattern set; `test_dead_callbacks_are_silent` in `tests/test_e2e.py` asserts no send/edit/alert.
 
 **PTB InlineKeyboardMarkup stores tuples:** `kb.inline_keyboard` returns tuples-of-tuples, not lists. Assert with `((),)` not `[[]]`.
 

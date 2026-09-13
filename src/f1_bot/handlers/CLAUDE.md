@@ -22,7 +22,7 @@ user-facing literals — all text goes through `t(key, ctx.lang, **kwargs)`.
 
 | Pattern | Meaning |
 |---|---|
-| `start:{command}` | `/start` menu — command ∈ {next, schedule, results, standings, driver, circuit, remind, settings}; replies a **new** message by calling the matching command handler |
+| `start:{command}` | `/start` menu — command ∈ {next, schedule, results, standings, driver, circuit, remind, settings}; replies a **new** message by calling the matching command handler. The callback does not call `resolve_context` on the happy path (the dispatched handler does, once). If the welcome is an `InaccessibleMessage` (`effective_message is None`) it answers silently and does nothing |
 | `next:filtered:{filter}:{round}` | `/next` State B — filter ∈ {fp1, fp2, fp3, qualifying, sprint_qualifying, sprint, race} |
 | `next:back:_:{round}` | `/next` return to State A |
 | `res:filtered:{session_key}:{round}` | `/results` State B — session_key ∈ {race, qualifying, sprint, fp1, fp2, fp3, sprint_qualifying, all} |
@@ -36,7 +36,7 @@ user-facing literals — all text goes through `t(key, ctx.lang, **kwargs)`.
 | `notify:del:{id}:{round}` | Delete a single reminder |
 | `notify:back` | Return to reminder overview |
 | `notify:clearall:{action}` | Clear all reminders (confirm/yes/cancel) |
-| `cmp:a:{driver_id}` / `cmp:b:{a_id}:{b_id}` | Compare from a driver profile — pick opponent / compute |
+| `cmp:a:{driver_id}` / `cmp:b:{a_id}:{b_id}` | Compare from a driver profile — pick opponent / compute. Any other `cmp:` action (stale `cmp:list`) is a dead button: bare `answer()`, no alert, no edit |
 | `drv:detail:{driver_id}` / `drv:list` | Driver profile navigation (profile includes Compare → `cmp:a:{id}`) |
 | `circ:detail:{circuit_id}` / `circ:list` | Circuit info navigation |
 | `tz:region:{region}` / `tz:set:{timezone}` | Timezone picker navigation (region is a stable slug — `asia`/`europe`/`americas`/`other`; `__back__` returns to continent menu) |
