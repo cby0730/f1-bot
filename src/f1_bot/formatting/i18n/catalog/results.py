@@ -22,10 +22,6 @@ RESULTS: dict[str, dict[str, str]] = {
         "en": "No {label} data yet this season",
         "zh-Hant": "本賽季尚無{label}資料",
     },
-    "results.outdated": {
-        "en": "This button is outdated. Use /results again.",
-        "zh-Hant": "此按鈕已失效，請重新輸入 /results。",
-    },
     "results.btn_pit": {"en": "🔧 Pit", "zh-Hant": "🔧 進站"},
     "results.btn_laps": {"en": "⏱ Laps", "zh-Hant": "⏱ 單圈"},
     "results.truncated_practice": {

@@ -5,10 +5,9 @@ shipped language and calls `set_my_commands(..., language_code=...)`. This is th
 one localisation mechanism that is Telegram-native — a future LINE adapter has no
 equivalent, so it stays in the platform layer and only the *text* lives here.
 
-Hidden aliases (`/countdown`, `/title`, `/timezone`, `/language`,
-`/compare`, `/pitstops`, `/laps`) stay registered as ``CommandHandler``s but are
-not listed here — Telegram silently ignores a mismatched menu length, so this
-tuple is the source of truth for the visible 9.
+This tuple is the source of truth for the visible 9. Hidden slash aliases
+(`/countdown`, `/title`, `/timezone`, `/language`, `/compare`, `/pitstops`,
+`/laps`) are not registered.
 """
 
 COMMAND_ORDER: tuple[str, ...] = (
@@ -25,8 +24,8 @@ COMMAND_ORDER: tuple[str, ...] = (
 
 COMMANDS: dict[str, dict[str, str]] = {
     "commands.start": {
-        "en": "Welcome message and command overview",
-        "zh-Hant": "歡迎訊息與指令總覽",
+        "en": "Welcome message and button menu",
+        "zh-Hant": "歡迎訊息與按鈕選單",
     },
     "commands.next": {
         "en": "Next race — session filter buttons",

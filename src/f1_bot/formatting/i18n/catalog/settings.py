@@ -1,4 +1,4 @@
-"""/settings, /timezone and /language.
+"""/settings hub, timezone picker, and language picker.
 
 Language *names* are deliberately identical across both catalogs: a user who has
 accidentally switched to a language they cannot read must still recognise their own
@@ -38,8 +38,7 @@ SETTINGS: dict[str, dict[str, str]] = {
     "settings.region_europe": {"en": "🌍 Europe", "zh-Hant": "🌍 歐洲"},
     "settings.region_americas": {"en": "🌎 Americas", "zh-Hant": "🌎 美洲"},
     "settings.region_other": {"en": "🌐 UTC / Other", "zh-Hant": "🌐 UTC / 其他"},
-    # --- /language -----------------------------------------------------------
-    "settings.lang_button": {"en": "🌐 Language / 語言", "zh-Hant": "🌐 Language / 語言"},
+    # --- language picker -----------------------------------------------------
     "settings.lang_picker": {
         "en": "🌐 *Language / 語言*\n\nCurrent: *{lang}*\n\nChoose your language:",
         "zh-Hant": "🌐 *Language / 語言*\n\n目前：*{lang}*\n\n請選擇語言：",

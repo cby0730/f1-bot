@@ -367,22 +367,6 @@ async def _format_all_results(
     return "\n\n".join(truncated_sections) + truncated_note
 
 
-# ---------------------------------------------------------------------------
-# Legacy callback handlers for old inline keyboards
-# ---------------------------------------------------------------------------
-
-
-async def _legacy_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Handle old qual:/spr:/sr: callbacks from stale messages."""
-    query = update.callback_query
-    ctx = await resolve_context(update, context.bot_data["repo"])
-    await query.answer(text=t("results.outdated", ctx.lang), show_alert=True)
-
-
 def register(app: Application) -> None:
     app.add_handler(CommandHandler("results", results_handler))
     app.add_handler(CallbackQueryHandler(_results_callback, pattern=r"^res:"))
-    # Legacy handlers for stale inline keyboards
-    app.add_handler(CallbackQueryHandler(_legacy_callback, pattern=r"^qual:"))
-    app.add_handler(CallbackQueryHandler(_legacy_callback, pattern=r"^spr:"))
-    app.add_handler(CallbackQueryHandler(_legacy_callback, pattern=r"^sr:"))
