@@ -2,6 +2,12 @@ import { Composition, Folder } from "remotion";
 import "./index.css";
 import { Full } from "./launch/Full";
 import { Short } from "./launch/Short";
+import {
+  FULL_DURATION,
+  HOLD,
+  SETTINGS_DURATION,
+  SHORT_DURATION,
+} from "./launch/timings";
 import { CTA } from "./launch/scenes/CTA";
 import { Hook } from "./launch/scenes/Hook";
 import { Next } from "./launch/scenes/Next";
@@ -17,7 +23,7 @@ export const RemotionRoot: React.FC = () => {
       <Composition
         id="Full"
         component={Full}
-        durationInFrames={675}
+        durationInFrames={FULL_DURATION}
         fps={30}
         width={1920}
         height={1080}
@@ -25,7 +31,7 @@ export const RemotionRoot: React.FC = () => {
       <Composition
         id="Short"
         component={Short}
-        durationInFrames={225}
+        durationInFrames={SHORT_DURATION}
         fps={30}
         width={1920}
         height={1080}
@@ -34,7 +40,7 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="Hook"
           component={Hook}
-          durationInFrames={60}
+          durationInFrames={HOLD.hook}
           fps={30}
           width={1920}
           height={1080}
@@ -42,7 +48,7 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="Start"
           component={Start}
-          durationInFrames={105}
+          durationInFrames={HOLD.start}
           fps={30}
           width={1920}
           height={1080}
@@ -50,7 +56,7 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="Next"
           component={Next}
-          durationInFrames={135}
+          durationInFrames={HOLD.next}
           fps={30}
           width={1920}
           height={1080}
@@ -58,7 +64,7 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="Remind"
           component={Remind}
-          durationInFrames={90}
+          durationInFrames={HOLD.remind}
           fps={30}
           width={1920}
           height={1080}
@@ -66,7 +72,7 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="Notification"
           component={Notification}
-          durationInFrames={120}
+          durationInFrames={HOLD.notification}
           fps={30}
           width={1920}
           height={1080}
@@ -74,7 +80,7 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="Settings"
           component={Settings}
-          durationInFrames={90}
+          durationInFrames={SETTINGS_DURATION}
           fps={30}
           width={1920}
           height={1080}
@@ -82,7 +88,7 @@ export const RemotionRoot: React.FC = () => {
         <Composition
           id="CTA"
           component={CTA}
-          durationInFrames={75}
+          durationInFrames={HOLD.cta}
           fps={30}
           width={1920}
           height={1080}

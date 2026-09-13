@@ -1,6 +1,13 @@
-import { Sequence } from "remotion";
+import { linearTiming, TransitionSeries } from "@remotion/transitions";
+import { fade } from "@remotion/transitions/fade";
+import { AbsoluteFill } from "remotion";
 import { settings } from "../copy";
 import { colors } from "../theme";
+import {
+  SETTINGS_LANG,
+  SETTINGS_PICKER_FADE,
+  SETTINGS_TZ,
+} from "../timings";
 import { BotBubble, TelegramChat } from "../ui/TelegramChat";
 import { SceneChrome } from "../ui/SceneChrome";
 
@@ -42,27 +49,65 @@ const Picker: React.FC<{
   );
 };
 
+const PickerSlot: React.FC<{ readonly children: React.ReactNode }> = ({
+  children,
+}) => {
+  return (
+    <AbsoluteFill
+      style={{
+        alignItems: "center",
+        display: "flex",
+        justifyContent: "center",
+      }}
+    >
+      {children}
+    </AbsoluteFill>
+  );
+};
+
 export const Settings: React.FC = () => {
   return (
     <SceneChrome label={settings.label} headline={settings.headline}>
-      <Sequence durationInFrames={45} layout="none" name="Timezone">
-        <Picker
-          title={settings.tzTitle}
-          current={settings.tzCurrent}
-          prompt={settings.tzPrompt}
-          options={settings.regions}
-          selected="🌏 Asia"
-        />
-      </Sequence>
-      <Sequence from={45} durationInFrames={45} layout="none" name="Language">
-        <Picker
-          title={settings.langTitle}
-          current={settings.langCurrent}
-          prompt={settings.langPrompt}
-          options={settings.languages}
-          selected="English"
-        />
-      </Sequence>
+      <div
+        style={{
+          height: "100%",
+          minHeight: 640,
+          position: "relative",
+          width: "100%",
+        }}
+      >
+        <TransitionSeries>
+          <TransitionSeries.Sequence durationInFrames={SETTINGS_TZ} name="Timezone">
+            <PickerSlot>
+              <Picker
+                title={settings.tzTitle}
+                current={settings.tzCurrent}
+                prompt={settings.tzPrompt}
+                options={settings.regions}
+                selected="🌏 Asia"
+              />
+            </PickerSlot>
+          </TransitionSeries.Sequence>
+          <TransitionSeries.Transition
+            presentation={fade({ shouldFadeOutExitingScene: true })}
+            timing={linearTiming({ durationInFrames: SETTINGS_PICKER_FADE })}
+          />
+          <TransitionSeries.Sequence
+            durationInFrames={SETTINGS_LANG}
+            name="Language"
+          >
+            <PickerSlot>
+              <Picker
+                title={settings.langTitle}
+                current={settings.langCurrent}
+                prompt={settings.langPrompt}
+                options={settings.languages}
+                selected="English"
+              />
+            </PickerSlot>
+          </TransitionSeries.Sequence>
+        </TransitionSeries>
+      </div>
     </SceneChrome>
   );
 };

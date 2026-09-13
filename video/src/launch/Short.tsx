@@ -1,23 +1,34 @@
-import { AbsoluteFill, Series } from "remotion";
+import { linearTiming, TransitionSeries } from "@remotion/transitions";
+import { fade } from "@remotion/transitions/fade";
+import { AbsoluteFill } from "remotion";
 import { CTA } from "./scenes/CTA";
 import { Hook } from "./scenes/Hook";
 import { Next } from "./scenes/Next";
 import { colors } from "./theme";
+import { FADE, SHORT_SEQ } from "./timings";
 
 export const Short: React.FC = () => {
   return (
     <AbsoluteFill style={{ backgroundColor: colors.bg }}>
-      <Series>
-        <Series.Sequence durationInFrames={45} name="Hook">
+      <TransitionSeries>
+        <TransitionSeries.Sequence durationInFrames={SHORT_SEQ.hook} name="Hook">
           <Hook />
-        </Series.Sequence>
-        <Series.Sequence durationInFrames={120} name="Next">
+        </TransitionSeries.Sequence>
+        <TransitionSeries.Transition
+          presentation={fade()}
+          timing={linearTiming({ durationInFrames: FADE })}
+        />
+        <TransitionSeries.Sequence durationInFrames={SHORT_SEQ.next} name="Next">
           <Next />
-        </Series.Sequence>
-        <Series.Sequence durationInFrames={60} name="CTA">
+        </TransitionSeries.Sequence>
+        <TransitionSeries.Transition
+          presentation={fade()}
+          timing={linearTiming({ durationInFrames: FADE })}
+        />
+        <TransitionSeries.Sequence durationInFrames={SHORT_SEQ.cta} name="CTA">
           <CTA />
-        </Series.Sequence>
-      </Series>
+        </TransitionSeries.Sequence>
+      </TransitionSeries>
     </AbsoluteFill>
   );
 };
