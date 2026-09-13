@@ -7,7 +7,7 @@ import { TelegramIcon } from "../ui/TelegramIcon";
 
 export const CTA: React.FC = () => {
   const frame = useCurrentFrame();
-  const enter = interpolate(frame, [18, 36], [0, 1], {
+  const enter = interpolate(frame, [10, 24], [0, 1], {
     extrapolateLeft: "clamp",
     extrapolateRight: "clamp",
     easing: Easing.bezier(0.16, 1, 0.3, 1),

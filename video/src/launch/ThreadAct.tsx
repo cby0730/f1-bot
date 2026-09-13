@@ -15,7 +15,7 @@ const flick2 = remindFrom;
 
 export const ThreadAct: React.FC = () => {
   const frame = useCurrentFrame();
-  const rise = progress(frame, 8, RISE - 8);
+  const rise = progress(frame, 0, RISE);
   const f1 = progress(frame, flick1, FLICK, flickEase);
   const f2 = progress(frame, flick2, FLICK, flickEase);
 
@@ -34,16 +34,14 @@ export const ThreadAct: React.FC = () => {
   return (
     <AbsoluteFill>
       <Stage
-        bgOpacity={rise}
         label={head.label}
         headline={head.headline}
-        labelOpacity={interpolate(rise, [0, 1], [0, 1])}
+        labelOpacity={interpolate(rise, [0, 1], [0.35, 1])}
       >
         <div
           style={{
             opacity: rise,
-            transform: `scale(${interpolate(rise, [0, 1], [0.84, 1])})`,
-            transformOrigin: "50% 0%",
+            transform: `translateY(${interpolate(rise, [0, 1], [80, 0])}px)`,
           }}
         >
           <TelegramThread>
