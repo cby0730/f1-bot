@@ -1,30 +1,27 @@
 import { interpolate, useCurrentFrame } from "remotion";
 import { remind } from "../copy";
 import { clamp, easeOut } from "../motion";
-import { HOLD } from "../timings";
 import { colors } from "../theme";
-import { BotBubble } from "../ui/TelegramChat";
+import { IncomingBubble } from "../ui/TelegramChat";
 
-export const RemindPanel: React.FC = () => {
+export const RemindPanel: React.FC<{
+  readonly pickerOpacity?: number;
+}> = ({ pickerOpacity = 1 }) => {
   const frame = useCurrentFrame();
-  const launch = interpolate(frame, [HOLD.remind, HOLD.remind + 6], [1, 0.88], {
-    ...clamp,
-    easing: easeOut,
-    output: "perceptual-scale",
-  });
 
   return (
     <>
-      <BotBubble>
+      <IncomingBubble>
         <div style={{ fontWeight: 700 }}>{remind.title}</div>
         <div style={{ marginTop: 10 }}>{remind.prompt}</div>
-      </BotBubble>
+      </IncomingBubble>
       <div
         style={{
           display: "grid",
           gap: 10,
           gridTemplateColumns: "1fr 1fr",
           marginTop: 16,
+          opacity: pickerOpacity,
         }}
       >
         {remind.timings.map((label) => {
@@ -46,7 +43,7 @@ export const RemindPanel: React.FC = () => {
                       ...clamp,
                       easing: easeOut,
                       output: "perceptual-scale",
-                    }) * launch
+                    })
                   : 1,
                 textAlign: "center",
               }}

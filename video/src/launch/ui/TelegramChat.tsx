@@ -138,3 +138,26 @@ export const BotBubble: React.FC<{
     </div>
   );
 };
+
+/** Left-aligned incoming message from the bot. */
+export const IncomingBubble: React.FC<{
+  readonly children: React.ReactNode;
+}> = ({ children }) => {
+  return (
+    <div
+      style={{
+        backgroundColor: colors.bubble,
+        borderRadius: "18px 18px 18px 6px",
+        color: colors.text,
+        fontFamily: inter,
+        fontSize: 24,
+        lineHeight: 1.4,
+        maxWidth: "88%",
+        padding: "18px 20px",
+        whiteSpace: "pre-wrap",
+      }}
+    >
+      {children}
+    </div>
+  );
+};

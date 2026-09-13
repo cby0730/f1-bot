@@ -21,5 +21,13 @@ export const progress = (
 
 export const flickTravel = 480;
 
-export const flickY = (amount: number, role: "out" | "in") =>
-  role === "out" ? amount * -flickTravel : (1 - amount) * flickTravel;
+export const flickY = (
+  amount: number,
+  role: "out" | "in",
+  direction: "up" | "down" = "up",
+) => {
+  if (direction === "down") {
+    return role === "out" ? amount * flickTravel : (1 - amount) * -flickTravel;
+  }
+  return role === "out" ? amount * -flickTravel : (1 - amount) * flickTravel;
+};

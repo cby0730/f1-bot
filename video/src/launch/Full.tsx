@@ -49,16 +49,16 @@ export const Full: React.FC = () => {
         from={AT.notification}
         name="Notification"
       >
-        <Notification dockIconAt={PLANE} fadeOutAfter={HOLD.notification} />
-      </Sequence>
-      <Sequence durationInFrames={PLANE} from={AT.notification} name="Plane">
-        <PlaneFlight />
+        <Notification morph fadeOutAfter={HOLD.notification} />
       </Sequence>
       <Sequence durationInFrames={FULL_SEQ.settings} from={AT.settings} name="Settings">
         <Settings />
       </Sequence>
       <Sequence durationInFrames={FULL_SEQ.cta} from={AT.cta} name="CTA">
         <CTA />
+      </Sequence>
+      <Sequence durationInFrames={PLANE} from={AT.cta} name="Plane">
+        <PlaneFlight />
       </Sequence>
     </AbsoluteFill>
   );

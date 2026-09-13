@@ -1,10 +1,10 @@
 import { AbsoluteFill, interpolate, Sequence, useCurrentFrame } from "remotion";
 import { next, remind, start } from "./copy";
-import { clamp, flickEase, flickY, progress } from "./motion";
+import { flickEase, flickY, progress } from "./motion";
 import { NextPanel } from "./panels/NextPanel";
 import { RemindPanel } from "./panels/RemindPanel";
 import { StartPanel } from "./panels/StartPanel";
-import { FLICK, FULL_SEQ, PLANE, RISE } from "./timings";
+import { FLICK, FULL_SEQ, HOLD, RISE } from "./timings";
 import { Stage } from "./ui/Stage";
 import { TelegramThread, ThreadPanel } from "./ui/TelegramChat";
 
@@ -12,39 +12,27 @@ const nextFrom = FULL_SEQ.start - FLICK;
 const remindFrom = nextFrom + FULL_SEQ.next - FLICK;
 const flick1 = nextFrom;
 const flick2 = remindFrom;
-const planeFrom = remindFrom + FULL_SEQ.remind - PLANE;
 
 export const ThreadAct: React.FC = () => {
   const frame = useCurrentFrame();
   const rise = progress(frame, 0, RISE);
   const f1 = progress(frame, flick1, FLICK, flickEase);
   const f2 = progress(frame, flick2, FLICK, flickEase);
-  const leave = progress(frame, planeFrom, PLANE);
 
-  const startY = frame < flick1 ? 0 : flickY(f1, "out");
+  const startY = frame < flick1 ? 0 : flickY(f1, "out", "down");
   const nextY =
     frame < flick1
-      ? flickY(0, "in")
+      ? flickY(0, "in", "down")
       : frame < flick2
-        ? flickY(f1, "in")
-        : flickY(f2, "out");
-  const remindY = frame < flick2 ? flickY(0, "in") : flickY(f2, "in");
+        ? flickY(f1, "in", "down")
+        : flickY(f2, "out", "up");
+  const remindY = frame < flick2 ? flickY(0, "in", "up") : flickY(f2, "in", "up");
 
   const head =
     frame < flick1 + FLICK / 2 ? start : frame < flick2 + FLICK / 2 ? next : remind;
 
   return (
-    <AbsoluteFill
-      style={{
-        opacity: interpolate(
-          frame,
-          [planeFrom + 4, planeFrom + PLANE],
-          [1, 0],
-          clamp,
-        ),
-        transform: `translateY(${interpolate(leave, [0, 1], [0, -36])}px)`,
-      }}
-    >
+    <AbsoluteFill>
       <Stage
         label={head.label}
         headline={head.headline}
@@ -73,7 +61,7 @@ export const ThreadAct: React.FC = () => {
               </ThreadPanel>
             </Sequence>
             <Sequence
-              durationInFrames={FULL_SEQ.remind}
+              durationInFrames={HOLD.remind}
               from={remindFrom}
               layout="none"
               name="Remind"

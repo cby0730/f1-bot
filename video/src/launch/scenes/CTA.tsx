@@ -1,27 +1,35 @@
 import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from "remotion";
 import { cta } from "../copy";
 import { inter } from "../fonts";
+import { PLANE } from "../timings";
 import { colors } from "../theme";
+import { TelegramIcon } from "../ui/TelegramIcon";
 
 export const CTA: React.FC = () => {
   const frame = useCurrentFrame();
+  const enter = interpolate(frame, [0, 14], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: Easing.bezier(0.16, 1, 0.3, 1),
+  });
+  const dock = interpolate(frame, [PLANE - 8, PLANE], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+    easing: Easing.bezier(0.16, 1, 0.3, 1),
+  });
 
   return (
     <AbsoluteFill
       style={{
         alignItems: "center",
-        backgroundColor: colors.bg,
+        backgroundColor: "transparent",
         fontFamily: inter,
         justifyContent: "center",
       }}
     >
       <div
         style={{
-          opacity: interpolate(frame, [0, 12], [0, 1], {
-            extrapolateLeft: "clamp",
-            extrapolateRight: "clamp",
-            easing: Easing.bezier(0.16, 1, 0.3, 1),
-          }),
+          opacity: enter,
           textAlign: "center",
         }}
       >
@@ -48,17 +56,35 @@ export const CTA: React.FC = () => {
         </div>
         <div
           style={{
-            backgroundColor: colors.telegram,
-            borderRadius: 22,
-            color: colors.text,
-            display: "inline-block",
-            fontSize: 42,
-            fontWeight: 800,
+            alignItems: "center",
+            display: "inline-flex",
+            gap: 16,
+            justifyContent: "center",
             marginTop: 36,
-            padding: "18px 40px",
           }}
         >
-          {cta.handle}
+          <div
+            style={{
+              height: 56,
+              opacity: dock,
+              transform: `scale(${0.6 + 0.4 * dock})`,
+              width: 56,
+            }}
+          >
+            <TelegramIcon size={56} />
+          </div>
+          <div
+            style={{
+              backgroundColor: colors.telegram,
+              borderRadius: 22,
+              color: colors.text,
+              fontSize: 42,
+              fontWeight: 800,
+              padding: "18px 40px",
+            }}
+          >
+            {cta.handle}
+          </div>
         </div>
         <div
           style={{
