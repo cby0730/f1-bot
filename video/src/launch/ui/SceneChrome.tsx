@@ -14,7 +14,7 @@ export const SceneChrome: React.FC<{
       style={{
         backgroundColor: colors.bg,
         fontFamily: inter,
-        padding: "88px 120px 72px",
+        padding: "64px 100px 56px",
       }}
     >
       <div
@@ -40,7 +40,7 @@ export const SceneChrome: React.FC<{
         <div
           style={{
             color: colors.text,
-            fontSize: 72,
+            fontSize: 64,
             fontWeight: 800,
             letterSpacing: -1.6,
             lineHeight: 1.05,

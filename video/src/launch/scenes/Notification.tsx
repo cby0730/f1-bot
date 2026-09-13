@@ -18,9 +18,9 @@ export const Notification: React.FC = () => {
       <div
         style={{
           backgroundColor: "#111318",
-          borderRadius: 56,
+          borderRadius: 64,
           boxShadow: "0 30px 90px rgba(0, 0, 0, 0.55)",
-          height: 860,
+          height: 980,
           overflow: "hidden",
           position: "relative",
           scale: interpolate(frame, [0, 16], [0.94, 1], {
@@ -29,7 +29,7 @@ export const Notification: React.FC = () => {
             easing: Easing.bezier(0.16, 1, 0.3, 1),
             output: "perceptual-scale",
           }),
-          width: 430,
+          width: 500,
         }}
       >
         <div

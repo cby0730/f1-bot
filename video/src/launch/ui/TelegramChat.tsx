@@ -4,7 +4,7 @@ import { colors } from "../theme";
 export const TelegramChat: React.FC<{
   readonly children: React.ReactNode;
   readonly width?: number;
-}> = ({ children, width = 560 }) => {
+}> = ({ children, width = 760 }) => {
   return (
     <div
       style={{
@@ -70,9 +70,9 @@ export const BotBubble: React.FC<{
         borderRadius: "18px 18px 18px 6px",
         color: colors.text,
         fontFamily: inter,
-        fontSize: 22,
+        fontSize: 24,
         lineHeight: 1.4,
-        padding: "16px 18px",
+        padding: "18px 20px",
         whiteSpace: "pre-wrap",
       }}
     >
