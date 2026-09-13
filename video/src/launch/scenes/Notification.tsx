@@ -4,8 +4,30 @@ import { inter } from "../fonts";
 import { colors } from "../theme";
 import { TelegramIcon } from "../ui/TelegramIcon";
 
-export const Notification: React.FC = () => {
+export const Notification: React.FC<{
+  readonly dockIconAt?: number;
+  readonly fadeOutAfter?: number;
+}> = ({ dockIconAt, fadeOutAfter }) => {
   const frame = useCurrentFrame();
+  const iconOpacity = dockIconAt
+    ? interpolate(frame, [dockIconAt - 2, dockIconAt], [0, 1], {
+        extrapolateLeft: "clamp",
+        extrapolateRight: "clamp",
+      })
+    : 1;
+  const bannerFrom = dockIconAt ? 0 : 8;
+  const exit = fadeOutAfter
+    ? interpolate(frame, [fadeOutAfter, fadeOutAfter + 10], [1, 0], {
+        extrapolateLeft: "clamp",
+        extrapolateRight: "clamp",
+      })
+    : 1;
+  const exitY = fadeOutAfter
+    ? interpolate(frame, [fadeOutAfter, fadeOutAfter + 10], [0, 70], {
+        extrapolateLeft: "clamp",
+        extrapolateRight: "clamp",
+      })
+    : 0;
 
   return (
     <AbsoluteFill
@@ -14,6 +36,8 @@ export const Notification: React.FC = () => {
         backgroundColor: colors.bg,
         fontFamily: inter,
         justifyContent: "center",
+        opacity: exit,
+        transform: `translateY(${exitY}px)`,
       }}
     >
       <div
@@ -80,13 +104,13 @@ export const Notification: React.FC = () => {
               backgroundColor: "rgba(36, 40, 48, 0.92)",
               borderRadius: 22,
               marginTop: 48,
-              opacity: interpolate(frame, [8, 16], [0, 1], {
+              opacity: interpolate(frame, [bannerFrom, bannerFrom + 8], [0, 1], {
                 extrapolateLeft: "clamp",
                 extrapolateRight: "clamp",
                 easing: Easing.bezier(0.16, 1, 0.3, 1),
               }),
               padding: "16px 16px 18px",
-              translate: interpolate(frame, [8, 16], ["0px 20px", "0px 0px"], {
+              translate: interpolate(frame, [bannerFrom, bannerFrom + 8], ["0px 20px", "0px 0px"], {
                 extrapolateLeft: "clamp",
                 extrapolateRight: "clamp",
                 easing: Easing.bezier(0.16, 1, 0.3, 1),
@@ -101,7 +125,9 @@ export const Notification: React.FC = () => {
                 marginBottom: 8,
               }}
             >
-              <TelegramIcon size={32} />
+              <div style={{ opacity: iconOpacity }}>
+                <TelegramIcon size={32} />
+              </div>
               <div
                 style={{
                   color: colors.muted,
