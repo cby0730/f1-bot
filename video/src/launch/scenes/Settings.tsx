@@ -1,13 +1,7 @@
-import { linearTiming, TransitionSeries } from "@remotion/transitions";
-import { fade } from "@remotion/transitions/fade";
-import { AbsoluteFill } from "remotion";
+import { interpolate, useCurrentFrame } from "remotion";
 import { settings } from "../copy";
 import { colors } from "../theme";
-import {
-  SETTINGS_LANG,
-  SETTINGS_PICKER_FADE,
-  SETTINGS_TZ,
-} from "../timings";
+import { SETTINGS_PICKER_FADE } from "../timings";
 import { BotBubble, TelegramChat } from "../ui/TelegramChat";
 import { SceneChrome } from "../ui/SceneChrome";
 
@@ -49,64 +43,44 @@ const Picker: React.FC<{
   );
 };
 
-const PickerSlot: React.FC<{ readonly children: React.ReactNode }> = ({
-  children,
-}) => {
-  return (
-    <AbsoluteFill
-      style={{
-        alignItems: "center",
-        display: "flex",
-        justifyContent: "center",
-      }}
-    >
-      {children}
-    </AbsoluteFill>
-  );
-};
-
 export const Settings: React.FC = () => {
+  const frame = useCurrentFrame();
+  const fade = interpolate(frame, [45, 45 + SETTINGS_PICKER_FADE], [0, 1], {
+    extrapolateLeft: "clamp",
+    extrapolateRight: "clamp",
+  });
+
   return (
     <SceneChrome label={settings.label} headline={settings.headline}>
-      <div
-        style={{
-          height: "100%",
-          minHeight: 640,
-          position: "relative",
-          width: "100%",
-        }}
-      >
-        <TransitionSeries>
-          <TransitionSeries.Sequence durationInFrames={SETTINGS_TZ} name="Timezone">
-            <PickerSlot>
-              <Picker
-                title={settings.tzTitle}
-                current={settings.tzCurrent}
-                prompt={settings.tzPrompt}
-                options={settings.regions}
-                selected="🌏 Asia"
-              />
-            </PickerSlot>
-          </TransitionSeries.Sequence>
-          <TransitionSeries.Transition
-            presentation={fade({ shouldFadeOutExitingScene: true })}
-            timing={linearTiming({ durationInFrames: SETTINGS_PICKER_FADE })}
+      <div style={{ height: 620, position: "relative", width: 760 }}>
+        <div style={{ left: 0, position: "absolute", top: 0, width: "100%" }}>
+          <Picker
+            title={settings.tzTitle}
+            current={settings.tzCurrent}
+            prompt={settings.tzPrompt}
+            options={settings.regions}
+            selected="🌏 Asia"
           />
-          <TransitionSeries.Sequence
-            durationInFrames={SETTINGS_LANG}
-            name="Language"
-          >
-            <PickerSlot>
-              <Picker
-                title={settings.langTitle}
-                current={settings.langCurrent}
-                prompt={settings.langPrompt}
-                options={settings.languages}
-                selected="English"
-              />
-            </PickerSlot>
-          </TransitionSeries.Sequence>
-        </TransitionSeries>
+        </div>
+        <div
+          style={{
+            backgroundColor: colors.bg,
+            left: 0,
+            minHeight: 620,
+            opacity: fade,
+            position: "absolute",
+            top: 0,
+            width: "100%",
+          }}
+        >
+          <Picker
+            title={settings.langTitle}
+            current={settings.langCurrent}
+            prompt={settings.langPrompt}
+            options={settings.languages}
+            selected="English"
+          />
+        </div>
       </div>
     </SceneChrome>
   );
