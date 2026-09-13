@@ -1,6 +1,6 @@
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
-from telegram.ext import Application, CallbackQueryHandler, CommandHandler, ContextTypes
+from telegram.ext import Application, CallbackQueryHandler, ContextTypes
 
 from f1_bot.formatting.i18n import t
 from f1_bot.formatting.messages import _esc
@@ -32,17 +32,6 @@ def _city_keyboard(region: str, lang: str) -> InlineKeyboardMarkup:
         [InlineKeyboardButton(t("common.back_prev", lang), callback_data=f"{_CB_REGION}__back__")]
     )
     return InlineKeyboardMarkup(rows)
-
-
-async def timezone_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    repo = context.bot_data["repo"]
-    ctx = await resolve_context(update, repo)
-
-    await update.effective_message.reply_text(
-        t("settings.tz_picker", ctx.lang, tz=ctx.tz),
-        parse_mode=ParseMode.MARKDOWN,
-        reply_markup=_region_keyboard(ctx.lang),
-    )
 
 
 async def timezone_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -90,5 +79,4 @@ async def _save_tz(repo, telegram_id: int, tz_name: str, query, lang: str) -> No
 
 
 def register(app: Application) -> None:
-    app.add_handler(CommandHandler("timezone", timezone_handler))
     app.add_handler(CallbackQueryHandler(timezone_callback, pattern=r"^tz:"))

@@ -1,38 +1,30 @@
-"""/language command + `lang:` callback.
+"""`lang:` callback + language picker.
 
 The picker is single-level (two shipped languages, no drill-down). The load-bearing
 behaviours: it confirms in the language the user just *chose* (not the old one),
 validates every code against `SHIPPED_LANGS`, writes nothing on a spoofed callback,
 and answers its callback exactly once.
+
+The `settings.lang_picker` header is reached via `/settings` → `set:lang` (there
+is no `/language` command). That path is the regression guard for
+`t(key, lang, /, **kwargs)`.
 """
 
 from unittest.mock import AsyncMock, MagicMock
 
 from f1_bot.formatting.i18n import SHIPPED_LANGS
-from f1_bot.handlers.language import language_callback, language_handler, language_keyboard
+from f1_bot.handlers.language import language_callback, language_keyboard
+from f1_bot.handlers.settings import settings_callback
 
 # NOTE (history): these tests originally xfailed a real production bug — `t(key,
 # lang, **kwargs)` named its second parameter `lang`, colliding with the `{lang}`
 # placeholder that every `settings.lang_*` template interpolates, so every
 # `t("settings.lang_*", ctx.lang, lang=...)` site crashed with
-# `TypeError: t() got multiple values for argument 'lang'` and the ENTIRE /language
-# command was dead. It is now FIXED: `t`'s signature is `def t(key, lang, /, **kwargs)`
+# `TypeError: t() got multiple values for argument 'lang'` and language switching
+# was dead. It is now FIXED: `t`'s signature is `def t(key, lang, /, **kwargs)`
 # (positional-only `lang`), so the confirmation/picker paths interpolate `{lang}`
 # cleanly. The xfail markers have been removed accordingly — the assertions below
 # (always the CORRECT, un-weakened behaviour) now pass outright.
-
-
-def _cmd(repo, args=None):
-    """A command-style (update, context) pair. `language_handler` resolves context
-    via `resolve_context`, which returns the default (en) for a non-`Update` mock —
-    exactly what we want here (current language = en)."""
-    update = MagicMock()
-    update.effective_user.id = 123
-    update.effective_message.reply_text = AsyncMock()
-    context = MagicMock()
-    context.bot_data = {"repo": repo}
-    context.args = args or []
-    return update, context
 
 
 def _callback(repo, data):
@@ -73,22 +65,24 @@ def test_picker_lists_both_languages_and_marks_current():
     assert kb_zh[1][0].text == "✅ 繁體中文"
 
 
-async def test_handler_no_args_shows_picker():
-    """Bare `/language` renders the picker header (`settings.lang_picker`).
+async def test_set_lang_renders_lang_picker():
+    """`set:lang` renders the picker header (`settings.lang_picker`).
 
     WHY (regression guard): that header interpolates `{lang}` via
     `t("settings.lang_picker", ctx.lang, lang=...)`. If `t`'s signature stops being
     positional-only (`def t(key, lang, /, ...)`), the keyword `lang=` collides with
-    the positional `ctx.lang` and the whole command raises `TypeError` before a
+    the positional `ctx.lang` and the whole picker raises `TypeError` before a
     reply is ever sent — so this awaited-once assertion fails loudly.
     """
     repo = MagicMock()
-    update, context = _cmd(repo)
+    update, context, query = _callback(repo, "set:lang")
 
-    await language_handler(update, context)
+    await settings_callback(update, context)
 
-    update.effective_message.reply_text.assert_awaited_once()
-    kb = update.effective_message.reply_text.await_args.kwargs["reply_markup"].inline_keyboard
+    query.edit_message_text.assert_awaited_once()
+    text = query.edit_message_text.await_args.args[0]
+    assert "Language" in text
+    kb = query.edit_message_text.await_args.kwargs["reply_markup"].inline_keyboard
     assert {row[0].callback_data for row in kb} == {"lang:set:en", "lang:set:zh-Hant"}
 
 
@@ -118,27 +112,6 @@ async def test_callback_set_persists_and_confirms_in_new_language():
     assert "繁體中文" in text
 
 
-# --- 19. Extra args are ignored ---------------------------------------------
-
-
-async def test_handler_extra_args_ignored_shows_picker_no_write():
-    """`/language zh-Hant` (and any other leftover tokens) still shows the picker.
-
-    WHY: typed codes used to save immediately. Extra args must not persist a
-    language or skip the button UI.
-    """
-    repo = MagicMock()
-    repo.set_user_language = AsyncMock()
-    update, context = _cmd(repo, args=["zh-Hant"])
-
-    await language_handler(update, context)
-
-    repo.set_user_language.assert_not_called()
-    update.effective_message.reply_text.assert_awaited_once()
-    kb = update.effective_message.reply_text.await_args.kwargs["reply_markup"].inline_keyboard
-    assert {row[0].callback_data for row in kb} == {"lang:set:en", "lang:set:zh-Hant"}
-
-
 # --- 20. Callback guard against spoofed codes ------------------------------
 
 
@@ -158,6 +131,19 @@ async def test_callback_unknown_code_invalid_selection_no_write():
     repo.set_user_language.assert_not_called()
     text = query.edit_message_text.await_args.args[0]
     assert "Invalid selection" in text
+
+
+async def test_stale_lang_picker_is_silent():
+    """Leftover `lang:picker` buttons must not edit or toast."""
+    repo = MagicMock()
+    repo.set_user_language = AsyncMock()
+    update, context, query = _callback(repo, "lang:picker")
+
+    await language_callback(update, context)
+
+    query.answer.assert_awaited_once()
+    query.edit_message_text.assert_not_called()
+    repo.set_user_language.assert_not_called()
 
 
 # --- 21. answer() discipline ------------------------------------------------

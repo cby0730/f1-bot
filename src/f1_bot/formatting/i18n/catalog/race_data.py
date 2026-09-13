@@ -1,4 +1,4 @@
-"""/pitstops and /laps.
+"""Pit stops and laps (opened from /results).
 
 The ``laps_table_header`` entry sits inside a monospace block, so the Chinese
 variant is padded to the *same display width* as the English one: 車手 occupies

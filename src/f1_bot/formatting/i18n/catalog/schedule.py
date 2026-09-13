@@ -1,4 +1,4 @@
-"""/next, /schedule, /countdown, and the shared round-navigation widgets."""
+"""/next, /schedule, and the shared round-navigation widgets."""
 
 SCHEDULE: dict[str, dict[str, str]] = {
     "schedule.next_race_header": {
@@ -42,10 +42,6 @@ SCHEDULE: dict[str, dict[str, str]] = {
     "schedule.no_upcoming_filtered": {
         "en": "No upcoming {session} sessions",
         "zh-Hant": "沒有即將到來的{session}",
-    },
-    "schedule.outdated_next": {
-        "en": "This button is outdated. Use /next again.",
-        "zh-Hant": "此按鈕已失效，請重新輸入 /next。",
     },
     # --- shared round navigation (pagination.py) -----------------------------
     "pagination.round_counter": {"en": "R{current}/{total}", "zh-Hant": "R{current}/{total}"},

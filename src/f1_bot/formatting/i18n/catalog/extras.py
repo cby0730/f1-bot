@@ -1,4 +1,4 @@
-"""/driver, /circuit and /compare."""
+"""/driver, /circuit, and compare-from-profile."""
 
 EXTRAS: dict[str, dict[str, str]] = {
     # --- pickers -------------------------------------------------------------
@@ -33,9 +33,8 @@ EXTRAS: dict[str, dict[str, str]] = {
     "extras.circuit_coords": {"en": "\n📍 {lat}, {lng}", "zh-Hant": "\n📍 {lat}, {lng}"},
     "extras.recent_winners": {"en": "\n*Recent winners:*", "zh-Hant": "\n*近期場次：*"},
     "extras.recent_row": {"en": "  {season}: {name}", "zh-Hant": "  {season}：{name}"},
-    # --- /compare ------------------------------------------------------------
+    # --- compare (from a driver profile) -------------------------------------
     "extras.compare_with": {"en": "🆚 Compare with…", "zh-Hant": "🆚 與其他車手比較"},
-    "compare.pick_a": {"en": "🆚 Select driver *A*:", "zh-Hant": "🆚 請選擇車手 *A*："},
     "compare.pick_b": {"en": "🆚 Select driver *B*:", "zh-Hant": "🆚 請選擇車手 *B*："},
     "compare.swap_opponent": {"en": "🔄 Swap opponent", "zh-Hant": "🔄 更換對手"},
     "compare.header": {"en": "🆚 *{a}*  vs  *{b}*", "zh-Hant": "🆚 *{a}*  對決  *{b}*"},

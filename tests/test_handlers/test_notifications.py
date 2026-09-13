@@ -11,7 +11,7 @@ from f1_bot.handlers.notifications import (
     _notify_pick,
     _notify_sess,
     _notify_set,
-    _remind_command,
+    remind_handler,
 )
 from f1_bot.models.notification import NotificationSubscription
 from f1_bot.models.race import Circuit, Race, RaceSession
@@ -64,7 +64,7 @@ async def test_remind_empty(repo):
 
     context = _make_context(repo=repo)
 
-    await _remind_command(update, context)
+    await remind_handler(update, context)
 
     update.effective_message.reply_text.assert_awaited_once()
     text = update.effective_message.reply_text.call_args[0][0]
@@ -94,7 +94,7 @@ async def test_remind_with_subscriptions(repo):
 
     context = _make_context(repo=repo)
 
-    await _remind_command(update, context)
+    await remind_handler(update, context)
 
     call_args = update.effective_message.reply_text.call_args
     text = call_args[0][0]

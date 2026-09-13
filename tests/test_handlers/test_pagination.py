@@ -1,4 +1,4 @@
-"""Tests for pagination keyboard builders and resolve_default_round."""
+"""Tests for pagination keyboard builders."""
 
 from telegram import InlineKeyboardButton
 
@@ -6,7 +6,6 @@ from f1_bot.handlers.pagination import (
     _origin_to_callback,
     next_filtered_keyboard,
     next_overview_keyboard,
-    resolve_default_round,
     results_filtered_keyboard,
     results_overview_keyboard,
     round_keyboard,
@@ -251,34 +250,6 @@ class TestNextFilteredKeyboard:
         texts = [btn.text for btn in nav_row]
         assert "◀" in texts
         assert "▶" in texts
-
-
-# ---------------------------------------------------------------------------
-# resolve_default_round
-# ---------------------------------------------------------------------------
-
-
-class TestResolveDefaultRound:
-    def test_returns_last_completed_round(self):
-        bounds = {"last_completed_round": 7, "completed_sprint_rounds": [3, 5]}
-        assert resolve_default_round(bounds) == 7
-
-    def test_no_completed_round_returns_none(self):
-        bounds = {"last_completed_round": None, "completed_sprint_rounds": []}
-        assert resolve_default_round(bounds) is None
-
-    def test_sprint_only_returns_last_sprint(self):
-        bounds = {"last_completed_round": 7, "completed_sprint_rounds": [3, 5]}
-        assert resolve_default_round(bounds, sprint_only=True) == 5
-
-    def test_sprint_only_no_sprints_returns_none(self):
-        bounds = {"last_completed_round": 7, "completed_sprint_rounds": []}
-        assert resolve_default_round(bounds, sprint_only=True) is None
-
-    def test_missing_key_returns_none(self):
-        bounds = {}
-        assert resolve_default_round(bounds) is None
-        assert resolve_default_round(bounds, sprint_only=True) is None
 
 
 # ---------------------------------------------------------------------------

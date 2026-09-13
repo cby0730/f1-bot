@@ -445,11 +445,3 @@ async def load_schedule_and_bounds(context) -> tuple[list, dict, int]:
 
     bounds = await repo.get_schedule_bounds(season, races=races)
     return races, bounds, season
-
-
-def resolve_default_round(bounds: dict, sprint_only: bool = False) -> int | None:
-    """Return the round to display by default (last completed, or last sprint)."""
-    if sprint_only:
-        rounds = bounds.get("completed_sprint_rounds", [])
-        return rounds[-1] if rounds else None
-    return bounds.get("last_completed_round")

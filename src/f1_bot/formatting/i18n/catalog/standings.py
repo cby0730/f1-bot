@@ -1,4 +1,4 @@
-"""/standings and /title.
+"""/standings.
 
 ``title.remaining`` carries both the counts and the already-pluralised English words.
 Chinese has no plural inflection, so its template simply ignores the ``*_word``
