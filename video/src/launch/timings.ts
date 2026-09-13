@@ -7,7 +7,8 @@ export const WRAP = 24;
 export const LOCK_SLIDE = 24;
 export const BANNER_IN = 24;
 export const PLANE = 24;
-export const UNLOCK = 36;
+export const UNLOCK_PRESS = 6;
+export const UNLOCK = UNLOCK_PRESS + LOCK_SLIDE + WRAP;
 export const SETTINGS_FLICK = 10;
 
 export const HOLD = {
@@ -15,7 +16,7 @@ export const HOLD = {
   start: 105,
   next: 135,
   remind: 90,
-  notification: 165,
+  notification: 135,
   settings: 90,
   cta: 75,
 } as const;
@@ -36,7 +37,7 @@ export const FULL_SEQ = {
   cta: HOLD.cta,
 } as const;
 
-export const FULL_OVERLAP = RISE + FLICK + FLICK + PHONE_MORPH + UNLOCK + PLANE;
+export const FULL_OVERLAP = RISE + FLICK + FLICK + PHONE_MORPH + WRAP + PLANE;
 
 export const FULL_DURATION =
   FULL_SEQ.hook +
@@ -73,7 +74,7 @@ export const AT = {
     FULL_SEQ.remind -
     PHONE_MORPH +
     FULL_SEQ.notification -
-    UNLOCK,
+    WRAP,
   cta:
     FULL_SEQ.hook -
     RISE +
@@ -84,7 +85,7 @@ export const AT = {
     FULL_SEQ.remind -
     PHONE_MORPH +
     FULL_SEQ.notification -
-    UNLOCK +
+    WRAP +
     FULL_SEQ.settings -
     PLANE,
 } as const;

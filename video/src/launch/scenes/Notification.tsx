@@ -1,42 +1,65 @@
 import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from "remotion";
-import { lockDate, lockPeriod, lockTime, pushBody, remind } from "../copy";
+import { lockDate, lockPeriod, lockTime, pushBody, remind, settings } from "../copy";
 import { inter } from "../fonts";
-import { CHAT_W, FRAME_H, PHONE_H, PHONE_W } from "../layout";
+import { CHAT_W, PHONE_H, PHONE_W } from "../layout";
 import { clamp, progress } from "../motion";
+import { PickerPanel } from "../panels/PickerPanel";
 import { RemindPanel } from "../panels/RemindPanel";
 import { colors } from "../theme";
-import { BANNER_IN, LOCK_SLIDE, UNLOCK, WRAP } from "../timings";
+import {
+  BANNER_IN,
+  LOCK_SLIDE,
+  UNLOCK_PRESS,
+  WRAP,
+} from "../timings";
 import { Stage } from "../ui/Stage";
 import { ChatHeader } from "../ui/TelegramChat";
 import { TelegramIcon } from "../ui/TelegramIcon";
 
 const CHAT_H = 596;
+const slide = {
+  ...clamp,
+  easing: Easing.inOut(Easing.cubic),
+};
 
 export const Notification: React.FC<{
   readonly morph?: boolean;
   readonly fadeOutAfter?: number;
 }> = ({ morph = false, fadeOutAfter }) => {
   const frame = useCurrentFrame();
-  const wrapT = morph ? progress(frame, 0, WRAP) : 1;
-  const lockT = morph
-    ? interpolate(frame, [WRAP, WRAP + LOCK_SLIDE], [0, 1], {
-        ...clamp,
-        easing: Easing.inOut(Easing.cubic),
-      })
+  const unlockFrom = fadeOutAfter === undefined ? undefined : fadeOutAfter + UNLOCK_PRESS;
+  const unwrapFrom = unlockFrom === undefined ? undefined : unlockFrom + LOCK_SLIDE;
+
+  const wrapIn = morph ? progress(frame, 0, WRAP) : 1;
+  const lockIn = morph
+    ? interpolate(frame, [WRAP, WRAP + LOCK_SLIDE], [0, 1], slide)
     : 1;
+  const lockOut =
+    unlockFrom === undefined
+      ? 0
+      : interpolate(frame, [unlockFrom, unlockFrom + LOCK_SLIDE], [0, 1], slide);
+  const unwrapT =
+    unwrapFrom === undefined
+      ? 0
+      : interpolate(frame, [unwrapFrom, unwrapFrom + WRAP], [0, 1], slide);
+
+  const reversing = unlockFrom !== undefined && frame >= unlockFrom;
+  const unwrapping = unwrapFrom !== undefined && frame >= unwrapFrom;
+  const wrapT = unwrapping ? interpolate(unwrapT, [0, 1], [1, 0]) : wrapIn;
+  const lockT = reversing ? interpolate(lockOut, [0, 1], [1, 0]) : lockIn;
+
   const bannerT = morph
-    ? progress(frame, WRAP + LOCK_SLIDE, BANNER_IN)
+    ? reversing
+      ? interpolate(lockT, [0.2, 1], [0, 1], clamp)
+      : progress(frame, WRAP + LOCK_SLIDE, BANNER_IN)
     : progress(frame, 8, 8);
-  const labelFade = morph ? interpolate(wrapT, [0, 1], [1, 0]) : 0;
-  const press = fadeOutAfter ? progress(frame, fadeOutAfter, 6) : 0;
-  const unlock = fadeOutAfter
-    ? interpolate(frame, [fadeOutAfter + 6, fadeOutAfter + UNLOCK], [0, 1], {
-        ...clamp,
-        easing: Easing.inOut(Easing.cubic),
-      })
+  const remindInside = morph ? interpolate(frame, [0, WRAP * 0.75], [1, 0], clamp) : 1;
+  const settingsInside = fadeOutAfter
+    ? interpolate(frame, [WRAP + LOCK_SLIDE, WRAP + LOCK_SLIDE + 4], [0, 1], clamp)
     : 0;
+  const press = fadeOutAfter ? progress(frame, fadeOutAfter, UNLOCK_PRESS) : 0;
   const bannerPress = interpolate(press, [0, 0.45, 1], [1, 0.82, 0.95]);
-  const lockUp = interpolate(unlock, [0, 1], [0, -(FRAME_H + 160)]);
+  const labelFade = morph ? interpolate(wrapIn, [0, 1], [1, 0]) : 0;
 
   const width = interpolate(wrapT, [0, 1], [CHAT_W, PHONE_W]);
   const height = interpolate(wrapT, [0, 1], [CHAT_H, PHONE_H]);
@@ -59,17 +82,37 @@ export const Notification: React.FC<{
         style={{
           backgroundColor: colors.surface,
           height: "100%",
+          opacity: remindInside,
         }}
       >
-        <div style={{ opacity: interpolate(wrapT, [0, 0.75], [1, 0], clamp) }}>
-          <ChatHeader />
-        </div>
+        <ChatHeader />
         <div
           style={{
             padding: `${interpolate(wrapT, [0, 1], [22, 120])}px 22px 26px`,
           }}
         >
           <RemindPanel pickerOpacity={interpolate(wrapT, [0, 0.7], [1, 0], clamp)} />
+        </div>
+      </div>
+
+      <div
+        style={{
+          backgroundColor: colors.surface,
+          inset: 0,
+          opacity: settingsInside,
+          position: "absolute",
+          zIndex: 1,
+        }}
+      >
+        <ChatHeader />
+        <div style={{ padding: "22px 22px 26px" }}>
+          <PickerPanel
+            title={settings.tzTitle}
+            current={settings.tzCurrent}
+            prompt={settings.tzPrompt}
+            options={settings.regions}
+            selected="🌏 Asia"
+          />
         </div>
       </div>
 
@@ -95,6 +138,7 @@ export const Notification: React.FC<{
           inset: 0,
           position: "absolute",
           transform: `translateY(${interpolate(lockT, [0, 1], [-100, 0])}%)`,
+          zIndex: 3,
         }}
       />
 
@@ -104,6 +148,7 @@ export const Notification: React.FC<{
           opacity: interpolate(lockT, [0.2, 0.75], [0, 1], clamp),
           padding: "28px 24px 0",
           position: "absolute",
+          zIndex: 4,
         }}
       >
         <div
@@ -198,6 +243,7 @@ export const Notification: React.FC<{
           opacity: interpolate(lockT, [0.45, 1], [0, 1], clamp),
           position: "absolute",
           width: 128,
+          zIndex: 5,
         }}
       />
     </div>
@@ -219,13 +265,12 @@ export const Notification: React.FC<{
   }
 
   return (
-    <AbsoluteFill
-      style={{
-        backgroundColor: "transparent",
-        transform: `translateY(${lockUp}px)`,
-      }}
-    >
-      <Stage label={remind.label} headline={remind.headline} labelOpacity={labelFade}>
+    <AbsoluteFill style={{ backgroundColor: "transparent" }}>
+      <Stage
+        label={unwrapping ? settings.label : remind.label}
+        headline={unwrapping ? settings.headline : remind.headline}
+        labelOpacity={unwrapping ? interpolate(unwrapT, [0.15, 1], [0, 1]) : labelFade}
+      >
         {phone}
       </Stage>
     </AbsoluteFill>
