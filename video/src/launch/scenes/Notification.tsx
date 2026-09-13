@@ -53,7 +53,6 @@ export const Notification: React.FC<{
       ? interpolate(lockT, [0.2, 1], [0, 1], clamp)
       : progress(frame, WRAP + LOCK_SLIDE, BANNER_IN)
     : progress(frame, 8, 8);
-  const remindInside = morph ? interpolate(frame, [0, WRAP * 0.75], [1, 0], clamp) : 1;
   const settingsInside = fadeOutAfter
     ? interpolate(frame, [WRAP + LOCK_SLIDE, WRAP + LOCK_SLIDE + 4], [0, 1], clamp)
     : 0;
@@ -82,16 +81,18 @@ export const Notification: React.FC<{
         style={{
           backgroundColor: colors.surface,
           height: "100%",
-          opacity: remindInside,
+          opacity: interpolate(settingsInside, [0, 1], [1, 0], clamp),
         }}
       >
-        <ChatHeader />
+        <div style={{ opacity: interpolate(wrapIn, [0, 0.75], [1, 0], clamp) }}>
+          <ChatHeader />
+        </div>
         <div
           style={{
             padding: `${interpolate(wrapT, [0, 1], [22, 120])}px 22px 26px`,
           }}
         >
-          <RemindPanel pickerOpacity={interpolate(wrapT, [0, 0.7], [1, 0], clamp)} />
+          <RemindPanel pickerOpacity={interpolate(wrapIn, [0, 0.7], [1, 0], clamp)} />
         </div>
       </div>
 
