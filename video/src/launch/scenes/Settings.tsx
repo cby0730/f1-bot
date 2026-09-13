@@ -45,7 +45,7 @@ const Picker: React.FC<{
 export const Settings: React.FC = () => {
   return (
     <SceneChrome label={settings.label} headline={settings.headline}>
-      <Sequence durationInFrames={90} layout="none" name="Timezone">
+      <Sequence durationInFrames={45} layout="none" name="Timezone">
         <Picker
           title={settings.tzTitle}
           current={settings.tzCurrent}
@@ -54,7 +54,7 @@ export const Settings: React.FC = () => {
           selected="🌏 Asia"
         />
       </Sequence>
-      <Sequence from={90} durationInFrames={90} layout="none" name="Language">
+      <Sequence from={45} durationInFrames={45} layout="none" name="Language">
         <Picker
           title={settings.langTitle}
           current={settings.langCurrent}

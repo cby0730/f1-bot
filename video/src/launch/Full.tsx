@@ -12,25 +12,25 @@ export const Full: React.FC = () => {
   return (
     <AbsoluteFill style={{ backgroundColor: colors.bg }}>
       <Series>
-        <Series.Sequence durationInFrames={120} name="Hook">
+        <Series.Sequence durationInFrames={60} name="Hook">
           <Hook />
         </Series.Sequence>
-        <Series.Sequence durationInFrames={210} name="Start">
+        <Series.Sequence durationInFrames={105} name="Start">
           <Start />
         </Series.Sequence>
-        <Series.Sequence durationInFrames={270} name="Next">
+        <Series.Sequence durationInFrames={135} name="Next">
           <Next />
         </Series.Sequence>
-        <Series.Sequence durationInFrames={180} name="Remind">
+        <Series.Sequence durationInFrames={90} name="Remind">
           <Remind />
         </Series.Sequence>
-        <Series.Sequence durationInFrames={240} name="Notification">
+        <Series.Sequence durationInFrames={120} name="Notification">
           <Notification />
         </Series.Sequence>
-        <Series.Sequence durationInFrames={180} name="Settings">
+        <Series.Sequence durationInFrames={90} name="Settings">
           <Settings />
         </Series.Sequence>
-        <Series.Sequence durationInFrames={150} name="CTA">
+        <Series.Sequence durationInFrames={75} name="CTA">
           <CTA />
         </Series.Sequence>
       </Series>

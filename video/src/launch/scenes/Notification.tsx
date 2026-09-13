@@ -79,13 +79,13 @@ export const Notification: React.FC = () => {
               backgroundColor: "rgba(36, 40, 48, 0.92)",
               borderRadius: 22,
               marginTop: 48,
-              opacity: interpolate(frame, [18, 32], [0, 1], {
+              opacity: interpolate(frame, [8, 16], [0, 1], {
                 extrapolateLeft: "clamp",
                 extrapolateRight: "clamp",
                 easing: Easing.bezier(0.16, 1, 0.3, 1),
               }),
               padding: "16px 16px 18px",
-              translate: interpolate(frame, [18, 32], ["0px 20px", "0px 0px"], {
+              translate: interpolate(frame, [8, 16], ["0px 20px", "0px 0px"], {
                 extrapolateLeft: "clamp",
                 extrapolateRight: "clamp",
                 easing: Easing.bezier(0.16, 1, 0.3, 1),

@@ -19,7 +19,7 @@ export const SceneChrome: React.FC<{
     >
       <div
         style={{
-          opacity: interpolate(frame, [0, 10], [0, 1], {
+          opacity: interpolate(frame, [0, 6], [0, 1], {
             extrapolateLeft: "clamp",
             extrapolateRight: "clamp",
             easing: Easing.bezier(0.16, 1, 0.3, 1),
@@ -57,12 +57,12 @@ export const SceneChrome: React.FC<{
           flex: 1,
           justifyContent: "center",
           minHeight: 0,
-          opacity: interpolate(frame, [6, 18], [0, 1], {
+          opacity: interpolate(frame, [4, 10], [0, 1], {
             extrapolateLeft: "clamp",
             extrapolateRight: "clamp",
             easing: Easing.bezier(0.16, 1, 0.3, 1),
           }),
-          translate: interpolate(frame, [6, 18], ["0px 28px", "0px 0px"], {
+          translate: interpolate(frame, [4, 10], ["0px 28px", "0px 0px"], {
             extrapolateLeft: "clamp",
             extrapolateRight: "clamp",
             easing: Easing.bezier(0.16, 1, 0.3, 1),

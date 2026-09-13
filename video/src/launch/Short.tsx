@@ -8,13 +8,13 @@ export const Short: React.FC = () => {
   return (
     <AbsoluteFill style={{ backgroundColor: colors.bg }}>
       <Series>
-        <Series.Sequence durationInFrames={90} name="Hook">
+        <Series.Sequence durationInFrames={45} name="Hook">
           <Hook />
         </Series.Sequence>
-        <Series.Sequence durationInFrames={240} name="Next">
+        <Series.Sequence durationInFrames={120} name="Next">
           <Next />
         </Series.Sequence>
-        <Series.Sequence durationInFrames={120} name="CTA">
+        <Series.Sequence durationInFrames={60} name="CTA">
           <CTA />
         </Series.Sequence>
       </Series>

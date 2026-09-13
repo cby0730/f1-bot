@@ -17,13 +17,13 @@ export const Hook: React.FC = () => {
     >
       <div
         style={{
-          opacity: interpolate(frame, [0, 14], [0, 1], {
+          opacity: interpolate(frame, [0, 8], [0, 1], {
             extrapolateLeft: "clamp",
             extrapolateRight: "clamp",
             easing: Easing.bezier(0.16, 1, 0.3, 1),
           }),
           textAlign: "center",
-          translate: interpolate(frame, [0, 14], ["0px 24px", "0px 0px"], {
+          translate: interpolate(frame, [0, 8], ["0px 24px", "0px 0px"], {
             extrapolateLeft: "clamp",
             extrapolateRight: "clamp",
             easing: Easing.bezier(0.16, 1, 0.3, 1),
