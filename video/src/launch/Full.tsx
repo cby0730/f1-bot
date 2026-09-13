@@ -20,7 +20,7 @@ export const Full: React.FC = () => {
           <Hook />
         </TransitionSeries.Sequence>
         <TransitionSeries.Transition
-          presentation={fade()}
+          presentation={fade({ shouldFadeOutExitingScene: true })}
           timing={linearTiming({ durationInFrames: FADE })}
         />
         <TransitionSeries.Sequence durationInFrames={FULL_SEQ.start} name="Start">
@@ -34,7 +34,7 @@ export const Full: React.FC = () => {
           <Next />
         </TransitionSeries.Sequence>
         <TransitionSeries.Transition
-          presentation={fade()}
+          presentation={fade({ shouldFadeOutExitingScene: true })}
           timing={linearTiming({ durationInFrames: FADE })}
         />
         <TransitionSeries.Sequence durationInFrames={FULL_SEQ.remind} name="Remind">
@@ -55,7 +55,7 @@ export const Full: React.FC = () => {
           <Notification />
         </TransitionSeries.Sequence>
         <TransitionSeries.Transition
-          presentation={fade()}
+          presentation={fade({ shouldFadeOutExitingScene: true })}
           timing={linearTiming({ durationInFrames: FADE })}
         />
         <TransitionSeries.Sequence
@@ -65,7 +65,7 @@ export const Full: React.FC = () => {
           <Settings />
         </TransitionSeries.Sequence>
         <TransitionSeries.Transition
-          presentation={fade()}
+          presentation={fade({ shouldFadeOutExitingScene: true })}
           timing={linearTiming({ durationInFrames: FADE })}
         />
         <TransitionSeries.Sequence durationInFrames={FULL_SEQ.cta} name="CTA">

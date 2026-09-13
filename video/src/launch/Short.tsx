@@ -15,14 +15,14 @@ export const Short: React.FC = () => {
           <Hook />
         </TransitionSeries.Sequence>
         <TransitionSeries.Transition
-          presentation={fade()}
+          presentation={fade({ shouldFadeOutExitingScene: true })}
           timing={linearTiming({ durationInFrames: FADE })}
         />
         <TransitionSeries.Sequence durationInFrames={SHORT_SEQ.next} name="Next">
           <Next />
         </TransitionSeries.Sequence>
         <TransitionSeries.Transition
-          presentation={fade()}
+          presentation={fade({ shouldFadeOutExitingScene: true })}
           timing={linearTiming({ durationInFrames: FADE })}
         />
         <TransitionSeries.Sequence durationInFrames={SHORT_SEQ.cta} name="CTA">
