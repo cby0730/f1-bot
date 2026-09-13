@@ -2,6 +2,7 @@ import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from "remotion";
 import { lockDate, lockPeriod, lockTime, pushBody } from "../copy";
 import { inter } from "../fonts";
 import { colors } from "../theme";
+import { TelegramIcon } from "../ui/TelegramIcon";
 
 export const Notification: React.FC = () => {
   const frame = useCurrentFrame();
@@ -100,21 +101,7 @@ export const Notification: React.FC = () => {
                 marginBottom: 8,
               }}
             >
-              <div
-                style={{
-                  backgroundColor: colors.telegram,
-                  borderRadius: 8,
-                  color: colors.text,
-                  fontSize: 16,
-                  fontWeight: 800,
-                  height: 28,
-                  lineHeight: "28px",
-                  textAlign: "center",
-                  width: 28,
-                }}
-              >
-                ✈
-              </div>
+              <TelegramIcon size={32} />
               <div
                 style={{
                   color: colors.muted,
