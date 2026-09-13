@@ -338,6 +338,10 @@ def _message_requests(httpx_mock):
     ]
 
 
+def _answer_requests(httpx_mock):
+    return [r for r in httpx_mock.get_requests() if "answerCallbackQuery" in str(r.url)]
+
+
 def last_message_method(httpx_mock) -> str:
     """'sendMessage' or 'editMessageText' for the last captured chat message."""
     reqs = _message_requests(httpx_mock)
@@ -474,16 +478,19 @@ async def test_scenario_02_unregistered_commands_are_silent(e2e_app, httpx_mock,
     ["title:wdc", "lang:picker", "cmp:list", "nsess:x", "qual:x"],
 )
 async def test_dead_callbacks_are_silent(e2e_app, httpx_mock, callback_data):
-    """Deleted stale buttons must not send, edit, or trip the error handler."""
+    """Deleted stale buttons must not send, edit, or pop an alert.
+
+    Unregistered prefixes (title:, nsess:, qual:) produce no request at all;
+    prefixes still caught by a live pattern (lang:, cmp:) may answer the query
+    to stop the spinner, but only with a bare answerCallbackQuery — no text.
+    """
     before = _message_requests(httpx_mock)
+    answers_before = len(_answer_requests(httpx_mock))
     await e2e_app.process_update(make_tg_callback_query_update(e2e_app, callback_data))
-    after = _message_requests(httpx_mock)
-    assert after == before
-    error_texts = [
-        extract_reply_message(httpx_mock) if after else "",
-    ]
-    if after != before:
-        assert "Something went wrong" not in error_texts[0]
+    assert _message_requests(httpx_mock) == before
+    for req in _answer_requests(httpx_mock)[answers_before:]:
+        body = _parse_tg_request_body(req)
+        assert "text" not in body and body.get("show_alert") in (None, False, "false"), body
 
 
 @pytest.mark.asyncio
