@@ -1,11 +1,13 @@
-import { AbsoluteFill, interpolate, useCurrentFrame } from "remotion";
+import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from "remotion";
 import { PLANE_ARC, PLANE_FROM, PLANE_TO } from "../layout";
-import { clamp, easeOut } from "../motion";
+import { clamp } from "../motion";
 import { PLANE } from "../timings";
 import { TelegramIcon } from "./TelegramIcon";
 
 const bezier = (t: number, a: number, b: number, c: number) =>
   (1 - t) * (1 - t) * a + 2 * (1 - t) * t * b + t * t * c;
+
+const flightEase = Easing.inOut(Easing.cubic);
 
 export const PlaneFlight: React.FC<{
   readonly from?: { x: number; y: number };
@@ -21,12 +23,12 @@ export const PlaneFlight: React.FC<{
   const frame = useCurrentFrame();
   const t = interpolate(frame, [0, durationInFrames], [0, 1], {
     ...clamp,
-    easing: easeOut,
+    easing: flightEase,
   });
   const x = bezier(t, from.x, arc.x, to.x);
   const y = bezier(t, from.y, arc.y, to.y);
-  const size = interpolate(t, [0, 0.4, 1], [56, 104, 44]);
-  const rotate = interpolate(t, [0, 1], [-22, 10]);
+  const size = interpolate(t, [0, 0.45, 1], [64, 112, 52]);
+  const rotate = interpolate(t, [0, 1], [-28, 8]);
 
   return (
     <AbsoluteFill style={{ pointerEvents: "none", zIndex: 8 }}>

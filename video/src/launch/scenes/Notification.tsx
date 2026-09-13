@@ -1,4 +1,4 @@
-import { AbsoluteFill, interpolate, useCurrentFrame } from "remotion";
+import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from "remotion";
 import { lockDate, lockPeriod, lockTime, pushBody, remind } from "../copy";
 import { inter } from "../fonts";
 import { CHAT_W, PHONE_H, PHONE_W } from "../layout";
@@ -18,7 +18,12 @@ export const Notification: React.FC<{
 }> = ({ morph = false, fadeOutAfter }) => {
   const frame = useCurrentFrame();
   const wrapT = morph ? progress(frame, 0, WRAP) : 1;
-  const lockT = morph ? progress(frame, WRAP, LOCK_SLIDE) : 1;
+  const lockT = morph
+    ? interpolate(frame, [WRAP, WRAP + LOCK_SLIDE], [0, 1], {
+        ...clamp,
+        easing: Easing.inOut(Easing.cubic),
+      })
+    : 1;
   const bannerT = morph
     ? progress(frame, WRAP + LOCK_SLIDE, BANNER_IN)
     : progress(frame, 8, 8);
@@ -53,7 +58,11 @@ export const Notification: React.FC<{
         <div style={{ opacity: interpolate(wrapT, [0, 0.75], [1, 0], clamp) }}>
           <ChatHeader />
         </div>
-        <div style={{ padding: "22px 22px 26px" }}>
+        <div
+          style={{
+            padding: `${interpolate(wrapT, [0, 1], [22, 120])}px 22px 26px`,
+          }}
+        >
           <RemindPanel pickerOpacity={interpolate(wrapT, [0, 0.7], [1, 0], clamp)} />
         </div>
       </div>
@@ -78,9 +87,17 @@ export const Notification: React.FC<{
           background:
             "radial-gradient(circle at 50% 0%, #243044 0%, #0c0e14 55%)",
           inset: 0,
-          padding: "28px 24px 0",
           position: "absolute",
           transform: `translateY(${interpolate(lockT, [0, 1], [-100, 0])}%)`,
+        }}
+      />
+
+      <div
+        style={{
+          inset: 0,
+          opacity: interpolate(lockT, [0.2, 0.75], [0, 1], clamp),
+          padding: "28px 24px 0",
+          position: "absolute",
         }}
       >
         <div

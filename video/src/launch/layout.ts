@@ -7,19 +7,19 @@ export const CHAT_LEFT = (FRAME_W - CHAT_W) / 2;
 export const PHONE_W = 500;
 export const PHONE_H = 980;
 
-/** F1 avatar on the Settings chat header. */
+/** F1 avatar on the Settings chat header, nudged up so takeoff reads. */
 export const PLANE_FROM = {
-  x: CHAT_LEFT + 42,
-  y: 348,
+  x: CHAT_LEFT + 50,
+  y: 288,
 };
 
-/** Blue CTA handle. */
+/** Telegram tile left of the CTA handle. */
 export const PLANE_TO = {
-  x: 960,
-  y: 598,
+  x: 660,
+  y: 618,
 };
 
 export const PLANE_ARC = {
-  x: 1280,
-  y: 140,
+  x: 1320,
+  y: 110,
 };
