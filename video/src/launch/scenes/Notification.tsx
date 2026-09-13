@@ -32,7 +32,7 @@ export const Notification: React.FC<{
   const unlock = fadeOutAfter
     ? interpolate(frame, [fadeOutAfter + 6, fadeOutAfter + RISE], [0, 1], {
         ...clamp,
-        easing: Easing.bezier(0.22, 1, 0.36, 1),
+        easing: Easing.inOut(Easing.cubic),
       })
     : 0;
   const bannerPress = interpolate(press, [0, 0.5, 1], [1, 0.88, 0.94]);
