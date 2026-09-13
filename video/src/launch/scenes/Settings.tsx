@@ -8,7 +8,7 @@ import { TelegramThread, ThreadPanel } from "../ui/TelegramChat";
 
 export const Settings: React.FC = () => {
   const frame = useCurrentFrame();
-  const open = progress(frame, 0, RISE);
+  const open = progress(frame, 8, RISE - 8);
   const flick = progress(frame, 45, SETTINGS_FLICK, flickEase);
 
   const tzY = frame < 45 ? 0 : flickY(flick, "out");
