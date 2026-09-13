@@ -22,6 +22,8 @@ npm install
 npm run dev            # Remotion Studio
 npm run compositions   # list compositions
 npm run render:proof   # 3s toolchain proof → out/proof.mp4
+npm run render:full    # 45s launch film → out/full.mp4
+npm run render:short   # 15s cut → out/short.mp4
 npm run lint
 ```
 

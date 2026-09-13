@@ -7,6 +7,7 @@
   "private": true,
   "dependencies": {
     "@remotion/cli": "4.0.524",
+    "@remotion/google-fonts": "4.0.524",
     "@remotion/tailwind-v4": "4.0.524",
     "react": "19.2.3",
     "react-dom": "19.2.3",
@@ -27,7 +28,9 @@
     "upgrade": "remotion upgrade",
     "lint": "eslint src && tsc",
     "compositions": "remotion compositions",
-    "render:proof": "remotion render Proof out/proof.mp4"
+    "render:proof": "remotion render Proof out/proof.mp4",
+    "render:full": "remotion render Full out/full.mp4",
+    "render:short": "remotion render Short out/short.mp4"
   },
   "sideEffects": [
     "*.css"
