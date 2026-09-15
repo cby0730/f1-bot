@@ -24,6 +24,7 @@ cd video
 npm install
 npm run render:full    # 21s → out/full.mp4 (gitignored)
 # then the ffmpeg recipe in video/README.md → docs/demo.gif
+npm run render:pocket  # cropped-phone experiment → out/pocket.mp4
 ```
 
 ## Architecture

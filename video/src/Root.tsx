@@ -15,6 +15,8 @@ import { Notification } from "./launch/scenes/Notification";
 import { Remind } from "./launch/scenes/Remind";
 import { Settings } from "./launch/scenes/Settings";
 import { Start } from "./launch/scenes/Start";
+import { Pocket } from "./pocket/Pocket";
+import { POCKET_DURATION } from "./pocket/timings";
 import { Proof } from "./Proof";
 
 export const RemotionRoot: React.FC = () => {
@@ -94,6 +96,14 @@ export const RemotionRoot: React.FC = () => {
           height={1080}
         />
       </Folder>
+      <Composition
+        id="Pocket"
+        component={Pocket}
+        durationInFrames={POCKET_DURATION}
+        fps={30}
+        width={1920}
+        height={1080}
+      />
       <Composition
         id="Proof"
         component={Proof}

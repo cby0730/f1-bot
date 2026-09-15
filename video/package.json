@@ -31,6 +31,7 @@
     "compositions": "remotion compositions",
     "render:proof": "remotion render Proof out/proof.mp4",
     "render:full": "remotion render Full out/full.mp4",
+    "render:pocket": "remotion render Pocket out/pocket.mp4",
     "render:short": "remotion render Short out/short.mp4"
   },
   "sideEffects": [
