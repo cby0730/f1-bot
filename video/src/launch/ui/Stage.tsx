@@ -63,8 +63,8 @@ export const Stage: React.FC<{
   const enter = interpolate(frame, [0, 6], [0, 1], { ...clamp, easing: easeOut });
   const swapping = incoming !== undefined;
   const sign = swapDirection === "down" ? 1 : -1;
-  const outOp = interpolate(swap, [0, 0.42], [1, 0], clamp);
-  const inOp = interpolate(swap, [0.48, 1], [0, 1], clamp);
+  const outOp = interpolate(swap, [0, 0.55], [1, 0], clamp);
+  const inOp = interpolate(swap, [0.35, 1], [0, 1], clamp);
 
   return (
     <div
