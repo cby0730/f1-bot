@@ -1,12 +1,6 @@
 import { Composition, Folder } from "remotion";
 import { Full } from "./launch/Full";
-import { Short } from "./launch/Short";
-import {
-  FULL_DURATION,
-  HOLD,
-  SETTINGS_DURATION,
-  SHORT_DURATION,
-} from "./launch/timings";
+import { FULL_DURATION, HOLD, SETTINGS_DURATION } from "./launch/timings";
 import { CTA } from "./launch/scenes/CTA";
 import { Hook } from "./launch/scenes/Hook";
 import { Next } from "./launch/scenes/Next";
@@ -22,14 +16,6 @@ export const RemotionRoot: React.FC = () => {
         id="Full"
         component={Full}
         durationInFrames={FULL_DURATION}
-        fps={30}
-        width={1920}
-        height={1080}
-      />
-      <Composition
-        id="Short"
-        component={Short}
-        durationInFrames={SHORT_DURATION}
         fps={30}
         width={1920}
         height={1080}

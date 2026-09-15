@@ -28,12 +28,6 @@ export const HOLD = {
   cta: 96,
 } as const;
 
-export const SHORT_HOLD = {
-  hook: 45,
-  next: 120,
-  cta: 60,
-} as const;
-
 export const FULL_SEQ = {
   hook: HOLD.hook + RISE,
   start: HOLD.start + FLICK,
@@ -99,14 +93,5 @@ export const AT = {
 
 export const THREAD_FROM = AT.start;
 export const THREAD_DURATION = AT.notification - AT.start;
-
-export const FADE = 8;
-export const SHORT_SEQ = {
-  hook: SHORT_HOLD.hook + FADE,
-  next: SHORT_HOLD.next + FADE,
-  cta: SHORT_HOLD.cta,
-} as const;
-export const SHORT_DURATION =
-  SHORT_SEQ.hook + SHORT_SEQ.next + SHORT_SEQ.cta - FADE - FADE;
 
 export const SETTINGS_DURATION = HOLD.settings;

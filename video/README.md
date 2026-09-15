@@ -22,7 +22,6 @@ npm install
 npm run dev            # Remotion Studio
 npm run compositions   # list compositions
 npm run render:full    # 21.7s launch film → out/full.mp4
-npm run render:short   # 7.5s cut → out/short.mp4
 npm run lint
 ```
 
