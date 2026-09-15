@@ -4,6 +4,7 @@ import { inter } from "../launch/fonts";
 import { clamp } from "../launch/motion";
 import { colors } from "../launch/theme";
 import { TelegramIcon } from "../launch/ui/TelegramIcon";
+import { SCREEN_PAD_TOP } from "./layout";
 
 export const LockScreen: React.FC<{
   readonly lockT: number;
@@ -33,7 +34,7 @@ export const LockScreen: React.FC<{
         style={{
           inset: 0,
           opacity: interpolate(lockT, [0.2, 0.75], [0, 1], clamp),
-          padding: "88px 28px 0",
+          padding: `${SCREEN_PAD_TOP}px 28px 0`,
           position: "absolute",
         }}
       >

@@ -2,6 +2,7 @@ import { colors } from "../launch/theme";
 import {
   BEZEL,
   ISLAND_H,
+  ISLAND_TOP,
   ISLAND_W,
   PHONE_H,
   PHONE_LEFT,
@@ -30,7 +31,7 @@ export const Phone: React.FC<{
       <div
         style={{
           backgroundColor: colors.surface,
-          borderRadius: PHONE_RADIUS - 10,
+          borderRadius: PHONE_RADIUS - BEZEL,
           bottom: BEZEL,
           left: BEZEL,
           overflow: "hidden",
@@ -50,7 +51,7 @@ export const Phone: React.FC<{
           marginLeft: -ISLAND_W / 2,
           opacity: 0.92,
           position: "absolute",
-          top: 22,
+          top: ISLAND_TOP,
           width: ISLAND_W,
           zIndex: 6,
         }}
