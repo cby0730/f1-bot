@@ -4,7 +4,7 @@ import { clamp, easeOut } from "../motion";
 import { colors } from "../theme";
 
 const TITLE_STACK_H = 118;
-const TITLE_TRAVEL = 32;
+const TITLE_TRAVEL = 40;
 
 type TitleCopy = {
   readonly label: string;
@@ -62,6 +62,8 @@ export const Stage: React.FC<{
   const enter = interpolate(frame, [0, 6], [0, 1], { ...clamp, easing: easeOut });
   const swapping = incoming !== undefined;
   const sign = swapDirection === "down" ? 1 : -1;
+  const outOp = interpolate(swap, [0, 0.42], [1, 0], clamp);
+  const inOp = interpolate(swap, [0.48, 1], [0, 1], clamp);
 
   return (
     <div
@@ -80,6 +82,7 @@ export const Stage: React.FC<{
         style={{
           height: swapping ? TITLE_STACK_H : undefined,
           opacity: labelOpacity ?? enter,
+          overflow: swapping ? "hidden" : undefined,
           position: swapping ? "relative" : undefined,
         }}
       >
@@ -88,7 +91,7 @@ export const Stage: React.FC<{
             <div
               style={{
                 left: 0,
-                opacity: 1 - swap,
+                opacity: outOp,
                 position: "absolute",
                 right: 0,
                 top: 0,
@@ -100,7 +103,7 @@ export const Stage: React.FC<{
             <div
               style={{
                 left: 0,
-                opacity: swap,
+                opacity: inOp,
                 position: "absolute",
                 right: 0,
                 top: 0,
