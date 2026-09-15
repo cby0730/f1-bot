@@ -1,22 +1,38 @@
 import { AbsoluteFill, Easing, interpolate, useCurrentFrame } from "remotion";
 import { cta } from "../copy";
 import { inter } from "../fonts";
-import { PLANE } from "../timings";
+import { CTA_ICON_SIZE } from "../layout";
+import { clamp } from "../motion";
+import { PLANE, PLANE_DOCK } from "../timings";
 import { colors } from "../theme";
 import { TelegramIcon } from "../ui/TelegramIcon";
 
-export const CTA: React.FC = () => {
+export const CTA: React.FC<{
+  readonly withPlane?: boolean;
+}> = ({ withPlane = false }) => {
   const frame = useCurrentFrame();
   const enter = interpolate(frame, [10, 24], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
+    ...clamp,
     easing: Easing.bezier(0.16, 1, 0.3, 1),
   });
-  const dock = interpolate(frame, [PLANE - 8, PLANE], [0, 1], {
-    extrapolateLeft: "clamp",
-    extrapolateRight: "clamp",
-    easing: Easing.bezier(0.16, 1, 0.3, 1),
-  });
+  const pad = withPlane
+    ? interpolate(frame, [PLANE - PLANE_DOCK, PLANE - 6], [0, 1], {
+        ...clamp,
+        easing: Easing.bezier(0.16, 1, 0.3, 1),
+      })
+    : 1;
+  const glyph = withPlane
+    ? interpolate(frame, [PLANE - 7, PLANE], [0, 1], {
+        ...clamp,
+        easing: Easing.bezier(0.16, 1, 0.3, 1),
+      })
+    : 1;
+  const iconScale = withPlane
+    ? interpolate(frame, [PLANE - PLANE_DOCK, PLANE - 4], [0.9, 1], {
+        ...clamp,
+        easing: Easing.bezier(0.16, 1, 0.3, 1),
+      })
+    : 1;
 
   return (
     <AbsoluteFill
@@ -65,13 +81,13 @@ export const CTA: React.FC = () => {
         >
           <div
             style={{
-              height: 56,
-              opacity: dock,
-              transform: `scale(${0.6 + 0.4 * dock})`,
-              width: 56,
+              height: CTA_ICON_SIZE,
+              opacity: pad,
+              transform: `scale(${iconScale})`,
+              width: CTA_ICON_SIZE,
             }}
           >
-            <TelegramIcon size={56} />
+            <TelegramIcon glyphOpacity={glyph} size={CTA_ICON_SIZE} />
           </div>
           <div
             style={{

@@ -6,7 +6,9 @@ export const PHONE_MORPH = 72;
 export const WRAP = 24;
 export const LOCK_SLIDE = 24;
 export const BANNER_IN = 24;
-export const PLANE = 24;
+export const PLANE = 36;
+/** Last beats of `PLANE`: blue tile in, dart becomes the Telegram glyph. */
+export const PLANE_DOCK = 12;
 export const UNLOCK_PRESS = 6;
 export const UNLOCK = UNLOCK_PRESS + LOCK_SLIDE + WRAP;
 export const SETTINGS_FLICK = 10;

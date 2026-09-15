@@ -55,7 +55,7 @@ export const Full: React.FC = () => {
         <Notification morph fadeOutAfter={HOLD.notification} />
       </Sequence>
       <Sequence durationInFrames={FULL_SEQ.cta} from={AT.cta} name="CTA">
-        <CTA />
+        <CTA withPlane />
       </Sequence>
       <Sequence durationInFrames={PLANE} from={AT.cta} name="Plane">
         <PlaneFlight />
