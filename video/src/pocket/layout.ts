@@ -4,12 +4,12 @@
 export const FRAME_W = 1920;
 export const FRAME_H = 1080;
 
-export const TITLE_LEFT = 48;
+export const TITLE_LEFT = 108;
 export const TITLE_WIDTH = 900;
 
 export const PHONE_W = 776;
 export const PHONE_H = 1602;
-export const PHONE_LEFT = FRAME_W - PHONE_W - 52;
+export const PHONE_LEFT = FRAME_W - PHONE_W - 108;
 export const PHONE_TOP = 32;
 /** ~15.5% of width — iPhone continuous corners, not a boxy 8% radius. */
 export const PHONE_RADIUS = 120;
