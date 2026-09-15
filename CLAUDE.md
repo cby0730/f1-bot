@@ -17,7 +17,7 @@ uv run coverage report
 
 ## Launch film
 
-Isolated Remotion app in [`video/`](video/README.md). It does not import `f1_bot` and is not in the Docker image. The README hero `docs/demo.gif` is a 1280×720 / 15 fps loop exported from that film — not a Telegram Web recording.
+Isolated Remotion app in [`video/`](video/README.md). It does not import `f1_bot` and is not in the Docker image. The README hero `docs/demo.gif` is a 1280×720 / 25 fps loop exported from that film — not a Telegram Web recording.
 
 ```bash
 cd video
@@ -90,7 +90,7 @@ The 9-command visible menu → handler map and the full `callback_data` pattern 
 | `src/f1_bot/scheduler/notification_sender.py` | `schedule_next_notification()` + `send_notifications()` — background delivery via PTB JobQueue |
 | `src/f1_bot/handlers/errors.py` | Custom error handler formatting for Telegram command validation / network errors |
 | `tests/conftest.py` | `pg_store`, `repo` fixtures (dev PostgreSQL) |
-| `video/` | Remotion launch film (Node). README hero `docs/demo.gif` is the 15 fps GIF export |
+| `video/` | Remotion launch film (Node). README hero `docs/demo.gif` is the 25 fps GIF export |
 
 ## Known gotchas
 
