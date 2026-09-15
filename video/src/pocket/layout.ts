@@ -16,7 +16,8 @@ export const PHONE_RADIUS = 120;
 export const BEZEL = 12;
 export const ISLAND_W = 192;
 export const ISLAND_H = 38;
-export const ISLAND_TOP = 16;
+/** Inset from the housing top — real iPhones do not glue the island to the rim. */
+export const ISLAND_TOP = 32;
 /** Gap from the island’s bottom edge to the chat header. */
 export const ISLAND_CLEARANCE = 44;
 export const SCREEN_PAD_TOP =
