@@ -6,7 +6,7 @@ export const PHONE_MORPH = 72;
 export const WRAP = 24;
 export const LOCK_SLIDE = 24;
 export const BANNER_IN = 24;
-export const PLANE = 36;
+export const PLANE = 54;
 /** Hold on the tile while the dart becomes the Telegram glyph. */
 export const PLANE_DOCK = 8;
 export const PLANE_ARRIVE = PLANE - PLANE_DOCK;
