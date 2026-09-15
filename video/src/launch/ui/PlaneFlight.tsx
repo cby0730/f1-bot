@@ -48,6 +48,17 @@ const unwrap = (angle: number, prev: number) => {
   return next;
 };
 
+const smoothstep = (t: number) => t * t * (3 - 2 * t);
+
+/**
+ * Path tangents snap ~28° on the first bank and twitch at the cubic join.
+ * Spring the nose toward a short look-ahead chord so the turn eases.
+ */
+const HEADING_LOOKAHEAD = 4;
+const HEADING_WN = 0.32;
+const HEADING_ZETA = 1;
+const HEADING_CATCH = 8;
+
 const poseAt = (frame: number, arrive: number, straightEnd: number) => {
   if (frame <= straightEnd) {
     const y = interpolate(frame, [0, straightEnd], [START.y, TOP.y], clamp);
@@ -69,13 +80,30 @@ const poseAt = (frame: number, arrive: number, straightEnd: number) => {
 
 const headingAt = (frame: number, arrive: number, straightEnd: number) => {
   const end = Math.min(Math.max(frame, 0), arrive);
-  const steps = 24;
-  let prev = 0;
   let angle = 0;
-  for (let i = 0; i <= steps; i++) {
-    const pose = poseAt((end * i) / steps, arrive, straightEnd);
-    angle = unwrap(heading(pose.dx, pose.dy), prev);
-    prev = angle;
+  let velocity = 0;
+  for (let f = 0; f <= end; f++) {
+    const pose = poseAt(f, arrive, straightEnd);
+    const ahead = poseAt(Math.min(f + HEADING_LOOKAHEAD, arrive), arrive, straightEnd);
+    const chordX = ahead.x - pose.x;
+    const chordY = ahead.y - pose.y;
+    const useChord = Math.hypot(chordX, chordY) >= 1;
+    const tangent = unwrap(
+      heading(useChord ? chordX : pose.dx, useChord ? chordY : pose.dy),
+      angle,
+    );
+    const raw = unwrap(heading(pose.dx, pose.dy), angle);
+    const catchStart = arrive - HEADING_CATCH;
+    const catchT = f > catchStart ? smoothstep((f - catchStart) / HEADING_CATCH) : 0;
+    const target = tangent + catchT * (raw - tangent);
+    velocity +=
+      -2 * HEADING_ZETA * HEADING_WN * velocity -
+      HEADING_WN * HEADING_WN * (angle - target);
+    angle += velocity;
+    if (catchT > 0) {
+      angle += catchT * (raw - angle);
+      velocity *= 1 - catchT;
+    }
   }
   return angle;
 };
