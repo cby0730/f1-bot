@@ -51,7 +51,7 @@ export const PhoneScreen: React.FC = () => {
   const remindY = frame < FLICK2 ? flickY(0, "in", "up") : flickY(f2, "in", "up");
 
   const settingsOn = frame >= AT.lock + LOCK_SLIDE;
-  const tzY = frame < AT_SETTINGS + TZ_HOLD ? 0 : flickY(langFlick, "out", "down");
+  const tzY = frame < AT_SETTINGS + TZ_HOLD ? 0 : flickY(langFlick, "out", "up");
   const langY =
     frame < AT_SETTINGS + TZ_HOLD
       ? PARK_Y
