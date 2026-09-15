@@ -2,7 +2,7 @@ import { AbsoluteFill, interpolate, useCurrentFrame } from "remotion";
 import { settings } from "../copy";
 import { clamp, flickEase, flickY, progress } from "../motion";
 import { PickerPanel } from "../panels/PickerPanel";
-import { HOLD, PLANE, SETTINGS_FLICK, SETTINGS_FLICK_AT } from "../timings";
+import { HOLD, RISE, SETTINGS_FLICK, SETTINGS_FLICK_AT } from "../timings";
 import { Stage } from "../ui/Stage";
 import { TelegramThread, THREAD_BODY_HEIGHT, ThreadPanel } from "../ui/TelegramChat";
 
@@ -20,7 +20,7 @@ export const Settings: React.FC = () => {
   return (
     <AbsoluteFill
       style={{
-        opacity: interpolate(frame, [HOLD.settings, HOLD.settings + PLANE], [1, 0], clamp),
+        opacity: interpolate(frame, [HOLD.settings, HOLD.settings + RISE], [1, 0], clamp),
       }}
     >
       <Stage label={settings.label} headline={settings.headline}>

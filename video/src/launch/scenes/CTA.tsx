@@ -3,7 +3,7 @@ import { cta } from "../copy";
 import { inter } from "../fonts";
 import { CTA_ICON_SIZE } from "../layout";
 import { clamp } from "../motion";
-import { PLANE, PLANE_DOCK } from "../timings";
+import { PLANE, PLANE_ARRIVE } from "../timings";
 import { colors } from "../theme";
 import { TelegramIcon } from "../ui/TelegramIcon";
 
@@ -16,19 +16,19 @@ export const CTA: React.FC<{
     easing: Easing.bezier(0.16, 1, 0.3, 1),
   });
   const pad = withPlane
-    ? interpolate(frame, [PLANE - PLANE_DOCK, PLANE - 6], [0, 1], {
+    ? interpolate(frame, [PLANE_ARRIVE - 8, PLANE_ARRIVE], [0, 1], {
         ...clamp,
         easing: Easing.bezier(0.16, 1, 0.3, 1),
       })
     : 1;
   const glyph = withPlane
-    ? interpolate(frame, [PLANE - 7, PLANE], [0, 1], {
+    ? interpolate(frame, [PLANE_ARRIVE, PLANE], [0, 1], {
         ...clamp,
         easing: Easing.bezier(0.16, 1, 0.3, 1),
       })
     : 1;
   const iconScale = withPlane
-    ? interpolate(frame, [PLANE - PLANE_DOCK, PLANE - 4], [0.9, 1], {
+    ? interpolate(frame, [PLANE_ARRIVE - 8, PLANE_ARRIVE], [0.9, 1], {
         ...clamp,
         easing: Easing.bezier(0.16, 1, 0.3, 1),
       })
