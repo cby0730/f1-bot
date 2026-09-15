@@ -3,15 +3,65 @@ import { inter } from "../fonts";
 import { clamp, easeOut } from "../motion";
 import { colors } from "../theme";
 
+const TITLE_STACK_H = 118;
+const TITLE_TRAVEL = 32;
+
+type TitleCopy = {
+  readonly label: string;
+  readonly headline: string;
+};
+
+const TitleCopyView: React.FC<TitleCopy> = ({ label, headline }) => (
+  <>
+    <div
+      style={{
+        color: colors.label,
+        fontSize: 26,
+        fontWeight: 600,
+        letterSpacing: 4,
+        textTransform: "uppercase",
+      }}
+    >
+      {label}
+    </div>
+    <div
+      style={{
+        color: colors.text,
+        fontSize: 64,
+        fontWeight: 800,
+        letterSpacing: -1.6,
+        lineHeight: 1.05,
+        marginTop: 12,
+      }}
+    >
+      {headline}
+    </div>
+  </>
+);
+
 export const Stage: React.FC<{
   readonly label: string;
   readonly headline: string;
+  readonly incoming?: TitleCopy;
+  readonly swap?: number;
+  readonly swapDirection?: "up" | "down";
   readonly children?: React.ReactNode;
   readonly labelOpacity?: number;
   readonly bgOpacity?: number;
-}> = ({ label, headline, children, labelOpacity, bgOpacity = 1 }) => {
+}> = ({
+  label,
+  headline,
+  incoming,
+  swap = 0,
+  swapDirection = "down",
+  children,
+  labelOpacity,
+  bgOpacity = 1,
+}) => {
   const frame = useCurrentFrame();
   const enter = interpolate(frame, [0, 6], [0, 1], { ...clamp, easing: easeOut });
+  const swapping = incoming !== undefined;
+  const sign = swapDirection === "down" ? 1 : -1;
 
   return (
     <div
@@ -26,30 +76,43 @@ export const Stage: React.FC<{
         width: "100%",
       }}
     >
-      <div style={{ opacity: labelOpacity ?? enter }}>
-        <div
-          style={{
-            color: colors.label,
-            fontSize: 26,
-            fontWeight: 600,
-            letterSpacing: 4,
-            textTransform: "uppercase",
-          }}
-        >
-          {label}
-        </div>
-        <div
-          style={{
-            color: colors.text,
-            fontSize: 64,
-            fontWeight: 800,
-            letterSpacing: -1.6,
-            lineHeight: 1.05,
-            marginTop: 12,
-          }}
-        >
-          {headline}
-        </div>
+      <div
+        style={{
+          height: swapping ? TITLE_STACK_H : undefined,
+          opacity: labelOpacity ?? enter,
+          position: swapping ? "relative" : undefined,
+        }}
+      >
+        {swapping ? (
+          <>
+            <div
+              style={{
+                left: 0,
+                opacity: 1 - swap,
+                position: "absolute",
+                right: 0,
+                top: 0,
+                transform: `translateY(${swap * TITLE_TRAVEL * sign}px)`,
+              }}
+            >
+              <TitleCopyView label={label} headline={headline} />
+            </div>
+            <div
+              style={{
+                left: 0,
+                opacity: swap,
+                position: "absolute",
+                right: 0,
+                top: 0,
+                transform: `translateY(${(swap - 1) * TITLE_TRAVEL * sign}px)`,
+              }}
+            >
+              <TitleCopyView label={incoming.label} headline={incoming.headline} />
+            </div>
+          </>
+        ) : (
+          <TitleCopyView label={label} headline={headline} />
+        )}
       </div>
       <div
         style={{

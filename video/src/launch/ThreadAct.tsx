@@ -28,14 +28,19 @@ export const ThreadAct: React.FC = () => {
         : flickY(f2, "out", "up");
   const remindY = frame < flick2 ? flickY(0, "in", "up") : flickY(f2, "in", "up");
 
-  const head =
-    frame < flick1 + FLICK / 2 ? start : frame < flick2 + FLICK / 2 ? next : remind;
+  const outgoing = frame < flick2 ? start : next;
+  const incoming = frame < flick1 ? start : frame < flick2 ? next : remind;
+  const swap = frame < flick1 ? 0 : frame < flick2 ? f1 : f2;
+  const swapDirection = frame < flick2 ? "down" : "up";
 
   return (
     <AbsoluteFill>
       <Stage
-        label={head.label}
-        headline={head.headline}
+        label={outgoing.label}
+        headline={outgoing.headline}
+        incoming={{ label: incoming.label, headline: incoming.headline }}
+        swap={swap}
+        swapDirection={swapDirection}
         labelOpacity={interpolate(rise, [0, 1], [0.35, 1])}
       >
         <div
