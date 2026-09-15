@@ -23,7 +23,6 @@ npm run dev            # Remotion Studio
 npm run compositions   # list compositions
 npm run render:proof   # 3s toolchain proof → out/proof.mp4
 npm run render:full    # 21s launch film → out/full.mp4
-npm run render:pocket  # cropped-phone experiment → out/pocket.mp4
 npm run render:short   # 7.5s cut → out/short.mp4
 npm run lint
 ```
