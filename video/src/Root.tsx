@@ -1,5 +1,4 @@
 import { Composition, Folder } from "remotion";
-import "./index.css";
 import { Full } from "./launch/Full";
 import { Short } from "./launch/Short";
 import {
@@ -15,7 +14,6 @@ import { Notification } from "./launch/scenes/Notification";
 import { Remind } from "./launch/scenes/Remind";
 import { Settings } from "./launch/scenes/Settings";
 import { Start } from "./launch/scenes/Start";
-import { Proof } from "./Proof";
 
 export const RemotionRoot: React.FC = () => {
   return (
@@ -94,14 +92,6 @@ export const RemotionRoot: React.FC = () => {
           height={1080}
         />
       </Folder>
-      <Composition
-        id="Proof"
-        component={Proof}
-        durationInFrames={90}
-        fps={30}
-        width={1920}
-        height={1080}
-      />
     </>
   );
 };

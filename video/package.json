@@ -8,12 +8,10 @@
   "dependencies": {
     "@remotion/cli": "4.0.524",
     "@remotion/google-fonts": "4.0.524",
-    "@remotion/tailwind-v4": "4.0.524",
     "@remotion/transitions": "4.0.524",
     "react": "19.2.3",
     "react-dom": "19.2.3",
-    "remotion": "4.0.524",
-    "tailwindcss": "4.0.0"
+    "remotion": "4.0.524"
   },
   "devDependencies": {
     "@remotion/eslint-config-flat": "4.0.524",
@@ -29,11 +27,7 @@
     "upgrade": "remotion upgrade",
     "lint": "eslint src && tsc",
     "compositions": "remotion compositions",
-    "render:proof": "remotion render Proof out/proof.mp4",
     "render:full": "remotion render Full out/full.mp4",
     "render:short": "remotion render Short out/short.mp4"
-  },
-  "sideEffects": [
-    "*.css"
-  ]
+  }
 }
