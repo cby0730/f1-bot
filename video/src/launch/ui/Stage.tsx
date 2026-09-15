@@ -3,7 +3,7 @@ import { inter } from "../fonts";
 import { clamp, easeOut } from "../motion";
 import { colors } from "../theme";
 
-const TITLE_STACK_H = 118;
+const TITLE_STACK_H = 168;
 const TITLE_TRAVEL = 40;
 
 type TitleCopy = {
@@ -30,8 +30,9 @@ const TitleCopyView: React.FC<TitleCopy> = ({ label, headline }) => (
         fontSize: 64,
         fontWeight: 800,
         letterSpacing: -1.6,
-        lineHeight: 1.05,
+        lineHeight: 1.2,
         marginTop: 12,
+        paddingBottom: 6,
       }}
     >
       {headline}

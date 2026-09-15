@@ -43,8 +43,9 @@ export const SceneChrome: React.FC<{
             fontSize: 64,
             fontWeight: 800,
             letterSpacing: -1.6,
-            lineHeight: 1.05,
+            lineHeight: 1.2,
             marginTop: 12,
+            paddingBottom: 6,
           }}
         >
           {headline}

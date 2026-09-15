@@ -60,8 +60,6 @@ export const Notification: React.FC<{
     : 0;
   const press = fadeOutAfter ? progress(frame, fadeOutAfter, UNLOCK_PRESS) : 0;
   const bannerPress = interpolate(press, [0, 0.45, 1], [1, 0.82, 0.95]);
-  const labelFade = morph ? interpolate(wrapIn, [0, 1], [1, 0]) : 0;
-
   const width = interpolate(wrapT, [0, 1], [CHAT_W, PHONE_W]);
   const height = interpolate(wrapT, [0, 1], [CHAT_H, PHONE_H]);
   const radius = interpolate(wrapT, [0, 1], [36, 64]);
@@ -271,9 +269,15 @@ export const Notification: React.FC<{
   return (
     <AbsoluteFill style={{ backgroundColor: "transparent" }}>
       <Stage
-        label={unwrapping ? settings.label : remind.label}
-        headline={unwrapping ? settings.headline : remind.headline}
-        labelOpacity={unwrapping ? interpolate(unwrapT, [0.15, 1], [0, 1]) : labelFade}
+        label={remind.label}
+        headline={remind.headline}
+        incoming={
+          unwrapping
+            ? { label: settings.label, headline: settings.headline }
+            : undefined
+        }
+        labelOpacity={1}
+        swap={unwrapping ? unwrapT : 0}
       >
         {phone}
       </Stage>
