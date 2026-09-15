@@ -45,3 +45,11 @@ All F1 data provided by the bot is fetched from the following public APIs:
 | `/circuit` | Circuit info — pick from the season calendar |
 | `/remind` | View and manage your active session reminders |
 | `/settings` | Timezone and language pickers |
+
+---
+
+## Development
+
+Bot commands, architecture, and tests: [CLAUDE.md](CLAUDE.md).
+
+The hero gif is the launch film in [`video/`](video/README.md), not a live Telegram recording.

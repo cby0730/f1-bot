@@ -1,6 +1,6 @@
 # F1 bot videos
 
-Isolated [Remotion](https://www.remotion.dev) project for launch films. It does not import `f1_bot`, does not run the Telegram bot, and is not part of the Python package or Docker image.
+Isolated [Remotion](https://www.remotion.dev) project for launch films. It does not import `f1_bot`, does not run the Telegram bot, and is not part of the Python package or Docker image. Bot architecture and tests live in [`CLAUDE.md`](../CLAUDE.md).
 
 ## Why this folder exists
 

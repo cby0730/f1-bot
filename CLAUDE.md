@@ -15,6 +15,17 @@ uv run coverage run --source=f1_bot -m pytest -m "not integration" -p no:randoml
 uv run coverage report
 ```
 
+## Launch film
+
+Isolated Remotion app in [`video/`](video/README.md). It does not import `f1_bot` and is not in the Docker image. The README hero `docs/demo.gif` is a 1280×720 / 15 fps loop exported from that film — not a Telegram Web recording.
+
+```bash
+cd video
+npm install
+npm run render:full    # 21s → out/full.mp4 (gitignored)
+# then the ffmpeg recipe in video/README.md → docs/demo.gif
+```
+
 ## Architecture
 
 **SQL-only handlers:** background scheduler (JobQueue) fetches from Jolpica + OpenF1 → stores in PostgreSQL. Telegram handlers read exclusively from PostgreSQL via `Repository`. No API calls from handlers.
@@ -79,6 +90,7 @@ The 9-command visible menu → handler map and the full `callback_data` pattern 
 | `src/f1_bot/scheduler/notification_sender.py` | `schedule_next_notification()` + `send_notifications()` — background delivery via PTB JobQueue |
 | `src/f1_bot/handlers/errors.py` | Custom error handler formatting for Telegram command validation / network errors |
 | `tests/conftest.py` | `pg_store`, `repo` fixtures (dev PostgreSQL) |
+| `video/` | Remotion launch film (Node). README hero `docs/demo.gif` is the 15 fps GIF export |
 
 ## Known gotchas
 
@@ -90,7 +102,11 @@ when both are needed in the same file.
 single argument only.
 
 **Docker image:** Use `python:3.13-slim`, not `python:3.13-alpine`. Alpine's musl libc
-breaks `httpx` C extensions.
+breaks `httpx` C extensions. The image copies `src/` only — do not add `video/` or
+`docs/demo.gif` to the Dockerfile.
+
+**README hero gif:** rebuild `docs/demo.gif` from `video/out/full.mp4` with the ffmpeg
+recipe in `video/README.md`. Do not recapture Telegram Web for the README.
 
 **Pydantic v2 frozen models in tests:** Use `object.__setattr__(model, "field", value)` to
 set fields on frozen Pydantic models during test setup (e.g., attaching a `sprint` session to a `Race`).

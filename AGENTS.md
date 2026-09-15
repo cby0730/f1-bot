@@ -49,3 +49,8 @@ Read those first; this file only records non-obvious environment caveats.
   automated quality gate is `.pre-commit-config.yaml` (ruff, ruff-format, gitleaks,
   hadolint, pip-audit), and only when installed locally. Run lint + tests yourself
   before committing (see `CLAUDE.md`).
+
+- **Launch film is Node, not Python.** `video/` is a Remotion app. Render with
+  `cd video && npm run render:full` (npm is on PATH). Rebuild the README gif with
+  the ffmpeg recipe in `video/README.md`. Do not `uv run` Remotion, and do not
+  copy `video/` into Docker.
