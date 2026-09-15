@@ -4,7 +4,7 @@ A full-featured and elegantly designed Telegram Bot for Formula 1, providing F1 
 
 👉 **Try the Telegram Bot: [@F1_Infomation_bot](https://t.me/F1_Infomation_bot)**
 
-![Bot demo](docs/demo.gif)
+![Launch film](docs/demo.gif)
 
 ---
 
