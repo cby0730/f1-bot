@@ -32,21 +32,10 @@ export const Hook: React.FC = () => {
       >
         <div
           style={{
-            color: colors.telegram,
-            fontSize: 28,
-            fontWeight: 700,
-            letterSpacing: 5,
-            marginBottom: 22,
-          }}
-        >
-          {hook.label}
-        </div>
-        <div
-          style={{
             color: colors.text,
-            fontSize: 120,
+            fontSize: 104,
             fontWeight: 800,
-            letterSpacing: -3,
+            letterSpacing: -2.6,
             lineHeight: 0.98,
           }}
         >
@@ -54,10 +43,21 @@ export const Hook: React.FC = () => {
         </div>
         <div
           style={{
+            color: colors.telegram,
+            fontSize: 48,
+            fontWeight: 700,
+            letterSpacing: -0.6,
+            marginTop: 22,
+          }}
+        >
+          {hook.support}
+        </div>
+        <div
+          style={{
             color: colors.muted,
             fontSize: 36,
             fontWeight: 500,
-            marginTop: 28,
+            marginTop: 20,
           }}
         >
           {hook.sub}

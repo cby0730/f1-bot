@@ -10,14 +10,18 @@ export const PLANE = 24;
 export const UNLOCK_PRESS = 6;
 export const UNLOCK = UNLOCK_PRESS + LOCK_SLIDE + WRAP;
 export const SETTINGS_FLICK = 10;
+export const LOCK_HOLD = 45;
+export const SETTINGS_TZ_HOLD = 51;
+export const SETTINGS_LANG_HOLD = 50;
+export const SETTINGS_FLICK_AT = WRAP + SETTINGS_TZ_HOLD;
 
 export const HOLD = {
   hook: 60,
-  start: 105,
-  next: 135,
-  remind: 90,
-  notification: 135,
-  settings: 90,
+  start: 75,
+  next: 75,
+  remind: 75,
+  notification: WRAP + LOCK_SLIDE + BANNER_IN + LOCK_HOLD,
+  settings: SETTINGS_FLICK_AT + SETTINGS_FLICK + SETTINGS_LANG_HOLD,
   cta: 75,
 } as const;
 

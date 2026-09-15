@@ -7,8 +7,8 @@ export const lockPeriod = "PM";
 export const lockDate = "Saturday, September 20";
 
 export const hook = {
-  label: "F1 BOT",
-  headline: "Built for Telegram.",
+  headline: "Your Pocket pit wall",
+  support: "Built for Telegram",
   sub: "For people who already live here.",
 };
 
@@ -63,7 +63,7 @@ export const settings = {
 
 export const cta = {
   label: "FREE",
-  headline: "Open the bot.",
+  headline: "OpenSource",
   handle: "@F1_Infomation_bot",
   github: "Star it on GitHub",
   githubUrl: "github.com/cby0730/f1-bot",
