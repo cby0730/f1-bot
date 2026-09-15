@@ -5,8 +5,9 @@ import { PickerPanel } from "../launch/panels/PickerPanel";
 import { RemindPanel } from "../launch/panels/RemindPanel";
 import { StartPanel } from "../launch/panels/StartPanel";
 import { settings } from "../launch/copy";
-import { ChatHeader, ThreadPanel } from "../launch/ui/TelegramChat";
 import { inter } from "../launch/fonts";
+import { colors } from "../launch/theme";
+import { ChatHeader, ThreadPanel } from "../launch/ui/TelegramChat";
 import { PARK_Y, SCREEN_PAD_TOP, THREAD_H } from "./layout";
 import {
   AT,
@@ -86,10 +87,17 @@ export const PhoneScreen: React.FC = () => {
         fontFamily: inter,
         height: "100%",
         opacity: interpolate(rise, [0, 1], [0.38, 1]),
-        paddingTop: SCREEN_PAD_TOP,
       }}
     >
-      <ChatHeader />
+      <div
+        style={{
+          backgroundColor: colors.surfaceLift,
+          flexShrink: 0,
+          paddingTop: SCREEN_PAD_TOP,
+        }}
+      >
+        <ChatHeader />
+      </div>
       <div
         style={{
           flex: 1,
