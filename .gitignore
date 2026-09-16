@@ -34,6 +34,10 @@ node_modules/
 package.json
 package-lock.json
 
+# Remotion lives in video/ and must be tracked
+!video/package.json
+!video/package-lock.json
+
 # Serena
 .serena/
 
