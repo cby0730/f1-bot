@@ -19,6 +19,9 @@ Read those first; this file only records non-obvious environment caveats.
   If the cluster is down after a restart, start it with
   `sudo pg_ctlcluster 16 main start` (check with `pg_lsclusters`). The bot schema
   is auto-created on startup; no migration step.
+  This cluster is for **running the bot**. The tests no longer touch it — they
+  start their own container (see below), which needs a Docker daemon. Where
+  Docker is genuinely unavailable, the test suite cannot run at all.
 
 - **Running the bot needs `TELEGRAM_BOT_TOKEN`** (bare env var, no `F1BOT_` prefix;
   get one from @BotFather). It is intentionally not stored in the repo — export it
@@ -31,13 +34,18 @@ Read those first; this file only records non-obvious environment caveats.
   the log shows `startup_sync_complete` → `bot_commands_registered` →
   `Application started`.
 
-- **Tests need the DB and (some) network.** Unit tests (`pytest -m "not integration"`)
-  use a separate `mango_test` database (created on first pytest run; override with
-  `F1BOT_TEST_DATABASE_URL`) and skip gracefully if Postgres is unavailable. They
-  must **not** share `mango` with a running bot — the fixtures `TRUNCATE` every
-  public table after each test, which would empty `/standings` for a live process.
-  `integration` and `tests/test_smoke.py` make real HTTP calls to Jolpica/OpenF1,
-  which works from this environment.
+- **Tests bring their own database.** The `pg_url` fixture in `tests/conftest.py`
+  starts a throwaway `postgres:16-alpine` container via Testcontainers, so
+  `uv run pytest -m "not integration"` needs **no** database on the host, no psql
+  client, and no `F1BOT_TEST_DATABASE_URL`. It requires only a reachable Docker
+  daemon. Expect **0 skipped, 0 error** — a skip or a connection error means
+  something is wrong, not that the DB is merely absent.
+  The container is session-scoped but **lazily started**: DB-free suites
+  (`tests/test_i18n/`, most of `tests/test_handlers/`) never launch it and finish
+  in under a second. `pg_store`/`repo` stay function-scoped, so each test gets a
+  fresh store and a fresh `Repository._laps_cache`.
+  `integration` and `tests/test_smoke.py` additionally make real HTTP calls to
+  Jolpica/OpenF1.
 
 - **PRs target `develop`, never `main`.** Open and merge pull requests against
   `develop`. `main` is production: `.github/workflows/deploy.yml` SSHes into the

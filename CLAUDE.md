@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 uv run -m f1_bot                          # start the bot (requires .env)
-uv run pytest -m "not integration"        # unit tests only (~565 tests, dev PostgreSQL)
+uv run pytest -m "not integration"        # unit tests (575; needs only a Docker daemon)
 uv run pytest -m integration -v           # integration tests (real HTTP, ~19 tests)
 uv run pytest tests/test_smoke.py -v      # full-stack smoke test
 
@@ -89,7 +89,7 @@ The 9-command visible menu → handler map and the full `callback_data` pattern 
 | `src/f1_bot/models/notification.py` | `NotificationSubscription` model + `TIMING_PRESETS` (15/30/60/180 min) |
 | `src/f1_bot/scheduler/notification_sender.py` | `schedule_next_notification()` + `send_notifications()` — background delivery via PTB JobQueue |
 | `src/f1_bot/handlers/errors.py` | Custom error handler formatting for Telegram command validation / network errors |
-| `tests/conftest.py` | `pg_store`, `repo` fixtures (dev PostgreSQL) |
+| `tests/conftest.py` | `pg_url` (session-scoped Testcontainers PostgreSQL), `pg_store`, `repo` fixtures |
 | `video/` | Remotion launch film (Node). README hero `docs/demo.gif` is the 30 fps GIF export |
 
 ## Known gotchas
@@ -112,6 +112,15 @@ recipe in `video/README.md`. Do not recapture Telegram Web for the README.
 set fields on frozen Pydantic models during test setup (e.g., attaching a `sprint` session to a `Race`).
 
 **startup_sync in tests:** Patch `f1_bot.main.startup_sync` with `AsyncMock` in E2E/main tests to avoid real HTTP calls.
+
+**`docker-compose.dev.yml` is only for actually running the bot locally.** No test
+needs it. The suite brings its own database: the `pg_url` fixture starts a
+throwaway container via Testcontainers, on a random port, torn down at session
+end. Starting `mango_pg` before running tests does nothing — and pointing tests
+at it would be actively wrong, since the fixtures TRUNCATE every public table.
+`tests/test_db_isolation.py` enforces this by asserting on the URL `pg_url`
+actually hands out (not a module constant), which is what closes the bypass
+`tests/test_e2e.py` used to have with its own hardcoded URL.
 
 **Never measure coverage with `pytest --cov` — it segfaults (exit 139).** Any test
 that opens an asyncpg connection dies inside the Cython
@@ -240,7 +249,12 @@ never raise.
 ## Test conventions
 
 - `pytest.mark.integration` — requires network (Jolpica or OpenF1 HTTP)
-- No marker — unit test; uses dev PostgreSQL; safe to run offline
+- No marker — unit test; needs no network. Tests that touch the DB get a throwaway
+  `postgres:16-alpine` container from the session-scoped `pg_url` fixture
+  (Testcontainers), so a Docker daemon is the only host requirement. Expect
+  **0 skipped, 0 error** — a skip means something broke, not that a DB is absent.
+  `pg_store`/`repo` stay function-scoped so each test gets a fresh store and a
+  fresh `Repository._laps_cache`; only `pg_url` is shared.
 - Mocking HTTP: use `pytest-httpx` (`httpx_mock` fixture) for unit tests
 - Scheduler tests: import private constants (`_LIVE_WINDOW_MARGIN`, `_RESULTS_WINDOW`) directly for boundary assertions
 - Relative-date fixtures: For testing time-windowed sync functions where `now` is computed internally, use `date.today() - timedelta(days=N)` instead of patching
