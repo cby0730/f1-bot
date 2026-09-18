@@ -47,21 +47,28 @@ def _ensure_test_database() -> None:
         "-d",
         admin_db,
     ]
-    check = subprocess.run(  # noqa: S603
-        [*psql, "-tAc", f"SELECT 1 FROM pg_database WHERE datname='{db_name}'"],  # noqa: S608
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if check.returncode != 0 or check.stdout.strip() == "1":
+    # ``check=False`` only swallows a non-zero exit code; a missing psql binary
+    # raises from Popen before exec. Uncaught here it aborts collection for the
+    # whole suite -- including the DB-free tests -- instead of letting the
+    # ``pg_store`` fixture skip.
+    try:
+        check = subprocess.run(  # noqa: S603
+            [*psql, "-tAc", f"SELECT 1 FROM pg_database WHERE datname='{db_name}'"],  # noqa: S608
+            env=env,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if check.returncode != 0 or check.stdout.strip() == "1":
+            return
+        subprocess.run(  # noqa: S603
+            [*psql, "-c", f'CREATE DATABASE "{db_name}" OWNER mango'],  # noqa: S608
+            env=env,
+            capture_output=True,
+            check=False,
+        )
+    except OSError:
         return
-    subprocess.run(  # noqa: S603
-        [*psql, "-c", f'CREATE DATABASE "{db_name}" OWNER mango'],  # noqa: S608
-        env=env,
-        capture_output=True,
-        check=False,
-    )
 
 
 def pytest_configure(config):
