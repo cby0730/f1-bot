@@ -10,7 +10,10 @@ import pytest_asyncio
 from f1_bot.storage.postgres_store import PostgresStore
 from f1_bot.storage.repository import Repository
 
-PG_IMAGE = "postgres:16-alpine"
+# Keep in step with docker-compose.yml (production). They are allowed to differ
+# briefly during a major upgrade -- production needs a dump/restore, this does
+# not -- but a lasting gap means tests stop covering the server the bot runs on.
+PG_IMAGE = "postgres:18-alpine"
 
 
 @pytest.fixture(scope="session")

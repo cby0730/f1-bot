@@ -113,6 +113,18 @@ set fields on frozen Pydantic models during test setup (e.g., attaching a `sprin
 
 **startup_sync in tests:** Patch `f1_bot.main.startup_sync` with `AsyncMock` in E2E/main tests to avoid real HTTP calls.
 
+**PostgreSQL 18 moved `PGDATA`, so a version bump is never just the tag.** The
+official image changed `PGDATA` from `/var/lib/postgresql/data` to
+`/var/lib/postgresql/<major>/docker`, so the volume mount goes one level up at
+`/var/lib/postgresql`. Keep the old mount and the 18 container starts and
+immediately exits with `There appears to be PostgreSQL data in
+/var/lib/postgresql/data (unused mount/volume)`. `docker-compose.dev.yml` is
+already on the new layout; **`docker-compose.yml` (production) is deliberately
+still `16-alpine` with the old mount** — its volume holds real user preferences
+and reminders, so it changes only as part of the dump/restore upgrade, tag and
+mount together. Confirm the path for any image with
+`docker run --rm postgres:<tag> env | grep PGDATA`.
+
 **`docker-compose.dev.yml` is only for actually running the bot locally.** No test
 needs it. The suite brings its own database: the `pg_url` fixture starts a
 throwaway container via Testcontainers, on a random port, torn down at session
@@ -250,7 +262,7 @@ never raise.
 
 - `pytest.mark.integration` — requires network (Jolpica or OpenF1 HTTP)
 - No marker — unit test; needs no network. Tests that touch the DB get a throwaway
-  `postgres:16-alpine` container from the session-scoped `pg_url` fixture
+  `postgres:18-alpine` container from the session-scoped `pg_url` fixture
   (Testcontainers), so a Docker daemon is the only host requirement. Expect
   **0 skipped, 0 error** — a skip means something broke, not that a DB is absent.
   `pg_store`/`repo` stay function-scoped so each test gets a fresh store and a

@@ -35,7 +35,7 @@ Read those first; this file only records non-obvious environment caveats.
   `Application started`.
 
 - **Tests bring their own database.** The `pg_url` fixture in `tests/conftest.py`
-  starts a throwaway `postgres:16-alpine` container via Testcontainers, so
+  starts a throwaway `postgres:18-alpine` container via Testcontainers, so
   `uv run pytest -m "not integration"` needs **no** database on the host, no psql
   client, and no `F1BOT_TEST_DATABASE_URL`. It requires only a reachable Docker
   daemon. Expect **0 skipped, 0 error** — a skip or a connection error means
