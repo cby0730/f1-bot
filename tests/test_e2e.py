@@ -2,11 +2,11 @@
 Comprehensive offline E2E test suite for f1-bot.
 Contains 26 scenarios implementing full coverage of all bot features.
 All external calls (Jolpica, OpenF1, and Telegram Bot API) are fully mocked via pytest-httpx.
-Postgres is used via the ``mango_test`` database (not the bot's ``mango``).
+Postgres comes from the ``pg_url`` fixture (a throwaway container), so these
+tests need no database on the host.
 """
 
 import json
-import os
 import urllib.parse
 from datetime import UTC, date, datetime, timedelta
 from unittest.mock import AsyncMock, patch
@@ -16,10 +16,6 @@ from telegram import Update
 
 from f1_bot.config import Settings
 from f1_bot.main import build_app
-
-_TEST_DATABASE_URL = os.environ.get(
-    "F1BOT_TEST_DATABASE_URL", "postgresql://mango:mango@localhost:31055/mango_test"
-)
 
 # Define Bot Details for Mocking
 TELEGRAM_TOKEN = "123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ"
@@ -83,11 +79,11 @@ def make_mock_schedule(num_races: int = 24, current_year: int | None = None) -> 
 
 
 @pytest.fixture
-def e2e_settings(tmp_path):
+def e2e_settings(tmp_path, pg_url):
     """Returns application settings configured for offline E2E testing."""
     return Settings(
         TELEGRAM_BOT_TOKEN=TELEGRAM_TOKEN,
-        database_url=_TEST_DATABASE_URL,
+        database_url=pg_url,
         jolpica_base_url="https://api.jolpi.ca/ergast/f1",
         openf1_base_url="https://api.openf1.org/v1",
         jolpica_rate_per_second=100.0,

@@ -37,6 +37,7 @@ SESSION_LABELS = {
     "race": "Race",
 }
 
+
 def session_label(key: str, lang: str) -> str:
     """Display label for a session key, e.g. ``"qualifying"`` → ``"Qualifying"``.
 
