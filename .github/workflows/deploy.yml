@@ -17,7 +17,28 @@ jobs:
           key: ${{ secrets.OCI_SSH_KEY }}
           port: 22
           script: |
+            set -e
             cd ~/f1-bot
             git pull
             docker compose up -d --build
+
+            # `up -d` returns as soon as the containers are *created*, so a bot
+            # that crashes on boot, or a postgres that refuses its data
+            # directory after a major upgrade, both leave this workflow green
+            # while the service is down. Poll until both are actually up.
+            for i in $(seq 1 30); do
+              pg=$(docker compose ps -q postgres | xargs -r docker inspect -f '{{.State.Health.Status}}' 2>/dev/null || true)
+              bot=$(docker compose ps -q bot | xargs -r docker inspect -f '{{.State.Status}}' 2>/dev/null || true)
+              if [ "$pg" = "healthy" ] && [ "$bot" = "running" ]; then break; fi
+              sleep 5
+            done
+
+            if [ "$pg" != "healthy" ] || [ "$bot" != "running" ]; then
+              echo "::error::deploy unhealthy after 150s (postgres=$pg bot=$bot)"
+              docker compose ps
+              docker compose logs --tail 50
+              exit 1
+            fi
+
+            echo "deploy healthy (postgres=$pg bot=$bot)"
             docker image prune -f
