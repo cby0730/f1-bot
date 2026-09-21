@@ -78,17 +78,25 @@ Read those first; this file only records non-obvious environment caveats.
   open a PR into `main`; promote `develop` → `main` only as an explicit release
   merge.
 
-- **CI runs tests and lint, but does not gate deployment.**
-  `.github/workflows/test.yml` runs three jobs — `test` (`pytest -m "not
-  integration"`), `lint` (`ruff check` + `ruff format --check`) and `audit`
-  (`pip-audit`, `continue-on-error`) — on every PR into `develop`/`main` and on
-  every push to `develop`. It has no `services:` block; Testcontainers supplies
-  the database, with Ryuk disabled since the runner is itself ephemeral.
-  **But `deploy.yml` does not depend on it**: a red test run does not stop a
-  merge to `main` from deploying. Closing that needs branch protection, which is
-  configured in GitHub, not in this repo. `.pre-commit-config.yaml` (ruff,
-  ruff-format, gitleaks, hadolint, pip-audit) remains the local gate; still run
-  lint + tests yourself before committing (see `CLAUDE.md`).
+- **CI gates deployment.** `.github/workflows/test.yml` runs three jobs — `test`
+  (`pytest -m "not integration"`), `lint` (`ruff check` + `ruff format --check`)
+  and `audit` (`pip-audit`, `continue-on-error`) — on every PR into
+  `develop`/`main`, on every push to `develop`, and via `workflow_call` from
+  `deploy.yml`. It has no `services:` block; Testcontainers supplies the
+  database, with Ryuk disabled since the runner is itself ephemeral.
+  `deploy.yml` calls it as its own `test` job and the SSH step declares
+  `needs: test`, so a push to `main` that fails `test` or `lint` never reaches
+  the VM. `audit` is exempt by construction: `continue-on-error` makes it report
+  success, so an upstream CVE published today stays visible without holding a
+  release hostage. Only what this repo controls can block a deploy.
+  `.pre-commit-config.yaml` (ruff, ruff-format, gitleaks, hadolint, pip-audit)
+  remains the local gate; still run lint + tests yourself before committing (see
+  `CLAUDE.md`).
+
+  Two gaps this does **not** close, both needing GitHub-side branch protection
+  rather than a file here: a red run still cannot block the *merge button* on a
+  PR, and nothing prevents a direct push to `main` — it will be tested before
+  deploying, but it will not have been reviewed.
 
 - **Launch film is Node, not Python.** `video/` is a Remotion app. Render with
   `cd video && npm run render:full` (npm is on PATH). Rebuild the README gif with
