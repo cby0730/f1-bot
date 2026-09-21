@@ -44,8 +44,33 @@ Read those first; this file only records non-obvious environment caveats.
   (`tests/test_i18n/`, most of `tests/test_handlers/`) never launch it and finish
   in under a second. `pg_store`/`repo` stay function-scoped, so each test gets a
   fresh store and a fresh `Repository._laps_cache`.
-  `integration` and `tests/test_smoke.py` additionally make real HTTP calls to
-  Jolpica/OpenF1.
+- **The `integration` marker means "hits a real external API", not "needs a
+  database".** Since the Testcontainers migration *both* halves get a database,
+  so that is no longer what separates them — all 19 marked tests (`test_api/`,
+  `test_smoke.py`) call live Jolpica/OpenF1. `test_smoke.py` needs both a real
+  DB and real HTTP, which is why "integration = no DB" is the wrong mental model.
+
+- **`integration` is deliberately kept out of CI — do not "helpfully" add it.**
+  A red CI run must mean *this PR is broken*. Mixing in third-party
+  availability, Jolpica's 500 req/hr limit, and OpenF1 pruning old
+  `session_key`s makes a red run ambiguous, and an ambiguous gate gets ignored
+  and then switched off. Run these locally when you want to check the APIs still
+  behave; they are the only tests that catch an upstream format change. If they
+  ever do belong in CI, give them a separate `workflow_dispatch` workflow that
+  cannot block a merge.
+
+- **Running `integration` from this host needs the tunnel.** The corporate proxy
+  in the shell profile (`HTTPS_PROXY=http://10.1.1.39:80`) classifies
+  `api.jolpi.ca` and `api.openf1.org` as blocked and answers 302 to
+  `blockpage.cgi`, so the client parses HTML as JSON and you get
+  `Expecting value: line 1 column 1` — which looks like a parser bug and is not.
+  Prefix the command with the tunnel instead of editing the profile globally:
+
+  ```bash
+  env HTTP_PROXY=http://127.0.0.1:31100 HTTPS_PROXY=http://127.0.0.1:31100 \
+      http_proxy=http://127.0.0.1:31100 https_proxy=http://127.0.0.1:31100 \
+      uv run pytest -m integration
+  ```
 
 - **PRs target `develop`, never `main`.** Open and merge pull requests against
   `develop`. `main` is production: `.github/workflows/deploy.yml` SSHes into the

@@ -272,7 +272,12 @@ never raise.
 
 ## Test conventions
 
-- `pytest.mark.integration` — requires network (Jolpica or OpenF1 HTTP)
+- `pytest.mark.integration` — calls a **real external API** (Jolpica/OpenF1). It
+  does *not* mean "needs a database": both halves get one from Testcontainers,
+  and `test_smoke.py` needs a real DB *and* real HTTP. These 19 tests are
+  intentionally excluded from CI so a red run always means the PR is broken
+  rather than that a third party is having a bad day — run them locally (and see
+  `AGENTS.md` for the proxy tunnel this host requires).
 - No marker — unit test; needs no network. Tests that touch the DB get a throwaway
   `postgres:18-alpine` container from the session-scoped `pg_url` fixture
   (Testcontainers), so a Docker daemon is the only host requirement. Expect

@@ -5,10 +5,19 @@ Uses real HTTP calls to api.jolpi.ca and a real Postgres (the throwaway
 ``pg_url`` container from conftest).
 This exercises the actual persistence and schema logic.
 
+These are excluded from CI on purpose: a failure here can mean Jolpica is down
+or rate-limiting, which must never be confused with "this PR is broken". They
+are the only tests that catch an upstream API format change, so run them by
+hand when that is what you want to know.
+
 Run with:
     uv run pytest tests/test_smoke.py -v
     uv run pytest -m integration -v      # run all integration tests
     uv run pytest -m "not integration"   # skip all integration tests (unit only)
+
+Behind a filtering proxy the F1 APIs may be answered with a 302 to a block
+page, which surfaces as ``Expecting value: line 1 column 1`` when the client
+parses HTML as JSON. See AGENTS.md for the tunnel prefix.
 """
 
 import datetime
