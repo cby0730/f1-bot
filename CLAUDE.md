@@ -113,6 +113,18 @@ set fields on frozen Pydantic models during test setup (e.g., attaching a `sprin
 
 **startup_sync in tests:** Patch `f1_bot.main.startup_sync` with `AsyncMock` in E2E/main tests to avoid real HTTP calls.
 
+**`src/` uses no `random`, so pytest-randomly's reseeding is inert — for now.**
+The plugin calls `random.seed()` before every test; `grep -rn "random" src/f1_bot/`
+is currently empty, so that has no effect on production code paths. Introduce
+randomness in `src/` and tests may start behaving differently per seed. Its
+shuffling does not cost an extra container either: `_reorganize_items` shuffles
+*within* each module and then orders the modules, so the session-scoped `pg_url`
+container is still built once (verified by polling `docker ps` during a run).
+When a shuffled run fails, rerun with the printed `--randomly-seed=N` to
+reproduce and fix the test — do not paper over it with `-p no:randomly`. That
+flag belongs only in the coverage recipe above, where it is now load-bearing
+rather than the no-op it was before the plugin was actually installed.
+
 **PostgreSQL 18 moved `PGDATA`, so a version bump is never just the tag.** The
 official image changed `PGDATA` from `/var/lib/postgresql/data` to
 `/var/lib/postgresql/<major>/docker`, so the volume mount goes one level up at
