@@ -1,0 +1,83 @@
+name: Test
+
+on:
+  pull_request:
+    branches: [develop, main]
+  push:
+    branches: [develop]
+  # Called by deploy.yml so a push to `main` cannot deploy without passing the
+  # same checks a PR had to pass. Defined here rather than duplicated there:
+  # a second copy of these steps would drift, and the copy that drifts is the
+  # one guarding production.
+  workflow_call:
+
+# A new push to a PR makes the in-flight run obsolete.
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    # No `services:` block on purpose. The suite starts its own throwaway
+    # PostgreSQL via Testcontainers (tests/conftest.py `pg_url`), so a
+    # workflow-managed container would be started, never connected to, and
+    # still count against job startup time. ubuntu-latest ships a rootful
+    # Docker daemon with /var/run/docker.sock readable by the runner user,
+    # which is all Testcontainers needs.
+    env:
+      # Ryuk is a sidecar container whose only job is to GC leaked containers.
+      # A GitHub-hosted runner is destroyed after every job, so that GC has no
+      # value here -- but its image pull and startup cost are real. Deliberate;
+      # local development keeps the default.
+      TESTCONTAINERS_RYUK_DISABLED: "true"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --all-groups
+
+      - name: Unit tests
+        # Integration tests are excluded: they hit live Jolpica/OpenF1 over the
+        # network and are rate-limited, so they would be flaky here.
+        run: uv run pytest -m "not integration"
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --all-groups
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Ruff format
+        run: uv run ruff format --check .
+
+  audit:
+    runs-on: ubuntu-latest
+    # Advisory only. The pre-commit hook runs pip-audit just when dependencies
+    # change; running it unconditionally on every PR means an upstream CVE
+    # published today turns an unrelated PR red and blocks its merge. Visible
+    # but non-blocking is the version that survives -- a required one gets
+    # switched off the first time it fires.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - run: uv sync --all-groups
+
+      - name: pip-audit
+        run: uv run pip-audit

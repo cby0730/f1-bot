@@ -142,9 +142,7 @@ async def test_error_handler_unhandled_exception():
         assert args[0] == "unhandled_error"
 
     # User should get a generic error message (English fallback: no repo)
-    update.effective_message.reply_text.assert_awaited_once_with(
-        t("common.generic_error", "en")
-    )
+    update.effective_message.reply_text.assert_awaited_once_with(t("common.generic_error", "en"))
 
 
 @pytest.mark.asyncio

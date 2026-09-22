@@ -1,9 +1,6 @@
 """Shared fixtures for all test modules."""
 
 import os  # noqa: I001
-import re
-import subprocess
-from urllib.parse import urlparse
 
 os.environ["PTB_TIMEDELTA"] = "1"
 
@@ -13,59 +10,31 @@ import pytest_asyncio
 from f1_bot.storage.postgres_store import PostgresStore
 from f1_bot.storage.repository import Repository
 
-# Separate from the bot's ``mango`` DB: fixtures TRUNCATE public tables after
-# every test, which would empty /standings for a live process on the same DB.
-TEST_DATABASE_URL = os.environ.get(
-    "F1BOT_TEST_DATABASE_URL",
-    "postgresql://mango:mango@localhost:31055/mango_test",
-)
-_ADMIN_URL = os.environ.get(
-    "F1BOT_DATABASE_URL",
-    "postgresql://mango:mango@localhost:31055/mango",
-)
-_DB_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# Keep in step with docker-compose.yml (production). They are allowed to differ
+# briefly during a major upgrade -- production needs a dump/restore, this does
+# not -- but a lasting gap means tests stop covering the server the bot runs on.
+PG_IMAGE = "postgres:18-alpine"
 
 
-def _ensure_test_database() -> None:
-    """CREATE DATABASE mango_test if needed. No-op when Postgres is down."""
-    test = urlparse(TEST_DATABASE_URL)
-    db_name = (test.path or "").lstrip("/")
-    admin = urlparse(_ADMIN_URL)
-    admin_db = (admin.path or "/mango").lstrip("/") or "mango"
-    if not db_name or not _DB_NAME.fullmatch(db_name) or db_name == admin_db:
-        return
+@pytest.fixture(scope="session")
+def pg_url():
+    """A throwaway PostgreSQL container, shared by every test that needs a DB.
 
-    env = {**os.environ, "PGPASSWORD": admin.password or "mango"}
-    psql = [
-        "psql",
-        "-h",
-        admin.hostname or "localhost",
-        "-p",
-        str(admin.port or 5432),
-        "-U",
-        admin.username or "mango",
-        "-d",
-        admin_db,
-    ]
-    check = subprocess.run(  # noqa: S603
-        [*psql, "-tAc", f"SELECT 1 FROM pg_database WHERE datname='{db_name}'"],  # noqa: S608
-        env=env,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if check.returncode != 0 or check.stdout.strip() == "1":
-        return
-    subprocess.run(  # noqa: S603
-        [*psql, "-c", f'CREATE DATABASE "{db_name}" OWNER mango'],  # noqa: S608
-        env=env,
-        capture_output=True,
-        check=False,
-    )
+    Session-scoped so the ~9s startup is paid once, but *lazily* started:
+    pytest only builds a fixture when a test actually requests it, so the
+    DB-free suites (``tests/test_i18n/``, most of ``tests/test_handlers/``)
+    never launch a container. Nothing may request this at collection time.
 
+    Replaces the old ``F1BOT_TEST_DATABASE_URL`` + ``_ensure_test_database()``
+    pair, which required a postgres client on the host and a DB listening on a
+    fixed port 31055.
+    """
+    from testcontainers.community.postgres import PostgresContainer
 
-def pytest_configure(config):
-    _ensure_test_database()
+    with PostgresContainer(PG_IMAGE) as pg:
+        # The default returns a SQLAlchemy URL (``postgresql+psycopg2://``),
+        # which asyncpg rejects. ``driver=None`` yields bare ``postgresql://``.
+        yield pg.get_connection_url(driver=None)
 
 
 @pytest.fixture
@@ -74,21 +43,25 @@ def anyio_backend():
 
 
 @pytest_asyncio.fixture
-async def pg_store():
-    """PostgresStore for tests — creates schema, yields, then drops all tables."""
-    store = PostgresStore(TEST_DATABASE_URL, min_pool=2, max_pool=5)
-    try:
-        await store.init()
-    except Exception:
-        pytest.skip("Postgres not available")
+async def pg_store(pg_url):
+    """PostgresStore for tests — creates schema, yields, then truncates.
+
+    Function-scoped on purpose, even though the container is not: each test
+    gets a fresh ``PostgresStore`` (and via ``repo``, a fresh
+    ``Repository._laps_cache``). Only ``pg_url`` is shared.
+    """
+    store = PostgresStore(pg_url, min_pool=2, max_pool=5)
+    await store.init()
     yield store
-    # Clean all tables after each test
+    # Clean all tables after each test. RESTART IDENTITY matters now that the
+    # container outlives the test: the two SERIAL keys (schedule_audit_log.id,
+    # notification_subscriptions.id) would otherwise climb across the session.
     async with store._pool.acquire() as conn:
         await conn.execute(
             """DO $$ DECLARE t TEXT;
             BEGIN FOR t IN
                 SELECT tablename FROM pg_tables WHERE schemaname = 'public'
-            LOOP EXECUTE 'TRUNCATE TABLE ' || quote_ident(t) || ' CASCADE';
+            LOOP EXECUTE 'TRUNCATE TABLE ' || quote_ident(t) || ' RESTART IDENTITY CASCADE';
             END LOOP; END $$;"""
         )
     await store.close()

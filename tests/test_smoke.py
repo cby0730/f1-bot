@@ -1,17 +1,26 @@
 """
 Full-stack smoke test: Jolpica API → sync function → PostgresStore → Repository.
 
-Uses real HTTP calls to api.jolpi.ca and real Postgres (mango_pg container).
+Uses real HTTP calls to api.jolpi.ca and a real Postgres (the throwaway
+``pg_url`` container from conftest).
 This exercises the actual persistence and schema logic.
+
+These are excluded from CI on purpose: a failure here can mean Jolpica is down
+or rate-limiting, which must never be confused with "this PR is broken". They
+are the only tests that catch an upstream API format change, so run them by
+hand when that is what you want to know.
 
 Run with:
     uv run pytest tests/test_smoke.py -v
     uv run pytest -m integration -v      # run all integration tests
     uv run pytest -m "not integration"   # skip all integration tests (unit only)
+
+Behind a filtering proxy the F1 APIs may be answered with a 302 to a block
+page, which surfaces as ``Expecting value: line 1 column 1`` when the client
+parses HTML as JSON. See AGENTS.md for the tunnel prefix.
 """
 
 import datetime
-import os
 
 import pytest
 import pytest_asyncio
@@ -24,19 +33,12 @@ from f1_bot.utils.rate_limiter import RateLimiter
 
 pytestmark = pytest.mark.integration
 
-_TEST_DATABASE_URL = os.environ.get(
-    "F1BOT_TEST_DATABASE_URL", "postgresql://mango:mango@localhost:31055/mango_test"
-)
-
 
 @pytest_asyncio.fixture
-async def stack():
+async def stack(pg_url):
     """Set up Repository + JolpicaClient; tear down after the test."""
-    store = PostgresStore(_TEST_DATABASE_URL, min_pool=2, max_pool=5)
-    try:
-        await store.init()
-    except Exception:
-        pytest.skip("Postgres not available")
+    store = PostgresStore(pg_url, min_pool=2, max_pool=5)
+    await store.init()
     jolpica = JolpicaClient(
         base_url="https://api.jolpi.ca/ergast/f1",
         rate_limiter=RateLimiter(per_second=2.0),

@@ -200,18 +200,20 @@ def test_guard_b_scanner_distinguishes_literals_from_t_and_vars(tmp_path):
     f = tmp_path / "handler.py"
     f.write_text(
         "async def h(update, q, var):\n"
-        '    await update.reply_text("hardcoded")\n'          # flagged
-        '    await update.reply_text(t("k", lang))\n'         # ok: a call
-        "    await update.reply_text(var)\n"                  # ok: a variable
-        '    await update.reply_text("")\n'                   # ok: allowlisted
-        '    await update.reply_text("DNF")\n'                # ok: allowlisted
-        '    await q.answer("also hardcoded")\n'              # flagged
+        '    await update.reply_text("hardcoded")\n'  # flagged
+        '    await update.reply_text(t("k", lang))\n'  # ok: a call
+        "    await update.reply_text(var)\n"  # ok: a variable
+        '    await update.reply_text("")\n'  # ok: allowlisted
+        '    await update.reply_text("DNF")\n'  # ok: allowlisted
+        '    await q.answer("also hardcoded")\n'  # flagged
         '    await q.edit_message_text(text="edited literal")\n'  # flagged (text=)
         '    await q.edit_message_text(text=t("k", lang))\n',  # ok: a call
         encoding="utf-8",
     )
 
-    flagged = {(target, text) for _rel, _line, target, text in scan_boundary_literals([f], tmp_path)}
+    flagged = {
+        (target, text) for _rel, _line, target, text in scan_boundary_literals([f], tmp_path)
+    }
 
     assert flagged == {
         ("reply_text", "hardcoded"),

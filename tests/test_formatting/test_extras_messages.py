@@ -194,8 +194,6 @@ def test_compare_label_width_covers_widest_shipped_label():
     fails here until _CMP_LABEL_WIDTH is bumped.
     """
     widest = max(
-        _display_width(t(key, lang))
-        for key in _COMPARE_LABEL_KEYS
-        for lang in ("en", "zh-Hant")
+        _display_width(t(key, lang)) for key in _COMPARE_LABEL_KEYS for lang in ("en", "zh-Hant")
     )
     assert _CMP_LABEL_WIDTH >= widest
