@@ -1,12 +1,13 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: f1bot
       POSTGRES_USER: f1bot
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata18:/var/lib/postgresql
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "f1bot"]
       interval: 5s
@@ -24,4 +25,4 @@ services:
       F1BOT_DATABASE_URL: postgresql://f1bot:${POSTGRES_PASSWORD}@postgres:5432/f1bot
 
 volumes:
-  pgdata:
+  pgdata18:
