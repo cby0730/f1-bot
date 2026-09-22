@@ -6,7 +6,15 @@ on:
       - main
 
 jobs:
+  # A push to `main` is normally a merge of an already-tested PR, but nothing
+  # enforced that -- a direct push, or a merge whose base moved underneath it,
+  # went straight to the VM unverified. Reuses test.yml rather than repeating
+  # it, so there is exactly one definition of "the checks".
+  test:
+    uses: ./.github/workflows/test.yml
+
   deploy:
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Deploy to OCI VM via SSH

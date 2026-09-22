@@ -5,6 +5,11 @@ on:
     branches: [develop, main]
   push:
     branches: [develop]
+  # Called by deploy.yml so a push to `main` cannot deploy without passing the
+  # same checks a PR had to pass. Defined here rather than duplicated there:
+  # a second copy of these steps would drift, and the copy that drifts is the
+  # one guarding production.
+  workflow_call:
 
 # A new push to a PR makes the in-flight run obsolete.
 concurrency:
