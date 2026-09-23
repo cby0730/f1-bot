@@ -130,11 +130,16 @@ official image changed `PGDATA` from `/var/lib/postgresql/data` to
 `/var/lib/postgresql/<major>/docker`, so the volume mount goes one level up at
 `/var/lib/postgresql`. Keep the old mount and the 18 container starts and
 immediately exits with `There appears to be PostgreSQL data in
-/var/lib/postgresql/data (unused mount/volume)`. `docker-compose.dev.yml` is
-already on the new layout; **`docker-compose.yml` (production) is deliberately
-still `16-alpine` with the old mount** — its volume holds real user preferences
-and reminders, so it changes only as part of the dump/restore upgrade, tag and
-mount together. Confirm the path for any image with
+/var/lib/postgresql/data (unused mount/volume)`. Tag and mount move together:
+production did that on 2026-09-22. `docker-compose.yml` is `postgres:18-alpine`
+mounted at `pgdata18:/var/lib/postgresql`, upgraded by dump/restore — not
+pgautoupgrade, and not `pg_upgrade --link`. `docker-compose.dev.yml` is already
+on the same layout. The old volume `f1-bot_pgdata` is still PostgreSQL 16, kept
+on purpose as the rollback. Compose no longer references it, so it looks like
+an orphan volume; it is not one to clean up. Do not delete it before the
+Azerbaijan reminders have been sent (2026-09-26). Postgres now has
+`restart: unless-stopped`. It used to be `no`, so a VM reboot started the bot
+and left the database down. Confirm the path for any image with
 `docker run --rm postgres:<tag> env | grep PGDATA`.
 
 **`docker-compose.dev.yml` is only for actually running the bot locally.** No test

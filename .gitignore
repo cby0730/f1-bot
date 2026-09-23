@@ -68,3 +68,8 @@ secrets.toml
 # Logs
 *.log
 pip-log.txt
+
+# VM runbook artefacts — backup/ holds full DB dumps with real telegram_ids
+backup/
+*.dump
+*.bak
