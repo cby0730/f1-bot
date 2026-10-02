@@ -73,3 +73,5 @@ pip-log.txt
 backup/
 *.dump
 *.bak
+
+plans/
