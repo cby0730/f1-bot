@@ -14,7 +14,6 @@ from f1_bot.models.results import (
     RaceResult,
     SprintResult,
 )
-from f1_bot.utils.rate_limiter import RateLimiter
 
 log = structlog.get_logger(__name__)
 
@@ -75,11 +74,6 @@ def _parse_race(r: dict) -> Race:
 
 class JolpicaClient(BaseAPIClient):
     """Client for the Jolpica-F1 API (Ergast successor)."""
-
-    def __init__(
-        self, base_url: str, rate_limiter: RateLimiter, *, proxy: str | None = None
-    ) -> None:
-        super().__init__(base_url, rate_limiter, proxy=proxy)
 
     async def get_current_schedule(self) -> list[Race]:
         data = await self.get("/current.json")
