@@ -15,17 +15,6 @@ uv run coverage run --source=f1_bot -m pytest -m "not integration" -p no:randoml
 uv run coverage report
 ```
 
-## Launch film
-
-Isolated Remotion app in [`video/`](video/README.md). It does not import `f1_bot` and is not in the Docker image. The README hero `docs/demo.gif` is a 1920×1080 / 30 fps loop exported from that film — not a Telegram Web recording.
-
-```bash
-cd video
-npm install
-npm run render:full    # 21.7s → out/full.mp4 (gitignored)
-# then the ffmpeg recipe in video/README.md → docs/demo.gif
-```
-
 ## Architecture
 
 **SQL-only handlers:** background scheduler (JobQueue) fetches from Jolpica + OpenF1 → stores in PostgreSQL. Telegram handlers read exclusively from PostgreSQL via `Repository`. No API calls from handlers.
@@ -54,18 +43,21 @@ PLATFORM (Telegram)              handlers/ resolve_context(update, repo) · set_
   English, unrecoverably).
 - **Source repository:** Hosted at `https://github.com/cby0730/f1-bot` (the `/start` welcome message links here for stars).
 
-## Commands and callback data
+## Directory-scoped guidance
 
-The 9-command visible menu → handler map and the full `callback_data` pattern table live in
-`src/f1_bot/handlers/CLAUDE.md`, which loads automatically when working under that directory.
+Two files load automatically when working under their directory, and hold the
+detail that only matters there:
+
+- `src/f1_bot/handlers/CLAUDE.md` — the 9-command visible menu → handler map and
+  the full `callback_data` pattern table.
+- `src/f1_bot/formatting/CLAUDE.md` — Guard C's scope rationale, `t()`'s
+  asymmetric failure modes, the `strftime` ban, and CJK padding.
 
 ## Key files
 
 | File | Role |
 |---|---|
 | `src/f1_bot/main.py` | Application builder; `_post_init` sets up clients, repo, runs `startup_sync`, registers commands |
-| `src/f1_bot/config.py` | Pydantic Settings; env vars: `TELEGRAM_BOT_TOKEN`, `F1BOT_DATABASE_URL`, `F1BOT_*` |
-| `src/f1_bot/storage/postgres_store.py` | Persistent store (asyncpg); init with `await store.init()` |
 | `src/f1_bot/storage/repository.py` | Unified read layer over PostgreSQL; `get_schedule_bounds()` is the source of truth for completed/upcoming rounds |
 | `src/f1_bot/scheduler/jobs.py` | `startup_sync()` + `hourly_sync()` + individual `sync_*` callbacks; each takes `(jolpica, repo)` or `(openf1, repo)` |
 | `src/f1_bot/scheduler/manager.py` | Registers single `hourly_sync` job via `run_repeating`; owns `_POLL_INTERVAL` |
@@ -80,15 +72,9 @@ The 9-command visible menu → handler map and the full `callback_data` pattern 
 | `src/f1_bot/handlers/language.py` | `lang:set:` callbacks + `language_keyboard()` reused by `/settings` `set:lang` |
 | `src/f1_bot/handlers/settings.py` | `/settings` hub; `set:tz` / `set:lang` edit onto the existing timezone and language pickers |
 | `src/f1_bot/formatting/messages.py` | All message formatters (`format_schedule`, `format_driver_standings`, `format_constructor_standings`, `format_session_results`, `_clinch_strip`, etc.). Every one takes `ctx: RenderContext` as its last arg |
-| `src/f1_bot/formatting/emoji.py` | `pos_icon`, `flag_icon`, `session_icon`, `flag_color`, `country_code_to_flag` — mapping and flag logic |
-| `src/f1_bot/formatting/timezone.py` | `combine_race_dt()` — combines race date + time into UTC datetime; used by scheduler and repository |
-| `src/f1_bot/utils/rate_limiter.py` | Token bucket; constructor: `RateLimiter(per_second=..., per_period=..., period=...)` |
 | `src/f1_bot/utils/sessions.py` | `find_next_sessions()` / `find_recent_completed_session()` / `normalize_session_key()` / `session_entries()` — session-level timeline logic |
-| `src/f1_bot/utils/logging.py` | structlog setup; `add_taiwan_timestamp` processor; auto-detects TTY for console vs JSON output |
 | `src/f1_bot/handlers/notifications.py` | `/remind` command + `notify:*` callback flow (pick session → pick timing → toggle subscription) |
-| `src/f1_bot/models/notification.py` | `NotificationSubscription` model + `TIMING_PRESETS` (15/30/60/180 min) |
 | `src/f1_bot/scheduler/notification_sender.py` | `schedule_next_notification()` + `send_notifications()` — background delivery via PTB JobQueue |
-| `src/f1_bot/handlers/errors.py` | Custom error handler formatting for Telegram command validation / network errors |
 | `tests/conftest.py` | `pg_url` (session-scoped Testcontainers PostgreSQL), `pg_store`, `repo` fixtures |
 | `video/` | Remotion launch film (Node). README hero `docs/demo.gif` is the 30 fps GIF export |
 
@@ -125,31 +111,38 @@ reproduce and fix the test — do not paper over it with `-p no:randomly`. That
 flag belongs only in the coverage recipe above, where it is now load-bearing
 rather than the no-op it was before the plugin was actually installed.
 
-**PostgreSQL 18 moved `PGDATA`, so a version bump is never just the tag.** The
-official image changed `PGDATA` from `/var/lib/postgresql/data` to
-`/var/lib/postgresql/<major>/docker`, so the volume mount goes one level up at
-`/var/lib/postgresql`. Keep the old mount and the 18 container starts and
-immediately exits with `There appears to be PostgreSQL data in
-/var/lib/postgresql/data (unused mount/volume)`. Tag and mount move together:
-production did that on 2026-09-22. `docker-compose.yml` is `postgres:18-alpine`
-mounted at `pgdata18:/var/lib/postgresql`, upgraded by dump/restore — not
-pgautoupgrade, and not `pg_upgrade --link`. `docker-compose.dev.yml` is already
-on the same layout. The old volume `f1-bot_pgdata` is still PostgreSQL 16, kept
-on purpose as the rollback. Compose no longer references it, so it looks like
-an orphan volume; it is not one to clean up. Do not delete it before the
-Azerbaijan reminders have been sent (2026-09-26). Postgres now has
-`restart: unless-stopped`. It used to be `no`, so a VM reboot started the bot
-and left the database down. Confirm the path for any image with
+**A Postgres major bump is never just the tag — `PGDATA` moved in 18.** The
+official image changed it from `/var/lib/postgresql/data` to
+`/var/lib/postgresql/<major>/docker`, so the mount goes one level up at
+`/var/lib/postgresql`. Keep the old mount and the container starts and
+immediately exits: `There appears to be PostgreSQL data in
+/var/lib/postgresql/data (unused mount/volume)`. **Tag and mount are one change;
+neither is valid alone.** Both compose files are on `18-alpine` with the new
+layout. Confirm the path for any image with
 `docker run --rm postgres:<tag> env | grep PGDATA`.
 
+Production was upgraded by dump/restore on 2026-09-22 (not pgautoupgrade, not
+`pg_upgrade --link`). The pre-upgrade volume `f1-bot_pgdata` is still PG 16 and
+is retained as the rollback — compose no longer references it, so
+`docker volume prune` offers to remove it. **It is not an orphan to clean up.**
+
+**A deploy goes green on an empty database.** `deploy.yml`'s health check reads
+`postgres=healthy` (from `pg_isready`, which verifies neither data nor password
+auth) and `bot=running` (the bot service declares no healthcheck, so this only
+means the process has not exited). Total data loss therefore reports
+`deploy healthy`. The consequence is a hard ordering rule: **upgrade and verify
+the VM first, and only then let a compose change reach the repo** — the reverse
+order hides a silent wipe behind a green check.
+
+The real post-deploy gate is the startup log (see `notification_scheduled` below).
+
 **`docker-compose.dev.yml` is only for actually running the bot locally.** No test
-needs it. The suite brings its own database: the `pg_url` fixture starts a
-throwaway container via Testcontainers, on a random port, torn down at session
-end. Starting `mango_pg` before running tests does nothing — and pointing tests
-at it would be actively wrong, since the fixtures TRUNCATE every public table.
-`tests/test_db_isolation.py` enforces this by asserting on the URL `pg_url`
-actually hands out (not a module constant), which is what closes the bypass
-`tests/test_e2e.py` used to have with its own hardcoded URL.
+needs it (see Test conventions). Starting `mango_pg` before a test run does
+nothing — and pointing tests at it would be actively wrong, since the fixtures
+TRUNCATE every public table. `tests/test_db_isolation.py` enforces this by
+asserting on the URL `pg_url` actually hands out, not a module constant, closing
+the bypass `tests/test_e2e.py` used to have with its own hardcoded URL. Tear it
+down with `down -v` when finished; a leftover volume is residue, not a cache.
 
 **Never measure coverage with `pytest --cov` — it segfaults (exit 139).** Any test
 that opens an asyncpg connection dies inside the Cython
@@ -196,6 +189,36 @@ runs under pytest-cov.
 
 **Notification reschedule triggers:** `schedule_next_notification(jq, repo)` only runs at: (1) bot startup, (2) after `send_notifications` completes, (3) after a user toggles a reminder. Direct DB inserts are invisible until one of these triggers fires.
 
+**`notification_scheduled` is absent, not failed, when the DB is empty — and it
+is the only proof production data survived a deploy.**
+`schedule_next_notification()` wraps its work in `if next_fire:` with **no else**,
+so `get_next_fire_at()` returning `None` logs nothing: no error, no warning.
+Every other startup event has a failure twin (`startup_sync_complete` ↔
+`startup_sync_incomplete_due_to_failures`, `bot_commands_registered` ↔
+`failed_to_set_bot_commands`); this one does not, so **absence is the signal**.
+On an empty local DB that same absence is correct behaviour — the two are
+indistinguishable, so always judge it against the environment.
+
+The startup sequence, in `_post_init` order:
+`startup` → `startup_sync_begin` → `startup_sync_complete` →
+`notification_scheduled` → `bot_commands_registered`. Note the last two: the
+scheduler runs *before* command registration. `Application started` is PTB's own
+message, not a structlog event — do not gate on it.
+
+To verify a log line actually came from this run rather than a stale tail,
+cross-check its arithmetic: `fire_at` minus `delay_s` must equal the line's own
+timestamp. The three values come from the DB, a live computation, and structlog
+independently, so agreement cannot be faked by copying counts. An 8-hour (28800s)
+discrepancy would mean a `timestamptz` timezone misread.
+
+**`startup_sync` costs ~2.5 minutes on every start, not just the first.** The
+`sync_*` callbacks re-fetch and upsert rather than working incrementally, so a
+populated database is no faster. `_post_init` blocks until it finishes, so the
+bot ignores Telegram updates for that whole window, and `api_rate_limited`
+warnings during it are normal (Jolpica allows 500 req/hr). **Wait a full three
+minutes before reading a deploy's logs** — checking earlier looks exactly like
+`startup_sync_complete` never arriving.
+
 **Notification DELETE strategy:** `mark_notifications_sent()` DELETEs rows instead of setting `notified=TRUE`. This prevents row accumulation and avoids unique constraint conflicts on re-subscription. `save_notification()` uses `ON CONFLICT DO UPDATE SET notified=FALSE, fire_at=EXCLUDED.fire_at` to handle re-subscriptions cleanly.
 
 **`/standings` remaining-events alignment (two-clocks fix):** `/standings` must derive remaining races/sprints from the **standings snapshot's own `round_after`** (via `repo.get_standings_round(season, table)`), NOT from live `now()` (`get_schedule_bounds()["upcoming_rounds"]`). Points are an hourly snapshot; `upcoming_rounds` flips the moment a race start-time passes — mixing the two lets a near-clinch leader flash a false 🔒 CLINCHED mid-weekend. Each view uses its **own** table's `round_after` (WDC→`standings_drivers`, WCC→`standings_constructors`) because a partial sync can leave the two tables at different rounds. `remaining_events()` **enumerates** `round > N` over `get_schedule()` — never `total - N` (would mis-count on schedule gaps). Wire this in **both** `standings_handler` and `standings_callback`.
@@ -209,18 +232,6 @@ Guard C (`test_markdown_escape_guard.py`) AST-scans `formatting/` for external
 free text interpolated into a `t()` template without `_esc()`.
 Never compose a translated template with an untranslated English fragment — pass
 everything as named kwargs, and make the fragment itself a catalog key.
-
-**Guard C — why `formatting/` only, and why AST:** over half the catalog templates
-carry Telegram Markdown markers, so an API string containing `_`/`*`/`` ` ``/`[`
-interpolated into one either mis-renders or makes Telegram reject the message —
-which handlers swallow via `except BadRequest: pass`, so the user sees nothing
-happen. `handlers/` is deliberately **out of scope**: its free-text
-interpolations feed inline-button labels and `answer(show_alert=True)` popups,
-neither of which Telegram parses as Markdown, so escaping there would surface
-literal backslashes. The guard follows escaping done at the assignment
-(`title = _esc(race.name)` → `t(..., title=title)` passes) and treats `_esc`,
-`t` and the `*_label` catalog helpers as safe. Add a kwarg name to
-`FREE_TEXT_KWARGS` when a new template interpolates external text.
 
 **Guard blind spot — helpers with `lang: str = DEFAULT_LANG`:** the guards only
 catch *literals*. A call site that simply **omits** the `lang` argument to a
@@ -240,12 +251,6 @@ field-shadowing gotcha above. `test_set_lang_renders_lang_picker` and
 `tests/test_handlers/test_language.py` are the regression guard — they fail
 loudly if the `/` is removed.
 
-**`t()` failure modes are asymmetric by design:** an *unknown key* raises
-`KeyError` (a programmer typo — loud), while a *known key missing one language*
-falls back to the `en` template (a user must never see a raw key). The
-`check_catalog_complete()` test is the merge gate; startup is deliberately **not**
-gated, so a translation gap blocks merge without taking down a running bot.
-
 **Single-column preference upserts:** `set_user_timezone` / `set_user_language`
 each write only their own column via one `ON CONFLICT DO UPDATE`. Never
 reintroduce a whole-object `upsert_user_preference` — it clobbers the other
@@ -253,16 +258,6 @@ column with its default, and the read-modify-write "fix" reintroduces the same
 bug as a TOCTOU race across two `await`s. Either command creates the row; the
 other column takes its schema `DEFAULT`. `created_at` is written on the INSERT
 branch only.
-
-**`strftime` is never used for weekday/month names:** those come from the
-`datetime.*` catalog keys. `strftime` names depend on the process-global C
-locale — not thread-safe under async and impossible to vary per user.
-`format_dt(dt, tz_name, lang)` formats only the numeric parts with `strftime`.
-
-**CJK monospace padding:** code-block tables pad labels with `_pad_display()`
-(stdlib `unicodedata.east_asian_width`), not `{label:<10}`. Python field widths
-count code points, but CJK glyphs occupy two display columns, so code-point
-padding drifts the number columns on translated rows.
 
 **Notification sender has no `Update`:** it localizes via
 `await repo.get_user_language(telegram_id)`, not `resolve_context`. It passes
@@ -277,18 +272,21 @@ never raise.
 
 ## Test conventions
 
-- `pytest.mark.integration` — calls a **real external API** (Jolpica/OpenF1). It
-  does *not* mean "needs a database": both halves get one from Testcontainers,
-  and `test_smoke.py` needs a real DB *and* real HTTP. These 19 tests are
-  intentionally excluded from CI so a red run always means the PR is broken
-  rather than that a third party is having a bad day — run them locally (and see
-  `AGENTS.md` for the proxy tunnel this host requires).
-- No marker — unit test; needs no network. Tests that touch the DB get a throwaway
-  `postgres:18-alpine` container from the session-scoped `pg_url` fixture
-  (Testcontainers), so a Docker daemon is the only host requirement. Expect
-  **0 skipped, 0 error** — a skip means something broke, not that a DB is absent.
-  `pg_store`/`repo` stay function-scoped so each test gets a fresh store and a
-  fresh `Repository._laps_cache`; only `pg_url` is shared.
+- **Tests bring their own database.** The session-scoped `pg_url` fixture starts
+  a throwaway `postgres:18-alpine` via Testcontainers on a random port, so a
+  Docker daemon is the only host requirement — no host DB, no psql, no env var.
+  It starts lazily, so DB-free suites (`tests/test_i18n/`) still finish in under
+  a second. `pg_store`/`repo` stay function-scoped, giving each test a fresh
+  store and a fresh `Repository._laps_cache`; only `pg_url` is shared.
+  Expect **0 skipped, 0 error** — a skip or connection error is a real defect,
+  never "the DB is merely absent".
+- `pytest.mark.integration` means **calls a real external API**, not "needs a
+  database" — both halves get one, and `test_smoke.py` needs a real DB *and*
+  real HTTP. These 19 tests are deliberately out of CI so a red run always means
+  *this PR* is broken rather than that a third party is having a bad day; do not
+  "helpfully" add them. Run locally (see `AGENTS.md` for this host's proxy
+  tunnel). If they ever belong in CI, give them a `workflow_dispatch` workflow
+  that cannot block a merge.
 - Mocking HTTP: use `pytest-httpx` (`httpx_mock` fixture) for unit tests
 - Scheduler tests: import private constants (`_LIVE_WINDOW_MARGIN`, `_RESULTS_WINDOW`) directly for boundary assertions
 - Relative-date fixtures: For testing time-windowed sync functions where `now` is computed internally, use `date.today() - timedelta(days=N)` instead of patching
