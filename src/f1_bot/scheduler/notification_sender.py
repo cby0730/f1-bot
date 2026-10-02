@@ -1,13 +1,20 @@
 """Notification sender using PTB's run_once for precise scheduling."""
 
 import asyncio
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import structlog
 from telegram.constants import ParseMode
 from telegram.error import Forbidden, RetryAfter
 
+from f1_bot.models.notification import NotificationSubscription
+
 log = structlog.get_logger(__name__)
+
+# A failed send is retried until it is this late, then dropped. Without a bound a
+# permanently failing row (e.g. "chat not found") stays MIN(fire_at) and is
+# retried every second forever; a reminder this late is worthless anyway.
+_MAX_LATENESS = timedelta(hours=1)
 
 
 async def schedule_next_notification(jq, repo) -> None:
@@ -40,7 +47,7 @@ async def send_notifications(context) -> None:
     from f1_bot.formatting.messages import format_notification_message
 
     sent_ids: list[int] = []
-    failed_count = 0
+    failed: list[NotificationSubscription] = []
     schedule_cache: dict[int, list] = {}
 
     for sub in pending:
@@ -76,15 +83,18 @@ async def send_notifications(context) -> None:
                 sent_ids.append(sub.id)
             except Exception:
                 log.exception("notification_retry_failed", telegram_id=sub.telegram_id)
-                failed_count += 1
+                failed.append(sub)
         except Exception:
             log.exception("notification_send_failed", telegram_id=sub.telegram_id)
-            failed_count += 1
+            failed.append(sub)
 
-    if failed_count:
-        log.warning("notifications_deferred", failed=failed_count)
+    expired_ids = [sub.id for sub in failed if now - sub.fire_at > _MAX_LATENESS]
+    if expired_ids:
+        log.warning("notifications_expired", ids=expired_ids)
+    if len(failed) > len(expired_ids):
+        log.warning("notifications_deferred", failed=len(failed) - len(expired_ids))
 
-    if sent_ids:
-        await repo.mark_notifications_sent(sent_ids)
+    if sent_ids or expired_ids:
+        await repo.mark_notifications_sent(sent_ids + expired_ids)
 
     await schedule_next_notification(jq, repo)

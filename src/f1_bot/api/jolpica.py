@@ -114,12 +114,18 @@ class JolpicaClient(BaseAPIClient):
         log.debug("jolpica_schedule_fetched", count=len(races))
         return races
 
-    async def get_driver_standings(self, season: str = "current") -> list[DriverStanding]:
+    async def get_driver_standings(
+        self, season: str = "current"
+    ) -> tuple[int, list[DriverStanding]]:
+        """``(round, standings)``. The round is the one Jolpica says the points are
+        *as of* — it lags a race start by hours, so it is the only safe
+        ``round_after`` for the snapshot. ``(0, [])`` when there is no data."""
         data = await self.get(f"/{season}/driverstandings.json")
         try:
             standings_lists = data["MRData"]["StandingsTable"]["StandingsLists"]
             if not standings_lists:
-                return []
+                return 0, []
+            round_num = int(standings_lists[0]["round"])
             standings = []
             for s in standings_lists[0]["DriverStandings"]:
                 standings.append(
@@ -135,15 +141,19 @@ class JolpicaClient(BaseAPIClient):
                 )
         except (KeyError, TypeError) as e:
             log.warning("jolpica_malformed_response", method="get_driver_standings", error=str(e))
-            return []
-        return standings
+            return 0, []
+        return round_num, standings
 
-    async def get_constructor_standings(self, season: str = "current") -> list[ConstructorStanding]:
+    async def get_constructor_standings(
+        self, season: str = "current"
+    ) -> tuple[int, list[ConstructorStanding]]:
+        """``(round, standings)`` — see ``get_driver_standings``."""
         data = await self.get(f"/{season}/constructorstandings.json")
         try:
             standings_lists = data["MRData"]["StandingsTable"]["StandingsLists"]
             if not standings_lists:
-                return []
+                return 0, []
+            round_num = int(standings_lists[0]["round"])
             standings = []
             for s in standings_lists[0]["ConstructorStandings"]:
                 standings.append(
@@ -158,8 +168,8 @@ class JolpicaClient(BaseAPIClient):
             log.warning(
                 "jolpica_malformed_response", method="get_constructor_standings", error=str(e)
             )
-            return []
-        return standings
+            return 0, []
+        return round_num, standings
 
     async def get_race_results(
         self, season: str = "current", round_num: str = "last"

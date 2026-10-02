@@ -114,7 +114,7 @@ async def test_get_driver_standings_empty_standings_lists(httpx_mock):
     client = _client()
     result = await client.get_driver_standings()
     await client.close()
-    assert result == []
+    assert result == (0, [])
 
 
 async def test_get_driver_standings_parses_position_and_points(httpx_mock):
@@ -124,6 +124,8 @@ async def test_get_driver_standings_parses_position_and_points(httpx_mock):
                 "StandingsTable": {
                     "StandingsLists": [
                         {
+                            "season": "2026",
+                            "round": "15",
                             "DriverStandings": [
                                 {
                                     "position": "1",
@@ -138,7 +140,7 @@ async def test_get_driver_standings_parses_position_and_points(httpx_mock):
                                         {"constructorId": "mercedes", "name": "Mercedes"}
                                     ],
                                 }
-                            ]
+                            ],
                         }
                     ]
                 }
@@ -146,8 +148,9 @@ async def test_get_driver_standings_parses_position_and_points(httpx_mock):
         }
     )
     client = _client()
-    standings = await client.get_driver_standings()
+    round_num, standings = await client.get_driver_standings()
     await client.close()
+    assert round_num == 15
     assert standings[0].position == 1
     assert standings[0].points == 275.0
     assert standings[0].constructor_name == "Mercedes"
@@ -250,7 +253,7 @@ async def test_get_driver_standings_inner_key_missing_returns_empty(httpx_mock):
     client = _client()
     result = await client.get_driver_standings()
     await client.close()
-    assert result == []
+    assert result == (0, [])
 
 
 # --- get_constructor_standings ---
@@ -261,7 +264,7 @@ async def test_get_constructor_standings_missing_standings_table_returns_empty(h
     client = _client()
     result = await client.get_constructor_standings()
     await client.close()
-    assert result == []
+    assert result == (0, [])
 
 
 async def test_get_constructor_standings_empty_standings_lists(httpx_mock):
@@ -269,7 +272,7 @@ async def test_get_constructor_standings_empty_standings_lists(httpx_mock):
     client = _client()
     result = await client.get_constructor_standings()
     await client.close()
-    assert result == []
+    assert result == (0, [])
 
 
 async def test_get_constructor_standings_inner_key_missing_returns_empty(httpx_mock):
@@ -278,7 +281,7 @@ async def test_get_constructor_standings_inner_key_missing_returns_empty(httpx_m
     client = _client()
     result = await client.get_constructor_standings()
     await client.close()
-    assert result == []
+    assert result == (0, [])
 
 
 async def test_get_constructor_standings_parses_position_and_points(httpx_mock):
@@ -288,6 +291,8 @@ async def test_get_constructor_standings_parses_position_and_points(httpx_mock):
                 "StandingsTable": {
                     "StandingsLists": [
                         {
+                            "season": "2026",
+                            "round": "15",
                             "ConstructorStandings": [
                                 {
                                     "position": "1",
@@ -299,7 +304,7 @@ async def test_get_constructor_standings_parses_position_and_points(httpx_mock):
                                         "nationality": "British",
                                     },
                                 }
-                            ]
+                            ],
                         }
                     ]
                 }
@@ -307,8 +312,9 @@ async def test_get_constructor_standings_parses_position_and_points(httpx_mock):
         }
     )
     client = _client()
-    standings = await client.get_constructor_standings()
+    round_num, standings = await client.get_constructor_standings()
     await client.close()
+    assert round_num == 15
     assert standings[0].position == 1
     assert standings[0].points == 612.0
     assert standings[0].constructor.name == "McLaren"

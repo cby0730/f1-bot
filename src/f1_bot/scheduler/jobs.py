@@ -127,28 +127,16 @@ async def sync_results_window(jolpica, repo, races: list, full: bool = False) ->
         log.info("results_synced", season=season, round=rnd)
 
 
-async def _standings_cutoff(repo, season: int) -> int:
-    """round_after for the snapshot we are about to save.
-
-    Isolated so a schedule-bounds failure cannot abort the Jolpica fetch — an
-    uncaught throw here used to skip both tables, then startup_sync still
-    started polling and /standings rendered ``common.no_data``.
-    """
-    try:
-        bounds = await repo.get_schedule_bounds(season)
-        return bounds.get("last_completed_round") or 0
-    except Exception as e:
-        log.warning("standings_cutoff_failed", error=str(e))
-        return 0
-
-
 async def sync_standings(jolpica, repo) -> None:
     """Sync driver and constructor standings."""
     season = datetime.date.today().year
-    round_after = await _standings_cutoff(repo, season)
 
+    # round_after is the round Jolpica says the points are as of, never the live
+    # schedule clock: Jolpica lags a race start by hours, and tagging stale points
+    # with the newer round makes /standings show a false CLINCHED. Each table keeps
+    # its own round because the two endpoints can update at different times.
     try:
-        standings = await jolpica.get_driver_standings()
+        round_after, standings = await jolpica.get_driver_standings()
         if standings:
             await repo.save_driver_standings(season, standings, round_after=round_after)
             log.info("driver_standings_synced", count=len(standings), round_after=round_after)
@@ -156,7 +144,7 @@ async def sync_standings(jolpica, repo) -> None:
         log.warning("driver_standings_sync_failed", error=str(e))
 
     try:
-        standings = await jolpica.get_constructor_standings()
+        round_after, standings = await jolpica.get_constructor_standings()
         if standings:
             await repo.save_constructor_standings(season, standings, round_after=round_after)
             log.info("constructor_standings_synced", count=len(standings), round_after=round_after)

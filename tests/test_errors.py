@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from telegram import Update
-from telegram.error import NetworkError
+from telegram.error import BadRequest, NetworkError
 
 from f1_bot.formatting.i18n import t
 from f1_bot.handlers.errors import CommandValidationError, error_handler
@@ -124,6 +124,25 @@ async def test_error_handler_network_error():
 
     # NetworkError should not send message to user
     update.effective_message.reply_text.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_error_handler_bad_request_is_not_a_network_error():
+    """PTB's ``BadRequest`` subclasses ``NetworkError``. A Markdown parse failure is a
+    formatting bug, not a transient blip: it must log as an error and the user must
+    get a reply, or the bug is invisible in production."""
+    update = MagicMock(spec=Update)
+    update.effective_message = AsyncMock()
+    context = MagicMock()
+    context.bot_data = {}
+    context.error = BadRequest("Can't parse entities: can't find end of the entity")
+
+    with patch("f1_bot.handlers.errors.log") as mock_log:
+        await error_handler(update, context)
+        mock_log.warning.assert_not_called()
+        assert mock_log.error.call_args.args[0] == "unhandled_error"
+
+    update.effective_message.reply_text.assert_awaited_once_with(t("common.generic_error", "en"))
 
 
 @pytest.mark.asyncio

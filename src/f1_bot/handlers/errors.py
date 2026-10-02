@@ -3,7 +3,7 @@ import traceback
 import structlog
 from telegram import Update
 from telegram.constants import ParseMode
-from telegram.error import NetworkError
+from telegram.error import BadRequest, NetworkError
 from telegram.ext import ContextTypes
 
 from f1_bot.formatting.context import RenderContext
@@ -53,7 +53,9 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
             )
             return
 
-    if isinstance(context.error, NetworkError):
+    # BadRequest subclasses NetworkError in PTB, but it is our bug (e.g. a Markdown
+    # parse failure), not a transient blip — let it fall through to unhandled_error.
+    if isinstance(context.error, NetworkError) and not isinstance(context.error, BadRequest):
         log.warning(
             "telegram_network_error",
             error=str(context.error),

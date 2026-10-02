@@ -92,12 +92,11 @@ async def test_sync_standings_saves_both():
     standings = _sample_driver_standings()
     c_standings = _sample_constructor_standings()
     jolpica = MagicMock()
-    jolpica.get_driver_standings = AsyncMock(return_value=standings)
-    jolpica.get_constructor_standings = AsyncMock(return_value=c_standings)
+    jolpica.get_driver_standings = AsyncMock(return_value=(3, standings))
+    jolpica.get_constructor_standings = AsyncMock(return_value=(3, c_standings))
     repo = MagicMock()
     repo.save_driver_standings = AsyncMock()
     repo.save_constructor_standings = AsyncMock()
-    repo.get_schedule_bounds = AsyncMock(return_value={"last_completed_round": 3})
 
     await sync_standings(jolpica, repo)
 
@@ -112,7 +111,6 @@ async def test_sync_standings_survives_exception():
     jolpica.get_driver_standings = AsyncMock(side_effect=RuntimeError("timeout"))
     jolpica.get_constructor_standings = AsyncMock(side_effect=RuntimeError("timeout"))
     repo = MagicMock()
-    repo.get_schedule_bounds = AsyncMock(return_value={"last_completed_round": 5})
     repo.save_driver_standings = AsyncMock()
     repo.save_constructor_standings = AsyncMock()
 
@@ -122,24 +120,31 @@ async def test_sync_standings_survives_exception():
     repo.save_constructor_standings.assert_not_awaited()
 
 
-async def test_sync_standings_saves_when_cutoff_raises():
-    """get_schedule_bounds lives outside the per-table try — a throw there
-    used to skip both saves, then the bot still started polling."""
+async def test_sync_standings_tags_each_table_with_jolpicas_own_round():
+    """round_after must be the round the points are *as of*, not the live clock.
+
+    Jolpica lags hours behind a race start, while get_schedule_bounds() flips the
+    moment the start time passes. Tagging lagging points with the live round makes
+    /standings drop that race from "remaining" and flash a false CLINCHED — the
+    two-clocks bug, on the write side. Each table also carries its own round, since
+    the two endpoints can update at different times.
+    """
     standings = _sample_driver_standings()
     c_standings = _sample_constructor_standings()
     jolpica = MagicMock()
-    jolpica.get_driver_standings = AsyncMock(return_value=standings)
-    jolpica.get_constructor_standings = AsyncMock(return_value=c_standings)
+    jolpica.get_driver_standings = AsyncMock(return_value=(14, standings))
+    jolpica.get_constructor_standings = AsyncMock(return_value=(13, c_standings))
     repo = MagicMock()
     repo.save_driver_standings = AsyncMock()
     repo.save_constructor_standings = AsyncMock()
-    repo.get_schedule_bounds = AsyncMock(side_effect=RuntimeError("schedule json corrupt"))
+    # The live clock says round 15 has started; it must not leak into the snapshot.
+    repo.get_schedule_bounds = AsyncMock(return_value={"last_completed_round": 15})
 
     await sync_standings(jolpica, repo)
 
     year = date.today().year
-    repo.save_driver_standings.assert_awaited_once_with(year, standings, round_after=0)
-    repo.save_constructor_standings.assert_awaited_once_with(year, c_standings, round_after=0)
+    repo.save_driver_standings.assert_awaited_once_with(year, standings, round_after=14)
+    repo.save_constructor_standings.assert_awaited_once_with(year, c_standings, round_after=13)
 
 
 # --- sync_drivers_and_circuits ---

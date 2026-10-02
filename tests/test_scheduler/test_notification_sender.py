@@ -308,3 +308,54 @@ async def test_send_schedule_cache_avoids_duplicate_queries():
 
     # 3 notifications, all season=2026 — schedule fetched only once
     repo.get_schedule.assert_awaited_once_with(2026)
+
+
+async def test_send_failure_past_max_lateness_gives_up():
+    """A row that keeps failing must not retry forever.
+
+    get_next_fire_at() is MIN(fire_at), so a permanently failing past-due row
+    (e.g. "chat not found") would be rescheduled 1 s later, every second, for
+    good. A reminder an hour after its session started is worthless anyway, so
+    once a failure is that late the row is dropped instead of kept for retry.
+    """
+    now = datetime.now(UTC)
+    stale = NotificationSubscription(
+        id=8,
+        telegram_id=100,
+        season=2026,
+        round=10,
+        session_key="race",
+        minutes_before=30,
+        fire_at=now - timedelta(hours=2),
+    )
+    fresh = NotificationSubscription(
+        id=9,
+        telegram_id=200,
+        season=2026,
+        round=10,
+        session_key="race",
+        minutes_before=30,
+        fire_at=now,
+    )
+
+    repo = AsyncMock()
+    repo.get_pending_notifications = AsyncMock(return_value=[stale, fresh])
+    repo.mark_notifications_sent = AsyncMock()
+    repo.get_schedule = AsyncMock(return_value=[])
+    repo.get_next_fire_at = AsyncMock(return_value=None)
+
+    bot = AsyncMock()
+    bot.send_message = AsyncMock(side_effect=Exception("Bad Request: chat not found"))
+
+    jq = MagicMock()
+    jq.get_jobs_by_name = MagicMock(return_value=[])
+
+    context = MagicMock()
+    context.bot_data = {"repo": repo}
+    context.bot = bot
+    context.job_queue = jq
+
+    await send_notifications(context)
+
+    # Stale failure is dropped; the fresh failure still survives for retry.
+    repo.mark_notifications_sent.assert_awaited_once_with([8])
