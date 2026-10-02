@@ -26,7 +26,7 @@ _LIVE_WINDOW_MARGIN = datetime.timedelta(minutes=30)
 _RESULTS_WINDOW = datetime.timedelta(days=30)
 
 
-def _earliest_session_start(race) -> datetime.datetime | None:
+def _earliest_session_start(race) -> datetime.datetime:
     """Return the earliest session start time for a race weekend."""
     times = []
     for session in (
@@ -40,7 +40,7 @@ def _earliest_session_start(race) -> datetime.datetime | None:
         if session and session.date:
             times.append(combine_race_dt(session.date, session.time))
     times.append(combine_race_dt(race.date, race.time))
-    return min(times) if times else None
+    return min(times)
 
 
 # ---------------------------------------------------------------------------
@@ -85,7 +85,7 @@ async def sync_results_window(jolpica, repo, races: list, full: bool = False) ->
 
         # If the entire weekend hasn't started yet, skip
         earliest = _earliest_session_start(race)
-        if earliest is not None and earliest > now:
+        if earliest > now:
             continue
 
         rnd = race.round

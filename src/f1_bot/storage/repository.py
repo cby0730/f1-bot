@@ -29,9 +29,7 @@ class Repository:
 
     async def get_schedule(self, season: int) -> list[Race]:
         rows = await self._store.get_races(season)
-        if rows:
-            return [Race.model_validate(r) for r in rows]
-        return []
+        return [Race.model_validate(r) for r in rows]
 
     async def get_circuits_for_season(self, season: int) -> list:
         """Extract ordered, unique circuits from the current season schedule."""
