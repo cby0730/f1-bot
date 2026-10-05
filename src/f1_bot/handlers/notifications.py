@@ -3,7 +3,6 @@
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
 
-import structlog
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
 from telegram.constants import ParseMode
 from telegram.error import BadRequest
@@ -15,8 +14,6 @@ from f1_bot.handlers.context import resolve_context
 from f1_bot.models.notification import TIMING_PRESETS, NotificationSubscription, timing_label
 from f1_bot.scheduler.notification_sender import schedule_next_notification
 from f1_bot.utils.sessions import find_next_sessions, session_label
-
-log = structlog.get_logger(__name__)
 
 MAX_REMINDERS = 20
 

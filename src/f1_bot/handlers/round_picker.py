@@ -1,6 +1,5 @@
 """Handler for the round picker overlay (rpk: callbacks)."""
 
-import structlog
 from telegram import Update
 from telegram.constants import ParseMode
 from telegram.error import BadRequest
@@ -16,8 +15,6 @@ from f1_bot.handlers.pagination import (
     upcoming_rounds,
 )
 
-log = structlog.get_logger(__name__)
-
 
 def _compute_navigable_rounds(origin: str, races: list, bounds: dict) -> list[int]:
     """Determine which rounds are navigable based on the picker's origin."""
@@ -31,9 +28,7 @@ def _compute_navigable_rounds(origin: str, races: list, bounds: dict) -> list[in
     if origin.startswith("rf:"):
         session_key = origin[3:]
         return get_completed_rounds_for_session(races, session_key)
-    if origin == "pit":
-        return list(range(1, (bounds.get("last_completed_round") or 0) + 1))
-    if origin == "lap":
+    if origin in ("pit", "lap"):
         return list(range(1, (bounds.get("last_completed_round") or 0) + 1))
     return []
 

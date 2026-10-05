@@ -12,7 +12,7 @@ from telegram.constants import ParseMode
 from telegram.error import BadRequest
 from telegram.ext import Application, CallbackQueryHandler, ContextTypes
 
-from f1_bot.formatting.i18n import DEFAULT_LANG, t
+from f1_bot.formatting.i18n import t
 from f1_bot.formatting.messages import (
     format_laps_summary,
     format_pitstops,
@@ -29,7 +29,7 @@ log = structlog.get_logger(__name__)
 
 
 def _with_results_back(
-    prefix: str, rnd: int, navigable_rounds: list[int], lang: str = DEFAULT_LANG
+    prefix: str, rnd: int, navigable_rounds: list[int], lang: str
 ) -> InlineKeyboardMarkup:
     """Round pager plus Back to results State A (`res:back:_:{round}`)."""
     nav = round_keyboard(prefix, rnd, navigable_rounds, lang)

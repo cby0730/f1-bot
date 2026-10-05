@@ -103,9 +103,6 @@ async def _next_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
         race = next((r for r in races if r.round == rnd), None)
         if race is None:
-            race = next((r for r in races if r.round == nav_rounds[0]), None)
-
-        if race is None:
             await query.answer(text=t("schedule.no_upcoming_races", ctx.lang), show_alert=True)
             return
 
