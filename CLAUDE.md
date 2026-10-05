@@ -177,7 +177,7 @@ runs under pytest-cov.
 
 **Notification 20-reminder cap:** Users are limited to 20 active reminders. Checked in the handler before saving.
 
-**Schedule audit log:** `save_schedule` in PostgresStore compares old vs. new data and logs changes to `schedule_audit_log`, enabling tracking of F1 schedule changes.
+**Schedule audit log is not wired up:** the `schedule_audit_log` table and `log_schedule_change()` (store + repository) exist, but nothing calls them — `save_schedule` does not compare old vs. new data, and no commit ever added a caller. Expect the table to be empty. Wiring the comparison into `save_schedule` is an unbuilt feature, not a regression; do not drop the table without a decision (it is production schema).
 
 **Laps In-Memory Caching:** `Repository.get_lap_timings()` returns and caches `list[LapTime]` objects (LRU, max 30 entries). This cache prevents CPU-heavy validation overhead on pagination clicks. Ensure new sync saves (e.g. `save_lap_timings()`) invalidate the cache for that round.
 
