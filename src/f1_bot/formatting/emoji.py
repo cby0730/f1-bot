@@ -101,6 +101,7 @@ ISO_3_TO_2 = {
     "QAT": "QA",
     "UAE": "AE",
     "AZE": "AZ",
+    "MYS": "MY",
 }
 
 
@@ -156,6 +157,7 @@ CIRCUIT_COUNTRY_TO_ISO3: dict[str, str] = {
     "Qatar": "QAT",
     "Abu Dhabi": "UAE",
     "Azerbaijan": "AZE",
+    "Malaysia": "MYS",
     "Miami": "USA",
     "Las Vegas": "USA",
     "UK": "GBR",

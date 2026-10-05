@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 uv run -m f1_bot                          # start the bot (requires .env)
-uv run pytest -m "not integration"        # unit tests (577; needs only a Docker daemon)
+uv run pytest -m "not integration"        # unit tests (582; needs only a Docker daemon)
 uv run pytest -m integration -v           # integration tests (real HTTP, ~19 tests)
 uv run pytest tests/test_smoke.py -v      # full-stack smoke test
 

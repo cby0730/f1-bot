@@ -129,6 +129,12 @@ def test_circuit_flag_icon_specific_mappings():
     assert circuit_flag_icon("UnknownCountryString") == "🏴"
 
 
+def test_circuit_flag_icon_malaysia():
+    """2026 R16 "Bahrain Grand Prix in Malaysia" is reported by Jolpica with country
+    "Malaysia"; a missing mapping silently renders the black fallback flag 🏴."""
+    assert circuit_flag_icon("Malaysia") == "🇲🇾"
+
+
 def test_circuit_flag_icon_no_fallbacks():
     # Test all known countries in CIRCUIT_COUNTRY_TO_ISO3 mapping do not resolve to 🏴
     from f1_bot.formatting.emoji import CIRCUIT_COUNTRY_TO_ISO3
