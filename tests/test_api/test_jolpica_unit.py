@@ -1,5 +1,7 @@
 """Unit tests for JolpicaClient parsing — all HTTP calls are mocked via pytest-httpx."""
 
+import pytest
+
 from f1_bot.api.jolpica import JolpicaClient
 from f1_bot.utils.rate_limiter import RateLimiter
 
@@ -252,6 +254,19 @@ async def test_get_driver_standings_inner_key_missing_returns_empty(httpx_mock):
     httpx_mock.add_response(json={"MRData": {"StandingsTable": {"StandingsLists": [{}]}}})
     client = _client()
     result = await client.get_driver_standings()
+    await client.close()
+    assert result == (0, [])
+
+
+@pytest.mark.parametrize("method", ["get_driver_standings", "get_constructor_standings"])
+async def test_get_standings_non_numeric_round_returns_empty(httpx_mock, method):
+    """The round now feeds round_after, so a bad value must hit the same degrade path
+    as any other malformed field, not escape as ValueError past the guard."""
+    httpx_mock.add_response(
+        json={"MRData": {"StandingsTable": {"StandingsLists": [{"round": ""}]}}}
+    )
+    client = _client()
+    result = await getattr(client, method)()
     await client.close()
     assert result == (0, [])
 

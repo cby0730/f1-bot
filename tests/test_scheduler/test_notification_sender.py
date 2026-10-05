@@ -315,8 +315,8 @@ async def test_send_failure_past_max_lateness_gives_up():
 
     get_next_fire_at() is MIN(fire_at), so a permanently failing past-due row
     (e.g. "chat not found") would be rescheduled 1 s later, every second, for
-    good. A reminder an hour after its session started is worthless anyway, so
-    once a failure is that late the row is dropped instead of kept for retry.
+    good. Once a failure is more than _MAX_LATENESS past its fire_at, the row is
+    dropped instead of kept for retry.
     """
     now = datetime.now(UTC)
     stale = NotificationSubscription(

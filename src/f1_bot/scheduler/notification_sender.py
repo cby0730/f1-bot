@@ -11,9 +11,11 @@ from f1_bot.models.notification import NotificationSubscription
 
 log = structlog.get_logger(__name__)
 
-# A failed send is retried until it is this late, then dropped. Without a bound a
-# permanently failing row (e.g. "chat not found") stays MIN(fire_at) and is
-# retried every second forever; a reminder this late is worthless anyway.
+# A failed send is retried until it is this far past its fire_at, then dropped.
+# Without a bound a permanently failing row (e.g. "chat not found") stays
+# MIN(fire_at) and is retried every second forever. Measured from fire_at, not
+# session start, so a 3hr reminder can be dropped with the session still ahead —
+# accepted: a reminder an hour late has already failed at its job.
 _MAX_LATENESS = timedelta(hours=1)
 
 

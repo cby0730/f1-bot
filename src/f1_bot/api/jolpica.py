@@ -133,7 +133,7 @@ class JolpicaClient(BaseAPIClient):
                         ),
                     )
                 )
-        except (KeyError, TypeError) as e:
+        except (KeyError, TypeError, ValueError) as e:
             log.warning("jolpica_malformed_response", method="get_driver_standings", error=str(e))
             return 0, []
         return round_num, standings
@@ -158,7 +158,7 @@ class JolpicaClient(BaseAPIClient):
                         constructor=_parse_constructor(s["Constructor"]),
                     )
                 )
-        except (KeyError, TypeError) as e:
+        except (KeyError, TypeError, ValueError) as e:
             log.warning(
                 "jolpica_malformed_response", method="get_constructor_standings", error=str(e)
             )

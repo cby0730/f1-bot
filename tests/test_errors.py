@@ -145,6 +145,33 @@ async def test_error_handler_bad_request_is_not_a_network_error():
     update.effective_message.reply_text.assert_awaited_once_with(t("common.generic_error", "en"))
 
 
+@pytest.mark.parametrize(
+    "message",
+    [
+        "Message is not modified: specified new message content and reply markup "
+        "are exactly the same as a current content and reply markup of the message",
+        "Query is too old and response timeout expired or query id is invalid",
+    ],
+)
+@pytest.mark.asyncio
+async def test_error_handler_benign_bad_request_stays_silent(message):
+    """Some edit paths (timezone/language pickers) have no BadRequest guard, so a
+    double-tap raises "Message is not modified" here. The setting was saved; a
+    generic-error reply would tell the user it failed. Warn only, never reply."""
+    update = MagicMock(spec=Update)
+    update.effective_message = AsyncMock()
+    context = MagicMock()
+    context.bot_data = {}
+    context.error = BadRequest(message)
+
+    with patch("f1_bot.handlers.errors.log") as mock_log:
+        await error_handler(update, context)
+        mock_log.error.assert_not_called()
+        mock_log.warning.assert_called_once()
+
+    update.effective_message.reply_text.assert_not_called()
+
+
 @pytest.mark.asyncio
 async def test_error_handler_unhandled_exception():
     update = MagicMock(spec=Update)
