@@ -171,7 +171,11 @@ runs under pytest-cov.
 
 **JSONB storage pattern:** Most PostgresStore tables store their full model as `data_json JSONB` alongside a few extracted columns (for primary keys and common filters). This avoids schema migrations when models change.
 
-**`BadRequest` silent swallow:** Throughout handlers, `except BadRequest: pass` is common — it handles the case where `edit_message_text` is called with unchanged text (Telegram raises `BadRequest` in that case). Do not remove these.
+**`BadRequest` silent swallow:** Throughout handlers, `except BadRequest: pass` is common — it handles the case where `edit_message_text` is called with unchanged text (Telegram raises `BadRequest` in that case). Do not remove these. An edit path
+*without* this guard reaches `error_handler`, which treats `BadRequest` as our bug
+(`unhandled_error` + generic reply) — except `"Message is not modified"` and
+`"Query is too old"` (`_BENIGN_BAD_REQUESTS`), which stay a warning so a
+double-tap on the timezone/language pickers does not report a saved setting as failed.
 
 **Results "All" mode truncation:** When showing all sessions for a round, text can exceed Telegram's 4096-char limit. A 3-stage fallback applies: (1) all sessions full, (2) competitive sessions only, (3) top 10 with truncation note.
 
@@ -219,7 +223,9 @@ warnings during it are normal (Jolpica allows 500 req/hr). **Wait a full three
 minutes before reading a deploy's logs** — checking earlier looks exactly like
 `startup_sync_complete` never arriving.
 
-**Notification DELETE strategy:** `mark_notifications_sent()` DELETEs rows instead of setting `notified=TRUE`. This prevents row accumulation and avoids unique constraint conflicts on re-subscription. `save_notification()` uses `ON CONFLICT DO UPDATE SET notified=FALSE, fire_at=EXCLUDED.fire_at` to handle re-subscriptions cleanly.
+**Notification DELETE strategy:** `mark_notifications_sent()` DELETEs rows instead of setting `notified=TRUE`. This prevents row accumulation and avoids unique constraint conflicts on re-subscription. `save_notification()` uses `ON CONFLICT DO UPDATE SET notified=FALSE, fire_at=EXCLUDED.fire_at` to handle re-subscriptions cleanly. A row whose send fails stays and is retried on the next
+reschedule, until it is more than `_MAX_LATENESS` (1h) past its own `fire_at` —
+then it is deleted with `notifications_expired`.
 
 **`/standings` remaining-events alignment (two-clocks fix):** `/standings` must derive remaining races/sprints from the **standings snapshot's own `round_after`** (via `repo.get_standings_round(season, table)`), NOT from live `now()` (`get_schedule_bounds()["upcoming_rounds"]`). Points are an hourly snapshot; `upcoming_rounds` flips the moment a race start-time passes — mixing the two lets a near-clinch leader flash a false 🔒 CLINCHED mid-weekend. Each view uses its **own** table's `round_after` (WDC→`standings_drivers`, WCC→`standings_constructors`) because a partial sync can leave the two tables at different rounds. `remaining_events()` **enumerates** `round > N` over `get_schedule()` — never `total - N` (would mis-count on schedule gaps). Wire this in **both** `standings_handler` and `standings_callback`. The write side obeys the same rule: `sync_standings` tags each table with the `round` Jolpica returns alongside the points (`get_*_standings()` → `(round, list)`), never `get_schedule_bounds()` — Jolpica lags a race start by hours, so a live-clock tag would mislabel stale points as the newer round.
 

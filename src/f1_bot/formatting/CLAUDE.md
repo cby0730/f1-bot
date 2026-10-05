@@ -32,3 +32,9 @@ locale — not thread-safe under async and impossible to vary per user.
 (stdlib `unicodedata.east_asian_width`), not `{label:<10}`. Python field widths
 count code points, but CJK glyphs occupy two display columns, so code-point
 padding drifts the number columns on translated rows.
+
+**Flag tables are keyed on Jolpica's own strings,** not ISO country names (`UK`,
+`Korea`, `UAE`, `Monegasque`, `Rhodesian`). A missing key renders the black 🏴
+silently, so `tests/test_formatting/test_extras_messages.py` pins every circuit
+country and nationality Jolpica has ever returned. A new venue or nationality
+goes in both `emoji.py` and that list.
