@@ -4,15 +4,12 @@ import datetime
 from datetime import UTC
 from datetime import datetime as dt_datetime
 
-import structlog
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from f1_bot.formatting.emoji import circuit_flag_icon
 from f1_bot.formatting.i18n import DEFAULT_LANG, t
 from f1_bot.formatting.messages import _esc
 from f1_bot.utils.sessions import find_next_sessions, find_race_session, session_entries
-
-log = structlog.get_logger(__name__)
 
 # Session type rows for filter keyboards. Only the *keys* live here — labels are
 # resolved per-request via `session.btn.*`, so nothing language-specific is frozen

@@ -1,7 +1,7 @@
 """Tests for /driver and /circuit handlers and callbacks."""
 
 import datetime
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from f1_bot.handlers.extras import _extras_callback, circuit_handler, driver_handler
 from f1_bot.models.driver import Driver, DriverStanding
@@ -123,8 +123,12 @@ async def test_driver_handler_repo_exception_shows_no_data():
     ctx.args = ["hamilton"]
     update = _update()
 
-    await driver_handler(update, ctx)
+    with patch("f1_bot.handlers.extras.log") as mock_log:
+        await driver_handler(update, ctx)
 
+    # The user sees "no data", but a DB failure must not be indistinguishable
+    # from an empty DB in the logs.
+    mock_log.exception.assert_called_once()
     text = update.effective_message.reply_text.await_args.args[0]
     assert "⚠️" in text or "driver list" in text.lower()
 
@@ -181,8 +185,12 @@ async def test_circuit_handler_repo_exception_shows_no_data():
     ctx.args = ["monaco"]
     update = _update()
 
-    await circuit_handler(update, ctx)
+    with patch("f1_bot.handlers.extras.log") as mock_log:
+        await circuit_handler(update, ctx)
 
+    # The user sees "no data", but a DB failure must not be indistinguishable
+    # from an empty DB in the logs.
+    mock_log.exception.assert_called_once()
     text = update.effective_message.reply_text.await_args.args[0]
     assert "⚠️" in text or "circuit list" in text.lower()
 

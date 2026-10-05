@@ -3,18 +3,12 @@ import structlog
 from f1_bot.api.base import BaseAPIClient
 from f1_bot.models.race import Meeting, Session
 from f1_bot.models.results import LapTime, PitStop, SessionResult
-from f1_bot.utils.rate_limiter import RateLimiter
 
 log = structlog.get_logger(__name__)
 
 
 class OpenF1Client(BaseAPIClient):
     """Client for the OpenF1 API — sessions, results, laps, pit stops, and timezone offsets."""
-
-    def __init__(
-        self, base_url: str, rate_limiter: RateLimiter, *, proxy: str | None = None
-    ) -> None:
-        super().__init__(base_url, rate_limiter, proxy=proxy)
 
     async def get_meetings(self, **filters) -> list[Meeting]:
         data = await self.get("/meetings", params=filters or None)

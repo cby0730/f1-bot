@@ -3,7 +3,7 @@ import traceback
 import structlog
 from telegram import Update
 from telegram.constants import ParseMode
-from telegram.error import NetworkError
+from telegram.error import BadRequest, NetworkError
 from telegram.ext import ContextTypes
 
 from f1_bot.formatting.context import RenderContext
@@ -11,6 +11,8 @@ from f1_bot.formatting.i18n import t
 from f1_bot.handlers.context import resolve_context
 
 log = structlog.get_logger(__name__)
+
+_BENIGN_BAD_REQUESTS = ("Message is not modified", "Query is too old")
 
 
 class CommandValidationError(Exception):
@@ -53,7 +55,13 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE) -> N
             )
             return
 
-    if isinstance(context.error, NetworkError):
+    # BadRequest subclasses NetworkError in PTB. Most BadRequests are our bug (e.g. a
+    # Markdown parse failure) and fall through to unhandled_error — except these two,
+    # which unguarded edit paths raise on a double-tap or a slow tap and are harmless.
+    if isinstance(context.error, NetworkError) and (
+        not isinstance(context.error, BadRequest)
+        or any(s in str(context.error) for s in _BENIGN_BAD_REQUESTS)
+    ):
         log.warning(
             "telegram_network_error",
             error=str(context.error),

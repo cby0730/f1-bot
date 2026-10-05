@@ -159,7 +159,7 @@ def find_recent_completed_sessions(
         and entry.starts_at <= now
         and (normalized is None or entry.key == normalized)
     ]
-    return list(reversed(completed[-limit:])) if completed else []
+    return list(reversed(completed[-limit:]))
 
 
 def find_recent_completed_session(

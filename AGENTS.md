@@ -1,104 +1,119 @@
 # AGENTS.md
 
-Standard dev commands (run bot, tests, lint, coverage) and architecture live in
-[`CLAUDE.md`](CLAUDE.md) and [`src/f1_bot/handlers/CLAUDE.md`](src/f1_bot/handlers/CLAUDE.md).
-Read those first; this file only records non-obvious environment caveats.
+Dev commands, architecture, and code-level gotchas live in [`CLAUDE.md`](CLAUDE.md)
+and [`src/f1_bot/handlers/CLAUDE.md`](src/f1_bot/handlers/CLAUDE.md). Read those
+first — this file records only what the *environment* does differently.
 
-## Cursor Cloud specific instructions
+## Toolchain
 
-- **Python toolchain:** the project targets Python 3.13 and uses `uv`. `uv` is
-  installed at `~/.local/bin` (already on PATH). `uv sync` (the startup update
-  script) provisions the 3.13 interpreter and the `.venv`. Prefix commands with
-  `uv run` (e.g. `uv run -m f1_bot`, `uv run pytest ...`).
+Python 3.13 via `uv` (installed at `~/.local/bin`, already on PATH). `uv sync`
+provisions the interpreter and `.venv`. Prefix everything with `uv run`.
 
-- **PostgreSQL is a native cluster, not Docker.** Docker is not available in this
-  environment, so `docker-compose.dev.yml` cannot be used. Instead a system
-  PostgreSQL 16 cluster serves the dev DB on **port 31055** with role/db
-  `mango`/`mango` — this matches the default `F1BOT_DATABASE_URL`
-  (`postgresql://mango:mango@localhost:31055/mango`), so no DB env var is needed.
-  If the cluster is down after a restart, start it with
-  `sudo pg_ctlcluster 16 main start` (check with `pg_lsclusters`). The bot schema
-  is auto-created on startup; no migration step.
-  This cluster is for **running the bot**. The tests no longer touch it — they
-  start their own container (see below), which needs a Docker daemon. Where
-  Docker is genuinely unavailable, the test suite cannot run at all.
+Running the bot needs `TELEGRAM_BOT_TOKEN` — a bare env var, no `F1BOT_` prefix,
+from @BotFather, never stored in the repo.
 
-- **Running the bot needs `TELEGRAM_BOT_TOKEN`** (bare env var, no `F1BOT_` prefix;
-  get one from @BotFather). It is intentionally not stored in the repo — export it
-  in the shell before `uv run -m f1_bot`.
+**Never run a local bot on production's token.** Telegram allows one
+`getUpdates` connection per token, so a second one fights the VM and both become
+unreliable. Use a separate test bot.
 
-- **Startup blocks on a full-season sync before polling.** `_post_init` runs
-  `startup_sync()` which fetches the whole season from Jolpica + OpenF1 over the
-  network (~2 minutes) *before* the bot accepts Telegram updates. `api_rate_limited`
-  warnings during this phase are normal and self-recover. The bot is only live once
-  the log shows `startup_sync_complete` → `bot_commands_registered` →
-  `Application started`.
+## Databases
 
-- **Tests bring their own database.** The `pg_url` fixture in `tests/conftest.py`
-  starts a throwaway `postgres:18-alpine` container via Testcontainers, so
-  `uv run pytest -m "not integration"` needs **no** database on the host, no psql
-  client, and no `F1BOT_TEST_DATABASE_URL`. It requires only a reachable Docker
-  daemon. Expect **0 skipped, 0 error** — a skip or a connection error means
-  something is wrong, not that the DB is merely absent.
-  The container is session-scoped but **lazily started**: DB-free suites
-  (`tests/test_i18n/`, most of `tests/test_handlers/`) never launch it and finish
-  in under a second. `pg_store`/`repo` stay function-scoped, so each test gets a
-  fresh store and a fresh `Repository._laps_cache`.
-- **The `integration` marker means "hits a real external API", not "needs a
-  database".** Since the Testcontainers migration *both* halves get a database,
-  so that is no longer what separates them — all 19 marked tests (`test_api/`,
-  `test_smoke.py`) call live Jolpica/OpenF1. `test_smoke.py` needs both a real
-  DB and real HTTP, which is why "integration = no DB" is the wrong mental model.
+Two unrelated Postgres instances, often confused:
 
-- **`integration` is deliberately kept out of CI — do not "helpfully" add it.**
-  A red CI run must mean *this PR is broken*. Mixing in third-party
-  availability, Jolpica's 500 req/hr limit, and OpenF1 pruning old
-  `session_key`s makes a red run ambiguous, and an ambiguous gate gets ignored
-  and then switched off. Run these locally when you want to check the APIs still
-  behave; they are the only tests that catch an upstream format change. If they
-  ever do belong in CI, give them a separate `workflow_dispatch` workflow that
-  cannot block a merge.
+| | Purpose | How it starts |
+|---|---|---|
+| `mango_pg`, port 31055 | Running the bot locally | `docker-compose.dev.yml` |
+| Throwaway, random port | The test suite | Testcontainers, automatic |
 
-- **Running `integration` from this host needs the tunnel.** The corporate proxy
-  in the shell profile (`HTTPS_PROXY=http://10.1.1.39:80`) classifies
-  `api.jolpi.ca` and `api.openf1.org` as blocked and answers 302 to
-  `blockpage.cgi`, so the client parses HTML as JSON and you get
-  `Expecting value: line 1 column 1` — which looks like a parser bug and is not.
-  Prefix the command with the tunnel instead of editing the profile globally:
+The dev DB is **only** for `uv run -m f1_bot`. Tests never touch it (see
+CLAUDE.md's Test conventions). Tear it down with
+`docker compose -f docker-compose.dev.yml down -v` — the volume is residue, not
+a cache.
 
-  ```bash
-  env HTTP_PROXY=http://127.0.0.1:31100 HTTPS_PROXY=http://127.0.0.1:31100 \
-      http_proxy=http://127.0.0.1:31100 https_proxy=http://127.0.0.1:31100 \
-      uv run pytest -m integration
-  ```
+**On Cursor Cloud there is no Docker.** The dev DB is instead a *native*
+PostgreSQL cluster already serving port 31055 with role/db `mango`/`mango`,
+matching the default `F1BOT_DATABASE_URL`. Restart it with
+`sudo pg_ctlcluster <major> main start` (check `pg_lsclusters`). Schema is
+auto-created at startup; there is no migration step. Because the test suite
+needs a Docker daemon, **it cannot run in this environment at all** — do not
+interpret its absence as a code failure.
 
-- **PRs target `develop`, never `main`.** Open and merge pull requests against
-  `develop`. `main` is production: `.github/workflows/deploy.yml` SSHes into the
-  OCI VM and runs `docker compose up -d --build` on every push to `main`. Do not
-  open a PR into `main`; promote `develop` → `main` only as an explicit release
-  merge.
+## Network
 
-- **CI gates deployment.** `.github/workflows/test.yml` runs three jobs — `test`
-  (`pytest -m "not integration"`), `lint` (`ruff check` + `ruff format --check`)
-  and `audit` (`pip-audit`, `continue-on-error`) — on every PR into
-  `develop`/`main`, on every push to `develop`, and via `workflow_call` from
-  `deploy.yml`. It has no `services:` block; Testcontainers supplies the
-  database, with Ryuk disabled since the runner is itself ephemeral.
-  `deploy.yml` calls it as its own `test` job and the SSH step declares
-  `needs: test`, so a push to `main` that fails `test` or `lint` never reaches
-  the VM. `audit` is exempt by construction: `continue-on-error` makes it report
-  success, so an upstream CVE published today stays visible without holding a
-  release hostage. Only what this repo controls can block a deploy.
-  `.pre-commit-config.yaml` (ruff, ruff-format, gitleaks, hadolint, pip-audit)
-  remains the local gate; still run lint + tests yourself before committing (see
-  `CLAUDE.md`).
+This host's login shell exports `HTTPS_PROXY=http://10.1.1.39:80`, a content
+filter that answers `302` to a block page for `api.jolpi.ca` and
+`api.openf1.org`. The empty body surfaces as
+`JSONDecodeError: Expecting value: line 1 column 1` — which looks like a parser
+bug and is not. When many *untouched* tests fail identically, suspect the shared
+network path, not the code.
 
-  Two gaps this does **not** close, both needing GitHub-side branch protection
-  rather than a file here: a red run still cannot block the *merge button* on a
-  PR, and nothing prevents a direct push to `main` — it will be tested before
-  deploying, but it will not have been reviewed.
+Prefix the working tunnel rather than editing the profile:
 
-- **Launch film is Node, not Python.** `video/` is a Remotion app. Render with
-  `cd video && npm run render:full` (npm is on PATH). Rebuild the README gif with
-  the ffmpeg recipe in `video/README.md`. Do not `uv run` Remotion, and do not
-  copy `video/` into Docker.
+```bash
+env HTTP_PROXY=http://127.0.0.1:31100 HTTPS_PROXY=http://127.0.0.1:31100 \
+    http_proxy=http://127.0.0.1:31100 https_proxy=http://127.0.0.1:31100 \
+    uv run pytest -m integration
+```
+
+`31100` is a session-scoped tunnel from the user's laptop, **not a daemon here**.
+`Connection refused` means they are not currently connected — not a broken
+config. Check with `ss -ltn | grep 31100` before changing anything.
+
+## Branches and CI
+
+**PRs target `develop`. `main` is production** — every push to it SSHes into the
+OCI VM and rebuilds. Promote `develop` → `main` only as an explicit release
+merge.
+
+Both branches are protected, so a direct push is rejected; branch even for a
+one-line docs fix.
+
+`test.yml` runs `test` (`pytest -m "not integration"`), `lint`
+(`ruff check` + `ruff format --check`) and `audit` (`pip-audit`) on every PR into
+`develop`/`main`, every push to `develop`, and via `workflow_call` from
+`deploy.yml`. No `services:` block — Testcontainers supplies the database, with
+Ryuk disabled since the runner is itself ephemeral.
+
+`deploy.yml` calls that workflow as its own `test` job and the SSH step declares
+`needs: test`, so a push to `main` failing `test` or `lint` never reaches the VM.
+It is defined once and reused rather than copied — a second copy would drift, and
+the copy that drifts is the one guarding production.
+
+**`audit` is exempt by construction.** `continue-on-error: true` makes it report
+success, so a CVE published upstream this morning stays visible without holding a
+release hostage. Only what this repo controls can block a deploy. For the same
+reason it is deliberately *not* a required status check: GitHub reads a required
+check's raw conclusion and would ignore `continue-on-error`.
+
+**Two layers, neither replacing the other:** branch protection rejects the
+*write*; `needs: test` guards the *deploy*. The gap between them is base drift —
+a PR tested against `main`@A merges after someone lands B, and A+B was never
+tested together. `needs: test` is the only thing that tests the actual merge
+result.
+
+## Deploying
+
+The VM's checkout must be clean before a deploy, or `git pull` aborts and
+`set -e` fails the workflow before any container is touched. **This happens even
+when a locally edited file is byte-identical to the incoming one** — merge
+compares the working tree against the *index*, never against the upstream blob.
+Verify equality, then `git checkout -- <file>` to discard.
+
+Untracked files are a different case and do not block: merge only protects paths
+it is about to write. They abort a pull only when the incoming commit adds the
+same path.
+
+Do not `git add -A` or `git add .` on the VM. `backup/` holds full database
+dumps containing real `telegram_id`s; `.gitignore` covers `backup/`, `*.dump`
+and `*.bak`, but a forced add still wins.
+
+`docker compose up -d` only recreates services whose config changed. A deploy
+that leaves the postgres container untouched never risked the data — which is
+also why an eventual postgres-section change deserves far more care than a
+routine bot deploy.
+
+## Launch film
+
+`video/` is a Remotion app (Node, not Python): `cd video && npm run render:full`.
+Rebuild the README gif with the ffmpeg recipe in `video/README.md`. Do not
+`uv run` Remotion, and do not copy `video/` into Docker.

@@ -11,7 +11,6 @@ class RateLimiter:
         per_period: float | None = None,
         period: float = 3600.0,
     ) -> None:
-        self._per_second = per_second
         self._min_interval = 1.0 / per_second
         self._last_call = 0.0
 

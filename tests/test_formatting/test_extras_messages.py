@@ -1,7 +1,9 @@
 """Tests for driver profile and circuit info formatters."""
 
+import pytest
+
 from f1_bot.formatting.context import RenderContext
-from f1_bot.formatting.emoji import circuit_flag_icon
+from f1_bot.formatting.emoji import circuit_flag_icon, flag_icon
 from f1_bot.formatting.i18n import t
 from f1_bot.formatting.messages import (
     _CMP_LABEL_WIDTH,
@@ -127,6 +129,115 @@ def test_circuit_flag_icon_specific_mappings():
     assert circuit_flag_icon("UAE") == "🇦🇪"
     assert circuit_flag_icon("Monaco") == "🇲🇨"
     assert circuit_flag_icon("UnknownCountryString") == "🏴"
+
+
+def test_circuit_flag_icon_malaysia():
+    """2026 R16 "Bahrain Grand Prix in Malaysia" is reported by Jolpica with country
+    "Malaysia"; a missing mapping silently renders the black fallback flag 🏴."""
+    assert circuit_flag_icon("Malaysia") == "🇲🇾"
+
+
+# Every distinct value Jolpica has ever returned (all 78 circuits, 881 drivers and
+# every constructor, fetched 2026-10-05). These are Jolpica's own strings, not
+# standard country names ("UK", "Korea", "Monegasque", "Rhodesian"), which is why
+# the tables are keyed on them. A new venue or nationality must be added here too.
+_JOLPICA_CIRCUIT_COUNTRIES = [
+    "Argentina",
+    "Australia",
+    "Austria",
+    "Azerbaijan",
+    "Bahrain",
+    "Belgium",
+    "Brazil",
+    "Canada",
+    "China",
+    "France",
+    "Germany",
+    "Hungary",
+    "India",
+    "Italy",
+    "Japan",
+    "Korea",
+    "Malaysia",
+    "Mexico",
+    "Monaco",
+    "Morocco",
+    "Netherlands",
+    "Portugal",
+    "Qatar",
+    "Russia",
+    "Saudi Arabia",
+    "Singapore",
+    "South Africa",
+    "Spain",
+    "Sweden",
+    "Switzerland",
+    "Turkey",
+    "UAE",
+    "UK",
+    "USA",
+]
+_JOLPICA_NATIONALITIES = [
+    "American",
+    "Argentine",
+    "Australian",
+    "Austrian",
+    "Belgian",
+    "Brazilian",
+    "British",
+    "Canadian",
+    "Chilean",
+    "Chinese",
+    "Colombian",
+    "Czech",
+    "Danish",
+    "Dutch",
+    "East German",
+    "Finnish",
+    "French",
+    "German",
+    "Hong Kong",
+    "Hungarian",
+    "Indian",
+    "Indonesian",
+    "Irish",
+    "Italian",
+    "Japanese",
+    "Korean",
+    "Liechtensteiner",
+    "Malaysian",
+    "Mexican",
+    "Monegasque",
+    "New Zealander",
+    "Polish",
+    "Portuguese",
+    "Rhodesian",
+    "Russian",
+    "South African",
+    "Spanish",
+    "Swedish",
+    "Swiss",
+    "Thai",
+    "Uruguayan",
+    "Venezuelan",
+]
+
+
+@pytest.mark.parametrize("country", _JOLPICA_CIRCUIT_COUNTRIES)
+def test_every_jolpica_circuit_country_has_a_flag(country):
+    """A missing mapping is silent: it renders the black 🏴 (2026 R16 "Malaysia")."""
+    assert circuit_flag_icon(country) != "🏴"
+
+
+@pytest.mark.parametrize("nationality", _JOLPICA_NATIONALITIES)
+def test_every_jolpica_nationality_has_a_flag(nationality):
+    assert flag_icon(nationality) != "🏴"
+
+
+def test_historical_nationalities_map_to_successor_flags():
+    """No emoji exists for East Germany or Rhodesia; use the successor state's flag."""
+    assert flag_icon("East German") == "🇩🇪"
+    assert flag_icon("Rhodesian") == "🇿🇼"
 
 
 def test_circuit_flag_icon_no_fallbacks():

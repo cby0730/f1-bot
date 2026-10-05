@@ -31,6 +31,19 @@ COUNTRY_FLAGS: dict[str, str] = {
     "Indian": "🇮🇳",
     "Venezuelan": "🇻🇪",
     "Colombian": "🇨🇴",
+    "Chilean": "🇨🇱",
+    "Hungarian": "🇭🇺",
+    "Indonesian": "🇮🇩",
+    "Irish": "🇮🇪",
+    "Liechtensteiner": "🇱🇮",
+    "Malaysian": "🇲🇾",
+    "Portuguese": "🇵🇹",
+    "South African": "🇿🇦",
+    "Uruguayan": "🇺🇾",
+    "Hong Kong": "🇭🇰",
+    # Former states with no flag emoji: use the successor state's flag.
+    "East German": "🇩🇪",
+    "Rhodesian": "🇿🇼",
 }
 
 SESSION_ICONS = {
@@ -101,6 +114,9 @@ ISO_3_TO_2 = {
     "QAT": "QA",
     "UAE": "AE",
     "AZE": "AZ",
+    "MYS": "MY",
+    "MAR": "MA",
+    "PRT": "PT",
 }
 
 
@@ -156,6 +172,19 @@ CIRCUIT_COUNTRY_TO_ISO3: dict[str, str] = {
     "Qatar": "QAT",
     "Abu Dhabi": "UAE",
     "Azerbaijan": "AZE",
+    "Malaysia": "MYS",
+    "Argentina": "ARG",
+    "France": "FRA",
+    "Germany": "GER",
+    "India": "IND",
+    "Korea": "KOR",
+    "Morocco": "MAR",
+    "Portugal": "PRT",
+    "Russia": "RUS",
+    "South Africa": "ZAF",
+    "Sweden": "SWE",
+    "Switzerland": "SUI",
+    "Turkey": "TUR",
     "Miami": "USA",
     "Las Vegas": "USA",
     "UK": "GBR",

@@ -3,7 +3,7 @@ from unicodedata import east_asian_width
 from zoneinfo import ZoneInfo
 
 from f1_bot.formatting.context import RenderContext
-from f1_bot.formatting.emoji import flag_icon, pos_icon, session_icon
+from f1_bot.formatting.emoji import circuit_flag_icon, flag_icon, pos_icon, session_icon
 from f1_bot.formatting.i18n import DEFAULT_LANG, t
 from f1_bot.formatting.timezone import combine_race_dt, format_dt
 from f1_bot.formatting.timezone import format_countdown as _countdown_str
@@ -510,10 +510,8 @@ def _fmt_sector(val: float | None) -> str:
     return f"{val:5.1f}"
 
 
-def _fmt_lap_duration(val: float | None, time_str: str | None) -> str:
-    """Format lap duration: prefer string form, fall back to float."""
-    if time_str:
-        return time_str
+def _fmt_lap_duration(val: float | None) -> str:
+    """Format lap duration in seconds as M:SS.mmm."""
     if val is not None:
         m, s = divmod(val, 60)
         return f"{int(m)}:{s:06.3f}"
@@ -607,7 +605,7 @@ def format_laps_summary(
 
     for best_lap, driver_id, best_s1, best_s2, best_s3, tagged in rows:
         label = _pad_display(_resolve_driver_label(driver_id, drivers), _DRIVER_COL)
-        lap_str = _fmt_lap_duration(best_lap, None)
+        lap_str = _fmt_lap_duration(best_lap)
         suffix = f" {dnf_tag}" if tagged else ""
         lines.append(
             f"`{label} {_fmt_sector(best_s1)}│{_fmt_sector(best_s2)}│{_fmt_sector(best_s3)}│{lap_str}{suffix}`"
@@ -659,8 +657,6 @@ def format_driver_profile(driver, standing, ctx: RenderContext) -> str:
 
 
 def format_circuit_info(circuit, recent_races: list | None, ctx: RenderContext) -> str:
-    from f1_bot.formatting.emoji import circuit_flag_icon
-
     flag = circuit_flag_icon(circuit.country)
     coord_str = ""
     if circuit.lat and circuit.lng:

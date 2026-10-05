@@ -45,7 +45,8 @@ async def test_schedule_race_has_date(client):
 
 
 async def test_get_driver_standings_returns_list(client):
-    standings = await client.get_driver_standings()
+    round_num, standings = await client.get_driver_standings()
+    assert round_num >= 1
     assert len(standings) > 0
     s = standings[0]
     assert isinstance(s, DriverStanding)
@@ -55,7 +56,8 @@ async def test_get_driver_standings_returns_list(client):
 
 
 async def test_get_constructor_standings_returns_list(client):
-    standings = await client.get_constructor_standings()
+    round_num, standings = await client.get_constructor_standings()
+    assert round_num >= 1
     assert len(standings) > 0
     s = standings[0]
     assert isinstance(s, ConstructorStanding)

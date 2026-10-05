@@ -67,6 +67,7 @@ async def driver_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     try:
         standings = await repo.get_driver_standings(season)
     except Exception:
+        log.exception("driver_standings_read_failed", season=season)
         standings = []
 
     if not standings:
@@ -93,6 +94,7 @@ async def circuit_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
     try:
         round_circuits = await repo.get_circuits_for_season(season)
     except Exception:
+        log.exception("circuits_read_failed", season=season)
         round_circuits = []
 
     if not round_circuits:
