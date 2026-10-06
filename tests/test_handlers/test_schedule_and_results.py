@@ -107,7 +107,6 @@ async def test_next_handler_shows_next_upcoming_race():
     races = [r1]
     repo.get_schedule = AsyncMock(return_value=races)
     repo.get_schedule_bounds = AsyncMock(return_value=_bounds(races))
-    repo.get_user_timezone = AsyncMock(return_value="UTC")
     ctx = _context(repo=repo)
     update = _update()
 
@@ -136,7 +135,6 @@ async def test_next_handler_no_upcoming_races():
     r = _past_race()
     repo.get_schedule = AsyncMock(return_value=[r])
     repo.get_schedule_bounds = AsyncMock(return_value=_bounds([r]))
-    repo.get_user_timezone = AsyncMock(return_value="UTC")
     update = _update()
 
     await next_handler(update, _context(repo=repo))
@@ -152,7 +150,6 @@ async def test_next_handler_callback_data_format():
     r.round = 10
     repo.get_schedule = AsyncMock(return_value=[r])
     repo.get_schedule_bounds = AsyncMock(return_value=_bounds([r]))
-    repo.get_user_timezone = AsyncMock(return_value="UTC")
     update = _update()
 
     await next_handler(update, _context(repo=repo))
@@ -293,42 +290,12 @@ async def test_schedule_handler_shows_all_races():
     races = [_race(), _past_race()]
     repo.get_schedule = AsyncMock(return_value=races)
     repo.get_schedule_bounds = AsyncMock(return_value=_bounds(races))
-    repo.get_user_timezone = AsyncMock(return_value="UTC")
     update = _update()
 
     await schedule_handler(update, _context(repo=repo))
 
     text = update.effective_message.reply_text.await_args.args[0]
     assert "Italian Grand Prix" in text
-
-
-async def test_get_next_race_utc_alignment(repo, monkeypatch):
-    """It uses UTC date for scheduling checks to avoid local time zone delta shifts."""
-    from datetime import UTC, date, datetime, time
-
-    from f1_bot.models.race import Circuit, Race
-
-    class MockDatetime:
-        @classmethod
-        def now(cls, tz=None):
-            # Return UTC time: Saturday June 20, 2026, 23:00 UTC (Taipei is Sunday June 21, 07:00)
-            return datetime(2026, 6, 20, 23, 0, 0, tzinfo=UTC)
-
-    monkeypatch.setattr("f1_bot.storage.repository.datetime", MockDatetime)
-
-    race = Race(
-        season=2026,
-        round=1,
-        name="Test Grand Prix",
-        circuit=Circuit(circuit_id="test", name="Test", locality="Test", country="Test"),
-        date=date(2026, 6, 20),
-        time=time(13, 0),
-    )
-
-    await repo.save_schedule(2026, [race])
-    next_race = await repo.get_next_race(2026)
-    assert next_race is not None
-    assert next_race.name == "Test Grand Prix"
 
 
 async def test_format_all_results_dynamic_truncation(monkeypatch):
@@ -657,7 +624,6 @@ async def test_next_callback_invalid_filter_value_error():
     repo = MagicMock()
     repo.get_schedule = AsyncMock(return_value=[r1])
     repo.get_schedule_bounds = AsyncMock(return_value=_bounds([r1]))
-    repo.get_user_timezone = AsyncMock(return_value=None)
     ctx = _context(repo=repo)
 
     with pytest.raises(ValueError, match="Unknown session group or key: invalid_filter"):

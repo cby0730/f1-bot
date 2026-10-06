@@ -6,8 +6,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 uv run -m f1_bot                          # start the bot (requires .env)
-uv run pytest -m "not integration"        # unit tests (672; needs only a Docker daemon)
-uv run pytest -m integration -v           # integration tests (real HTTP, ~19 tests)
+uv run pytest -m "not integration"        # unit tests (665; needs only a Docker daemon)
+uv run pytest -m integration -v           # integration tests (real HTTP, ~18 tests)
 uv run pytest tests/test_smoke.py -v      # full-stack smoke test
 
 # Coverage — NOT `pytest --cov` (segfaults, see gotcha below)
@@ -61,7 +61,7 @@ detail that only matters there:
 | `src/f1_bot/storage/repository.py` | Unified read layer over PostgreSQL; `get_schedule_bounds()` is the source of truth for completed/upcoming rounds — except `/results`, which navigates `get_result_sessions_by_round()` (stored data, not the clock) |
 | `src/f1_bot/scheduler/jobs.py` | `startup_sync()` + `hourly_sync()` + individual `sync_*` callbacks; each takes `(jolpica, repo)` or `(openf1, repo)` |
 | `src/f1_bot/scheduler/manager.py` | Registers single `hourly_sync` job via `run_repeating`; owns `_POLL_INTERVAL` |
-| `src/f1_bot/handlers/pagination.py` | Shared keyboard builders: `next_overview_keyboard`, `next_filtered_keyboard`, `results_overview_keyboard`, `results_filtered_keyboard`, `round_keyboard`, `schedule_keyboard`; also `round_picker_keyboard`/`round_picker_text` and the round-set helpers (`upcoming_rounds`, `rounds_with_results`, `displayable_sessions`) the picker reuses |
+| `src/f1_bot/handlers/pagination.py` | Shared keyboard builders: `next_overview_keyboard`, `next_filtered_keyboard`, `results_overview_keyboard`, `results_filtered_keyboard`, `round_keyboard`; also `round_picker_keyboard`/`round_picker_text` and the round-set helpers (`upcoming_rounds`, `rounds_with_results`, `displayable_sessions`) the picker reuses |
 | `src/f1_bot/handlers/round_picker.py` | Round picker overlay handler (`rpk:` callbacks); `_compute_navigable_rounds(origin, ...)` maps the `origin` token back to the caller's navigable rounds |
 | `src/f1_bot/handlers/compare.py` | `cmp:a` / `cmp:b` from a driver profile; aggregates current-season race+sprint results into a two-driver head-to-head. Reads PostgreSQL only |
 | `src/f1_bot/utils/championship.py` | Pure clinch math (DB-free): `remaining_events`, `max_remaining_points`, `clinch_status`, `ClinchStatus`; point constants `WDC_RACE_MAX`/`WDC_SPRINT_MAX` (25/8), `WCC_RACE_MAX`/`WCC_SPRINT_MAX` (43/15) |
@@ -301,7 +301,7 @@ never raise.
   never "the DB is merely absent".
 - `pytest.mark.integration` means **calls a real external API**, not "needs a
   database" — both halves get one, and `test_smoke.py` needs a real DB *and*
-  real HTTP. These 19 tests are deliberately out of CI so a red run always means
+  real HTTP. These 18 tests are deliberately out of CI so a red run always means
   *this PR* is broken rather than that a third party is having a bad day; do not
   "helpfully" add them. Run locally (see `AGENTS.md` for this host's proxy
   tunnel). If they ever belong in CI, give them a `workflow_dispatch` workflow

@@ -79,42 +79,6 @@ def round_keyboard(
     return InlineKeyboardMarkup([row])
 
 
-def schedule_keyboard(
-    prefix: str,
-    current_round: int,
-    upcoming_rounds: list[int],
-    lang: str = DEFAULT_LANG,
-) -> InlineKeyboardMarkup:
-    """Build prev/next keyboard for forward-navigation in schedule commands."""
-    total = len(upcoming_rounds)
-    if total == 0:
-        return InlineKeyboardMarkup([[]])
-
-    try:
-        idx = upcoming_rounds.index(current_round)
-    except ValueError:
-        idx = 0
-
-    row: list[InlineKeyboardButton] = []
-
-    if idx > 0:
-        prev_round = upcoming_rounds[idx - 1]
-        row.append(InlineKeyboardButton("◀", callback_data=f"{prefix}:{prev_round}"))
-
-    center_cb = f"rpk:{prefix}:{current_round}" if total > 1 else f"{prefix}:{current_round}"
-    row.append(
-        InlineKeyboardButton(
-            _round_counter(current_round, upcoming_rounds[-1], lang), callback_data=center_cb
-        )
-    )
-
-    if idx < total - 1:
-        next_round = upcoming_rounds[idx + 1]
-        row.append(InlineKeyboardButton("▶", callback_data=f"{prefix}:{next_round}"))
-
-    return InlineKeyboardMarkup([row])
-
-
 # ---------------------------------------------------------------------------
 # Two-state keyboards for unified /next and /results
 # ---------------------------------------------------------------------------

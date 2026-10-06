@@ -562,8 +562,8 @@ async def test_scenario_06_timezone_interactive_flow(e2e_app, httpx_mock):
 
     # Verify preference saved in DB
     repo = e2e_app.bot_data["repo"]
-    tz = await repo.get_user_timezone(MOCK_USER_ID)
-    assert tz == "Europe/London"
+    pref = await repo.get_user_preference(MOCK_USER_ID)
+    assert pref.timezone == "Europe/London"
 
 
 # ==============================================================================

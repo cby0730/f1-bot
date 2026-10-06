@@ -2,7 +2,6 @@ from datetime import UTC, date, datetime, time
 
 from f1_bot.models.race import Circuit, Race, RaceSession, Session
 from f1_bot.utils.sessions import (
-    find_next_session,
     find_next_sessions,
     find_race_session,
     match_openf1_session,
@@ -31,19 +30,10 @@ def _race():
     )
 
 
-def test_find_next_session_returns_next_any_session():
-    now = datetime(2024, 8, 30, 12, 0, tzinfo=UTC)
-
-    entry = find_next_session([_race()], now=now)
-
-    assert entry is not None
-    assert entry.key == "fp2"
-
-
 def test_find_next_qualifying_includes_qualifying_sessions():
     now = datetime(2024, 8, 30, 12, 0, tzinfo=UTC)
 
-    entry = find_next_session([_race()], group="qualifying", now=now)
+    entry = find_next_sessions([_race()], group="qualifying", limit=1, now=now)[0]
 
     assert entry is not None
     assert entry.key == "qualifying"

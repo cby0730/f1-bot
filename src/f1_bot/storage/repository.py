@@ -46,12 +46,6 @@ class Repository:
         races_json = [r.model_dump(mode="json") for r in races]
         await self._store.save_races(season, races_json)
 
-    async def get_next_race(self, season: int) -> Race | None:
-        races = await self.get_schedule(season)
-        today = datetime.now(UTC).date()
-        upcoming = [r for r in races if r.date >= today]
-        return upcoming[0] if upcoming else None
-
     async def get_schedule_bounds(
         self,
         season: int,
@@ -222,10 +216,6 @@ class Repository:
 
     async def set_user_language(self, telegram_id: int, language: str) -> None:
         await self._store.set_user_language(telegram_id, language)
-
-    async def get_user_timezone(self, telegram_id: int) -> str:
-        pref = await self.get_user_preference(telegram_id)
-        return pref.timezone if pref else "UTC"
 
     async def get_user_language(self, telegram_id: int) -> str:
         """Language only — for paths that have no `Update` to resolve a context from.
