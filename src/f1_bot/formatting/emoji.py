@@ -56,17 +56,6 @@ SESSION_ICONS = {
     "race": "🏁",
 }
 
-FLAG_COLORS = {
-    "GREEN": "🟢",
-    "YELLOW": "🟡",
-    "RED": "🔴",
-    "BLUE": "🔵",
-    "BLACK": "⬛",
-    "CHEQUERED": "🏁",
-    "SAFETY CAR": "🚗",
-    "VIRTUAL SAFETY CAR": "🚙",
-}
-
 
 ISO_3_TO_2 = {
     "ARG": "AR",
@@ -205,7 +194,3 @@ def circuit_flag_icon(country: str) -> str:
 
 def session_icon(session_type: str) -> str:
     return SESSION_ICONS.get(session_type.lower(), "📅")
-
-
-def flag_color(flag: str) -> str:
-    return FLAG_COLORS.get(flag.upper() if flag else "", "🚩")

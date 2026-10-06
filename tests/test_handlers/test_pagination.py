@@ -11,7 +11,6 @@ from f1_bot.handlers.pagination import (
     round_keyboard,
     round_picker_keyboard,
     round_picker_text,
-    schedule_keyboard,
     two_column_keyboard,
 )
 from f1_bot.models.race import Circuit, Race
@@ -66,25 +65,6 @@ class TestRoundKeyboard:
         # Falls to idx = total-1 = 2 (round 3), so has prev but no next
         assert row[0].text == "◀"
         assert "R99/3" in row[1].text  # Still shows the requested round in label
-
-
-# ---------------------------------------------------------------------------
-# schedule_keyboard
-# ---------------------------------------------------------------------------
-
-
-class TestScheduleKeyboard:
-    def test_empty_returns_empty_keyboard(self):
-        kb = schedule_keyboard("next", 1, [])
-        assert kb.inline_keyboard == ((),)
-
-    def test_current_not_in_list_falls_back_to_first(self):
-        kb = schedule_keyboard("next", 99, [5, 6, 7])
-        row = kb.inline_keyboard[0]
-        # Falls back to idx=0 (round 5), no prev, has next
-        assert len(row) == 2
-        assert "R99/7" in row[0].text
-        assert row[1].text == "▶"
 
 
 # ---------------------------------------------------------------------------

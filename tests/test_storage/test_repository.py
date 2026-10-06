@@ -94,24 +94,6 @@ async def test_get_schedule_empty_returns_empty_list(repo):
     assert result == []
 
 
-async def test_get_next_race_returns_upcoming(repo):
-    """get_next_race returns the first race that hasn't happened yet."""
-    past_race = _race(round_num=1, days_ahead=-5)  # already past
-    future_race = _race(round_num=2, days_ahead=10)  # upcoming
-    await repo.save_schedule(2024, [past_race, future_race])
-    result = await repo.get_next_race(2024)
-    assert result is not None
-    assert result.round == 2
-
-
-async def test_get_next_race_all_past_returns_none(repo):
-    """If all races are in the past, get_next_race returns None."""
-    past_race = _race(round_num=1, days_ahead=-5)
-    await repo.save_schedule(2024, [past_race])
-    result = await repo.get_next_race(2024)
-    assert result is None
-
-
 # --- Driver standings tests ---
 
 
@@ -338,28 +320,22 @@ async def test_driver_maps_merge_openf1_and_jolpica(repo):
 # --- User preference / timezone tests ---
 
 
-async def test_get_user_timezone_default(repo):
-    """Unknown user → default timezone is 'UTC'."""
-    tz = await repo.get_user_timezone(telegram_id=99999)
-    assert tz == "UTC"
-
-
 async def test_set_and_get_user_timezone(repo):
-    """set_user_timezone writes the timezone; get_user_timezone reads it back.
+    """set_user_timezone writes the timezone; get_user_preference reads it back.
 
     Replaces the removed whole-object repo.upsert_user_preference (spec 005).
     """
     await repo.set_user_timezone(12345, "Asia/Taipei")
-    tz = await repo.get_user_timezone(telegram_id=12345)
-    assert tz == "Asia/Taipei"
+    pref = await repo.get_user_preference(12345)
+    assert pref.timezone == "Asia/Taipei"
 
 
 async def test_set_user_timezone_overwrite(repo):
     """Setting a different timezone overwrites the previous value."""
     await repo.set_user_timezone(100, "UTC")
     await repo.set_user_timezone(100, "Europe/London")
-    tz = await repo.get_user_timezone(telegram_id=100)
-    assert tz == "Europe/London"
+    pref = await repo.get_user_preference(100)
+    assert pref.timezone == "Europe/London"
 
 
 async def test_get_user_language_stored_and_default(repo):

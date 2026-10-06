@@ -74,17 +74,6 @@ async def test_schedule_flows_through_stack(stack):
     assert all(r.name for r in stored_races)
 
 
-async def test_next_race_is_upcoming_or_none(stack):
-    """After schedule is loaded, get_next_race returns a future date or None."""
-    repo, jolpica = stack
-    season = datetime.date.today().year
-    await sync_schedule(jolpica, repo)
-
-    next_race = await repo.get_next_race(season)
-    if next_race is not None:
-        assert next_race.date >= datetime.date.today()
-
-
 async def test_driver_standings_flow_through_stack(stack):
     """sync_standings writes standings; Repository reads them back."""
     repo, jolpica = stack

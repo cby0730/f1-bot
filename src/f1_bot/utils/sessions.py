@@ -133,15 +133,6 @@ def find_next_sessions(
     return upcoming[:limit]
 
 
-def find_next_session(
-    races: list[Race],
-    group: str = "all",
-    now: datetime | None = None,
-) -> SessionEntry | None:
-    res = find_next_sessions(races, group, limit=1, now=now)
-    return res[0] if res else None
-
-
 def find_race_session(races: list[Race], round_num: int, session_key: str) -> SessionEntry | None:
     normalized = normalize_session_key(session_key)
     if normalized is None:
