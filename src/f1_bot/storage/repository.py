@@ -322,9 +322,24 @@ class Repository:
         """Return all result types stored for a given season/round."""
         return await self._store.get_all_result_types(season, round_num)
 
-    async def get_last_result_round(self, season: int) -> int | None:
-        """Return the highest round with any result data."""
-        return await self._store.get_last_result_round(season)
+    async def get_result_sessions_by_round(self, season: int) -> dict[int, set[str]]:
+        """{round: {session_key, ...}} — the single source for every /results navigation decision.
+
+        Stored types map as: ``race``/``qualifying``/``sprint`` keep their name,
+        ``session:<key>:<openf1_id>`` becomes ``<key>``. Anything else (the legacy
+        two-part ``session:<id>``, deleted by ``store.init()``) is ignored.
+        """
+        sessions: dict[int, set[str]] = {}
+        for rnd, result_type in await self._store.get_result_types_by_round(season):
+            if result_type in ("race", "qualifying", "sprint"):
+                key = result_type
+            else:
+                parts = result_type.split(":")
+                if len(parts) != 3 or parts[0] != "session":
+                    continue
+                key = parts[1]
+            sessions.setdefault(rnd, set()).add(key)
+        return sessions
 
     async def get_all_results_by_type_prefix(self, type_prefix: str) -> list[dict]:
         """Return list of dicts with keys: season, round, type, data_json."""

@@ -667,3 +667,29 @@ async def test_laps_cache_move_to_end_on_hit(repo, pg_store):
     assert (2024, 1) in repo._laps_cache
     # Round 2 should have been evicted (was oldest after round 1 was moved)
     assert (2024, 2) not in repo._laps_cache
+
+
+# --- /results navigation source ---
+
+
+async def test_get_result_sessions_by_round_maps_types_to_session_keys(repo, pg_store):
+    """Every /results navigation decision reads this one map, so the stored type
+    → session key translation must be exact: Jolpica types keep their name,
+    OpenF1 ``session:<key>:<openf1_id>`` becomes ``<key>``, and the legacy
+    two-part ``session:<openf1_id>`` (deleted by ``store.init()``) is ignored
+    rather than surfacing a bogus session key.
+    """
+    row = [{"position": 1}]
+    await pg_store.save_results(2024, 5, "race", row)
+    await pg_store.save_results(2024, 5, "qualifying", row)
+    await pg_store.save_results(2024, 6, "session:fp1:9001", row)
+    await pg_store.save_results(2024, 6, "session:9002", row)  # legacy two-part
+    await pg_store.save_results(2024, 7, "session:9003", row)  # legacy only → no round
+    await pg_store.save_results(2023, 5, "sprint", row)  # other season
+
+    assert await repo.get_result_sessions_by_round(2024) == {
+        5: {"race", "qualifying"},
+        6: {"fp1"},
+    }
+    assert await repo.get_result_sessions_by_round(2023) == {5: {"sprint"}}
+    assert await repo.get_result_sessions_by_round(2022) == {}

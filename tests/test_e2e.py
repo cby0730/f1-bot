@@ -420,7 +420,7 @@ async def test_scenario_01_start_command(e2e_app, httpx_mock):
     [
         ("next", "Countdown", True),
         ("schedule", "Season Calendar", False),
-        ("results", "No results available", True),
+        ("results", "No results available", False),
         ("standings", "Driver Standings", True),
         ("driver", "Select a driver", True),
         ("circuit", "Select a circuit", True),

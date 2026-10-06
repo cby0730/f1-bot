@@ -142,35 +142,6 @@ def find_next_session(
     return res[0] if res else None
 
 
-def find_recent_completed_sessions(
-    races: list[Race],
-    session_key: str | None = None,
-    limit: int = 1,
-    now: datetime | None = None,
-) -> list[SessionEntry]:
-    now = now or datetime.now(tz=UTC)
-    normalized = normalize_session_key(session_key)
-    if normalized is None and session_key is not None:
-        return []
-    completed = [
-        entry
-        for entry in session_entries(races)
-        if entry.starts_at is not None
-        and entry.starts_at <= now
-        and (normalized is None or entry.key == normalized)
-    ]
-    return list(reversed(completed[-limit:]))
-
-
-def find_recent_completed_session(
-    races: list[Race],
-    session_key: str | None = None,
-    now: datetime | None = None,
-) -> SessionEntry | None:
-    res = find_recent_completed_sessions(races, session_key, limit=1, now=now)
-    return res[0] if res else None
-
-
 def find_race_session(races: list[Race], round_num: int, session_key: str) -> SessionEntry | None:
     normalized = normalize_session_key(session_key)
     if normalized is None:
