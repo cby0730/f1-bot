@@ -5,8 +5,6 @@ from f1_bot.utils.sessions import (
     find_next_session,
     find_next_sessions,
     find_race_session,
-    find_recent_completed_session,
-    find_recent_completed_sessions,
     match_openf1_session,
     normalize_session_key,
     session_entries,
@@ -51,15 +49,6 @@ def test_find_next_qualifying_includes_qualifying_sessions():
     assert entry.key == "qualifying"
 
 
-def test_find_recent_completed_session_can_filter_by_alias():
-    now = datetime(2024, 8, 31, 16, 0, tzinfo=UTC)
-
-    entry = find_recent_completed_session([_race()], "quali", now=now)
-
-    assert entry is not None
-    assert entry.key == "qualifying"
-
-
 def test_find_race_session_resolves_round_and_session_alias():
     entry = find_race_session([_race()], 16, "fp3")
 
@@ -96,17 +85,6 @@ def test_find_next_sessions_limit():
     assert entries[0].key == "fp1"
     assert entries[1].key == "fp2"
     assert entries[2].key == "fp3"
-
-
-def test_find_recent_completed_sessions_limit():
-    now = datetime(2024, 8, 31, 16, 0, tzinfo=UTC)
-    entries = find_recent_completed_sessions([_race()], limit=3, now=now)
-    # completed in past: fp1, fp2, fp3, qualifying (since it is 16:00, fp3 at 10:30 and quali at 14:00 are completed)
-    # ordered newest first: qualifying, fp3, fp2
-    assert len(entries) == 3
-    assert entries[0].key == "qualifying"
-    assert entries[1].key == "fp3"
-    assert entries[2].key == "fp2"
 
 
 # ---------------------------------------------------------------------------

@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ```bash
 uv run -m f1_bot                          # start the bot (requires .env)
-uv run pytest -m "not integration"        # unit tests (659; needs only a Docker daemon)
+uv run pytest -m "not integration"        # unit tests (672; needs only a Docker daemon)
 uv run pytest -m integration -v           # integration tests (real HTTP, ~19 tests)
 uv run pytest tests/test_smoke.py -v      # full-stack smoke test
 
@@ -58,10 +58,10 @@ detail that only matters there:
 | File | Role |
 |---|---|
 | `src/f1_bot/main.py` | Application builder; `_post_init` sets up clients, repo, runs `startup_sync`, registers commands |
-| `src/f1_bot/storage/repository.py` | Unified read layer over PostgreSQL; `get_schedule_bounds()` is the source of truth for completed/upcoming rounds |
+| `src/f1_bot/storage/repository.py` | Unified read layer over PostgreSQL; `get_schedule_bounds()` is the source of truth for completed/upcoming rounds — except `/results`, which navigates `get_result_sessions_by_round()` (stored data, not the clock) |
 | `src/f1_bot/scheduler/jobs.py` | `startup_sync()` + `hourly_sync()` + individual `sync_*` callbacks; each takes `(jolpica, repo)` or `(openf1, repo)` |
 | `src/f1_bot/scheduler/manager.py` | Registers single `hourly_sync` job via `run_repeating`; owns `_POLL_INTERVAL` |
-| `src/f1_bot/handlers/pagination.py` | Shared keyboard builders: `next_overview_keyboard`, `next_filtered_keyboard`, `results_overview_keyboard`, `results_filtered_keyboard`, `round_keyboard`, `schedule_keyboard`; also `round_picker_keyboard`/`round_picker_text` and the round-set helpers (`upcoming_rounds`, `get_completed_rounds_for_session`) the picker reuses |
+| `src/f1_bot/handlers/pagination.py` | Shared keyboard builders: `next_overview_keyboard`, `next_filtered_keyboard`, `results_overview_keyboard`, `results_filtered_keyboard`, `round_keyboard`, `schedule_keyboard`; also `round_picker_keyboard`/`round_picker_text` and the round-set helpers (`upcoming_rounds`, `rounds_with_results`, `displayable_sessions`) the picker reuses |
 | `src/f1_bot/handlers/round_picker.py` | Round picker overlay handler (`rpk:` callbacks); `_compute_navigable_rounds(origin, ...)` maps the `origin` token back to the caller's navigable rounds |
 | `src/f1_bot/handlers/compare.py` | `cmp:a` / `cmp:b` from a driver profile; aggregates current-season race+sprint results into a two-driver head-to-head. Reads PostgreSQL only |
 | `src/f1_bot/utils/championship.py` | Pure clinch math (DB-free): `remaining_events`, `max_remaining_points`, `clinch_status`, `ClinchStatus`; point constants `WDC_RACE_MAX`/`WDC_SPRINT_MAX` (25/8), `WCC_RACE_MAX`/`WCC_SPRINT_MAX` (43/15) |
@@ -72,7 +72,7 @@ detail that only matters there:
 | `src/f1_bot/handlers/language.py` | `lang:set:` callbacks + `language_keyboard()` reused by `/settings` `set:lang` |
 | `src/f1_bot/handlers/settings.py` | `/settings` hub; `set:tz` / `set:lang` edit onto the existing timezone and language pickers |
 | `src/f1_bot/formatting/messages.py` | All message formatters (`format_schedule`, `format_driver_standings`, `format_constructor_standings`, `format_session_results`, `_clinch_strip`, etc.). Every one takes `ctx: RenderContext` as its last arg |
-| `src/f1_bot/utils/sessions.py` | `find_next_sessions()` / `find_recent_completed_session()` / `normalize_session_key()` / `session_entries()` — session-level timeline logic |
+| `src/f1_bot/utils/sessions.py` | `find_next_sessions()` / `normalize_session_key()` / `session_entries()` — session-level timeline logic |
 | `src/f1_bot/handlers/notifications.py` | `/remind` command + `notify:*` callback flow (pick session → pick timing → toggle subscription) |
 | `src/f1_bot/scheduler/notification_sender.py` | `schedule_next_notification()` + `send_notifications()` — background delivery via PTB JobQueue |
 | `tests/conftest.py` | `pg_url` (session-scoped Testcontainers PostgreSQL), `pg_store`, `repo` fixtures |
@@ -176,6 +176,19 @@ runs under pytest-cov.
 (`unhandled_error` + generic reply) — except `"Message is not modified"` and
 `"Query is too old"` (`_BENIGN_BAD_REQUESTS`), which stay a warning so a
 double-tap on the timezone/language pickers does not report a saved setting as failed.
+
+**`/results` follows stored data, never the clock:** all four navigation
+decisions — default round, default session, the pager / `rb` picker, and the
+filtered rounds / `rf:` picker — come from one read,
+`repo.get_result_sessions_by_round(season)`. Results land hours after a session
+starts (2026-10-03: R16 qualifying had started, Jolpica had not published it,
+and the clock-based view showed "no data"). `displayable_sessions(race, keys)`
+(stored **and** scheduled, in start-time order) is the shared rule for both the
+round list and the default session (its last element), so every listed round
+can render. A new round appears with its first synced result — about 3.5–4.5h
+after FP1 starts, because OpenF1 sync skips sessions inside `_is_in_live_window`
+and runs hourly. `/next` (`nb`/`nf:`) answers "what is coming" and deliberately
+stays on the clock.
 
 **Results "All" mode truncation:** When showing all sessions for a round, text can exceed Telegram's 4096-char limit. A 3-stage fallback applies: (1) all sessions full, (2) competitive sessions only, (3) top 10 with truncation note.
 

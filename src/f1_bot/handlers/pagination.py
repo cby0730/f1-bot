@@ -1,7 +1,7 @@
 """Shared pagination utilities for inline keyboard navigation."""
 
 import datetime
-from datetime import UTC
+from bisect import bisect_left, bisect_right
 from datetime import datetime as dt_datetime
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
@@ -9,7 +9,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 from f1_bot.formatting.emoji import circuit_flag_icon
 from f1_bot.formatting.i18n import DEFAULT_LANG, t
 from f1_bot.formatting.messages import _esc
-from f1_bot.utils.sessions import find_next_sessions, find_race_session, session_entries
+from f1_bot.utils.sessions import find_next_sessions, session_entries
 
 # Session type rows for filter keyboards. Only the *keys* live here — labels are
 # resolved per-request via `session.btn.*`, so nothing language-specific is frozen
@@ -24,6 +24,17 @@ def _btn_label(key: str, lang: str) -> str:
 
 def _round_counter(current: int, total: int, lang: str) -> str:
     return t("pagination.round_counter", lang, current=current, total=total)
+
+
+def _neighbours(rounds: list[int], current: int) -> tuple[int | None, int | None]:
+    """Nearest round below / above ``current`` in sorted ``rounds``, by value.
+
+    ``current`` need not be in the list (a round with no data yet, or a stale
+    button), so ◀/▶ never skip the round adjacent to it.
+    """
+    lo = bisect_left(rounds, current)
+    hi = bisect_right(rounds, current)
+    return (rounds[lo - 1] if lo > 0 else None, rounds[hi] if hi < len(rounds) else None)
 
 
 def two_column_keyboard(buttons: list[InlineKeyboardButton]) -> InlineKeyboardMarkup:
@@ -241,14 +252,10 @@ def results_overview_keyboard(
 
     # 1. Pager row (only if more than 1 completed round)
     if completed_rounds and len(completed_rounds) > 1:
-        try:
-            idx = completed_rounds.index(current_round)
-        except ValueError:
-            idx = len(completed_rounds) - 1
+        prev_round, next_round = _neighbours(completed_rounds, current_round)
 
         nav_row: list[InlineKeyboardButton] = []
-        if idx > 0:
-            prev_round = completed_rounds[idx - 1]
+        if prev_round is not None:
             nav_row.append(InlineKeyboardButton("◀", callback_data=f"res:back:_:{prev_round}"))
 
         nav_row.append(
@@ -258,8 +265,7 @@ def results_overview_keyboard(
             )
         )
 
-        if idx < len(completed_rounds) - 1:
-            next_round = completed_rounds[idx + 1]
+        if next_round is not None:
             nav_row.append(InlineKeyboardButton("▶", callback_data=f"res:back:_:{next_round}"))
 
         rows.append(nav_row)
@@ -298,13 +304,9 @@ def results_filtered_keyboard(
     total = len(navigable_rounds)
     nav_row: list[InlineKeyboardButton] = []
     if total > 0:
-        try:
-            idx = navigable_rounds.index(current_round)
-        except ValueError:
-            idx = total - 1
+        prev_round, next_round = _neighbours(navigable_rounds, current_round)
 
-        if idx > 0:
-            prev_round = navigable_rounds[idx - 1]
+        if prev_round is not None:
             nav_row.append(
                 InlineKeyboardButton("◀", callback_data=f"res:filtered:{session_key}:{prev_round}")
             )
@@ -320,8 +322,7 @@ def results_filtered_keyboard(
                 callback_data=center_cb,
             )
         )
-        if idx < total - 1:
-            next_round = navigable_rounds[idx + 1]
+        if next_round is not None:
             nav_row.append(
                 InlineKeyboardButton("▶", callback_data=f"res:filtered:{session_key}:{next_round}")
             )
@@ -410,20 +411,29 @@ def upcoming_rounds(races: list, group: str = "all") -> list[int]:
     return sorted(result)
 
 
-def get_completed_rounds_for_session(races: list, session_key: str) -> list[int]:
-    """Get list of round numbers that have at least one completed session of the given type."""
-    now = dt_datetime.now(tz=UTC)
-    if session_key == "all":
-        return sorted(
-            r.round
-            for r in races
-            if any(e.starts_at and e.starts_at <= now for e in session_entries([r]))
-        )
+def displayable_sessions(race, keys: set[str]) -> list[str]:
+    """Session keys of ``race`` that have stored results AND exist in its schedule,
+    in schedule order. Both conditions are needed to render a page.
+
+    The last element is the /results default. Ordered by start time, not a fixed
+    key list, so a weekend whose sprint follows qualifying defaults to the sprint.
+    """
+    return [e.key for e in session_entries([race]) if e.key in keys]
+
+
+def rounds_with_results(
+    sessions_by_round: dict[int, set[str]], races: list, session_key: str
+) -> list[int]:
+    """Rounds whose displayable_sessions is non-empty ("all") or contains session_key.
+
+    Driven by stored results, never the clock: results land hours after a session
+    starts, and a round listed before then would page to "no data".
+    """
     rounds = []
-    for r in races:
-        entry = find_race_session([r], r.round, session_key)
-        if entry and entry.starts_at and entry.starts_at <= now:
-            rounds.append(r.round)
+    for race in races:
+        shown = displayable_sessions(race, sessions_by_round.get(race.round, set()))
+        if shown and (session_key == "all" or session_key in shown):
+            rounds.append(race.round)
     return sorted(rounds)
 
 

@@ -100,24 +100,6 @@ class TestComputeNavigableRounds:
         assert result == [8, 9]
         mock_upcoming.assert_called_once_with(["races"], "race")
 
-    @patch(
-        "f1_bot.handlers.round_picker.get_completed_rounds_for_session",
-        return_value=[1, 2, 3],
-    )
-    def test_rb_uses_completed_sessions(self, mock_completed):
-        result = _compute_navigable_rounds("rb", ["races"], {})
-        assert result == [1, 2, 3]
-        mock_completed.assert_called_once_with(["races"], "all")
-
-    @patch(
-        "f1_bot.handlers.round_picker.get_completed_rounds_for_session",
-        return_value=[2, 4],
-    )
-    def test_rf_uses_completed_with_session_key(self, mock_completed):
-        result = _compute_navigable_rounds("rf:qualifying", ["races"], {})
-        assert result == [2, 4]
-        mock_completed.assert_called_once_with(["races"], "qualifying")
-
     def test_unknown_origin_returns_empty(self):
         result = _compute_navigable_rounds("unknown", [], {})
         assert result == []
@@ -224,6 +206,7 @@ class TestRoundPickerCallback:
         bounds = {"last_completed_round": 5}
         update = _mock_update("rpk:rf:sprint_qualifying:4")
         ctx = _mock_context(races, bounds)
+        ctx.bot_data["repo"].get_result_sessions_by_round = AsyncMock(return_value={})
         await _round_picker_callback(update, ctx)
         call_args = mock_compute.call_args[0]
         assert call_args[0] == "rf:sprint_qualifying"
@@ -237,3 +220,55 @@ class TestRoundPickerCallback:
         update.callback_query.answer.assert_called_once_with(
             text="Invalid selection", show_alert=True
         )
+
+
+# ---------------------------------------------------------------------------
+# /results picker origins follow stored data, never the clock
+# ---------------------------------------------------------------------------
+
+
+def _picker_round_callbacks(update) -> list[str]:
+    """Round-button callbacks of the picker grid (the trailing Back row excluded)."""
+    markup = update.callback_query.edit_message_text.call_args.kwargs["reply_markup"]
+    return [btn.callback_data for row in markup.inline_keyboard[:-1] for btn in row]
+
+
+def _results_picker_context(sessions_by_round: dict[int, set[str]]):
+    # R3's race and qualifying are in the past by the clock, but nothing is stored
+    # for it — the 2026-10-03 shape where Jolpica publishes hours after the session.
+    races = [_completed_race(1, 20), _completed_race(2, 13), _completed_race(3, 1)]
+    ctx = _mock_context(races, {"last_completed_round": 3})
+    ctx.bot_data["repo"].get_result_sessions_by_round = AsyncMock(return_value=sessions_by_round)
+    return ctx
+
+
+class TestResultsPickerFollowsData:
+    async def test_rb_lists_only_rounds_with_results(self):
+        """The overview picker must not offer R3: the clock says it ran, the table says no data."""
+        ctx = _results_picker_context({1: {"race"}, 2: {"qualifying"}})
+        update = _mock_update("rpk:rb:2")
+
+        await _round_picker_callback(update, ctx)
+
+        assert _picker_round_callbacks(update) == ["res:back:_:1", "res:back:_:2"]
+
+    async def test_rf_lists_only_rounds_with_that_sessions_results(self):
+        """The Q picker lists rounds with stored Q results only (R1 has just the race)."""
+        ctx = _results_picker_context({1: {"race"}, 2: {"qualifying", "race"}})
+        update = _mock_update("rpk:rf:qualifying:2")
+
+        await _round_picker_callback(update, ctx)
+
+        assert _picker_round_callbacks(update) == ["res:filtered:qualifying:2"]
+
+    async def test_nb_does_not_read_results(self):
+        """/next answers "what is coming", so its picker stays on the clock and skips the query."""
+        races = [_upcoming_race(4, 10), _upcoming_race(5, 17)]
+        ctx = _mock_context(races, {"next_upcoming_round": 4})
+        ctx.bot_data["repo"].get_result_sessions_by_round = AsyncMock(return_value={})
+        update = _mock_update("rpk:nb:4")
+
+        await _round_picker_callback(update, ctx)
+
+        ctx.bot_data["repo"].get_result_sessions_by_round.assert_not_called()
+        assert _picker_round_callbacks(update) == ["next:back:_:4", "next:back:_:5"]

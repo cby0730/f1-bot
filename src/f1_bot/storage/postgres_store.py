@@ -293,14 +293,6 @@ class PostgresStore:
             )
         return json.loads(row["data_json"]) if row else None
 
-    async def get_last_race_round(self, season: int) -> int | None:
-        async with self._pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT MAX(round) as r FROM results WHERE season=$1 AND type='race'",
-                season,
-            )
-        return row["r"] if row and row["r"] is not None else None
-
     # --- User Preferences ---
 
     async def get_user_preference(self, telegram_id: int) -> UserPreference | None:
@@ -483,13 +475,14 @@ class PostgresStore:
             )
         return [r["type"] for r in rows]
 
-    async def get_last_result_round(self, season: int) -> int | None:
+    async def get_result_types_by_round(self, season: int) -> list[tuple[int, str]]:
+        # PK (season, round, type) already makes each pair unique — no DISTINCT needed.
         async with self._pool.acquire() as conn:
-            row = await conn.fetchrow(
-                "SELECT MAX(round) as r FROM results WHERE season=$1",
+            rows = await conn.fetch(
+                "SELECT round, type FROM results WHERE season=$1",
                 season,
             )
-        return row["r"] if row and row["r"] is not None else None
+        return [(r["round"], r["type"]) for r in rows]
 
     async def get_all_results_by_type_prefix(self, type_prefix: str) -> list[dict]:
         async with self._pool.acquire() as conn:

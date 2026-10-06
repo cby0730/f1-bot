@@ -1,7 +1,7 @@
 """Unified /results handler with two-state interaction.
 
-State A (overview): show results for anchor round (race if available, else most
-recent completed session). Keyboard has session filter buttons.
+State A (overview): show results for anchor round (the latest round with stored
+results, defaulting to its latest stored session). Keyboard has session filter buttons.
 State B (filtered): show results for specific session type with round navigation
 + Back button.
 
@@ -25,10 +25,11 @@ from f1_bot.formatting.messages import (
 )
 from f1_bot.handlers.context import resolve_context
 from f1_bot.handlers.pagination import (
-    get_completed_rounds_for_session,
+    displayable_sessions,
     load_schedule_and_bounds,
     results_filtered_keyboard,
     results_overview_keyboard,
+    rounds_with_results,
 )
 from f1_bot.models.results import (
     QualifyingResult,
@@ -38,7 +39,6 @@ from f1_bot.models.results import (
 )
 from f1_bot.utils.sessions import (
     find_race_session,
-    find_recent_completed_session,
     session_label,
 )
 
@@ -116,25 +116,6 @@ async def _format_results_for_session(
     return None
 
 
-async def _find_default_session(repo, races: list, season: int, rnd: int) -> str | None:
-    """Find the default session to display for State A.
-
-    Prefers race, then falls back to most recently completed session.
-    """
-    # Check if race results exist
-    race_results = await repo.get_race_results(season, rnd)
-    if race_results:
-        return "race"
-
-    # Fall back to most recently completed session of this round
-    race = next((r for r in races if r.round == rnd), None)
-    if race:
-        entry = find_recent_completed_session([race])
-        if entry:
-            return entry.key
-    return None
-
-
 # ---------------------------------------------------------------------------
 # /results — State A: overview with session filter keyboard
 # ---------------------------------------------------------------------------
@@ -151,33 +132,25 @@ async def results_handler(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
         await update.effective_message.reply_text(no_data_message("common.noun_schedule", ctx))
         return
 
-    rnd = bounds.get("last_completed_round")
-    if rnd is None:
-        # Try the latest round with any result data
-        rnd = await repo.get_last_result_round(season)
-    if rnd is None:
+    # Every navigation decision follows stored results, never the clock: data
+    # lands hours after a session starts (2026-10-03 R16 incident).
+    sessions_by_round = await repo.get_result_sessions_by_round(season)
+    completed = rounds_with_results(sessions_by_round, races, "all")
+    if not completed:
         await update.effective_message.reply_text(no_data_message("common.noun_results", ctx))
         return
 
-    race = next((r for r in races if r.round == rnd), None)
-    if not race:
-        await update.effective_message.reply_text(no_data_message("common.noun_results", ctx))
-        return
+    rnd = completed[-1]
+    race = next(r for r in races if r.round == rnd)
 
     drivers_map = await repo.get_drivers_by_id_map(season)
-    default_session = await _find_default_session(repo, races, season, rnd)
+    default_session = displayable_sessions(race, sessions_by_round[rnd])[-1]
 
-    if default_session:
-        text = await _format_results_for_session(
-            repo, season, rnd, race, default_session, drivers_map, ctx
-        )
-    else:
-        text = None
-
+    text = await _format_results_for_session(
+        repo, season, rnd, race, default_session, drivers_map, ctx
+    )
     if not text:
         text = no_data_message("common.noun_results", ctx)
-
-    completed = get_completed_rounds_for_session(races, "all")
 
     await update.effective_message.reply_text(
         text,
@@ -228,11 +201,14 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         await query.answer(text=t("common.round_not_found", ctx.lang), show_alert=True)
         return
 
+    # Read only after the round is known to exist — a bad round never costs a query.
+    sessions_by_round = await repo.get_result_sessions_by_round(season)
     drivers_map = await repo.get_drivers_by_id_map(season)
 
     if mode == "back":
         # Return to State A (overview) for the same round
-        default_session = await _find_default_session(repo, races, season, rnd)
+        shown = displayable_sessions(race, sessions_by_round.get(rnd, set()))
+        default_session = shown[-1] if shown else None
         text = None
         if default_session:
             text = await _format_results_for_session(
@@ -241,7 +217,7 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if not text:
             text = no_data_message("common.noun_results", ctx)
 
-        completed = get_completed_rounds_for_session(races, "all")
+        completed = rounds_with_results(sessions_by_round, races, "all")
 
         try:
             await query.edit_message_text(
@@ -260,7 +236,7 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         # Check if "all" — show combined results
         if session_key == "all":
             text = await _format_all_results(repo, season, rnd, race, drivers_map, ctx)
-            completed = get_completed_rounds_for_session(races, "all")
+            completed = rounds_with_results(sessions_by_round, races, "all")
             try:
                 await query.edit_message_text(
                     text or no_data_message("common.noun_results", ctx),
@@ -276,7 +252,7 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         if session_key in ("fp2", "fp3", "sprint_qualifying", "sprint"):
             entry = find_race_session([race], rnd, session_key)
             if entry is None:
-                navigable = get_completed_rounds_for_session(races, session_key)
+                navigable = rounds_with_results(sessions_by_round, races, session_key)
                 if not navigable:
                     msg = t(
                         "results.no_session_data",
@@ -299,7 +275,7 @@ async def _results_callback(update: Update, context: ContextTypes.DEFAULT_TYPE) 
                 "common.noun_session_results", ctx, session=session_label(session_key, ctx.lang)
             )
 
-        completed = get_completed_rounds_for_session(races, session_key)
+        completed = rounds_with_results(sessions_by_round, races, session_key)
         try:
             await query.edit_message_text(
                 text,
