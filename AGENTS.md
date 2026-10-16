@@ -36,7 +36,9 @@ matching the default `F1BOT_DATABASE_URL`. Restart it with
 `sudo pg_ctlcluster <major> main start` (check `pg_lsclusters`). Schema is
 auto-created at startup; there is no migration step. Because the test suite
 needs a Docker daemon, **it cannot run in this environment at all** — do not
-interpret its absence as a code failure.
+interpret its absence as a code failure. (It can be made to: `sudo apt-get install -y
+docker.io`, run `sudo dockerd` in a tmux session, `sudo chmod 666
+/var/run/docker.sock`; the full suite then passes.)
 
 ## Network
 
@@ -58,6 +60,19 @@ env HTTP_PROXY=http://127.0.0.1:31100 HTTPS_PROXY=http://127.0.0.1:31100 \
 `31100` is a session-scoped tunnel from the user's laptop, **not a daemon here**.
 `Connection refused` means they are not currently connected — not a broken
 config. Check with `ss -ltn | grep 31100` before changing anything.
+
+## LINE
+
+`LINE_CHANNEL_SECRET` / `LINE_CHANNEL_ACCESS_TOKEN` come from env (Cursor
+Secrets or the VM's `.env`), never the repo. Two read-only checks need neither a
+Telegram token nor a public URL of your own:
+`POST https://api.line.me/v2/bot/message/validate/reply` validates message JSON
+without sending, and `POST /v2/bot/channel/webhook/test` with an `endpoint` body
+probes any webhook URL without changing the channel's configured one.
+
+Do not leave LINE secrets exported in a shell that runs the tests: any fixture
+that builds the real app would bind port 8080 (`tests/test_e2e.py` disables LINE
+explicitly for this reason).
 
 ## Branches and CI
 

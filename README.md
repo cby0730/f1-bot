@@ -29,6 +29,7 @@ All F1 data provided by the bot is fetched from the following public APIs:
 * **Local Timezone Support**: Session timings render in the timezone you pick from `/settings` (region, then city).
 * **Bilingual Interface (English / 繁體中文)**: Every message, button, reminder, and command-menu entry renders in your chosen language — switch any time from the `/settings` picker. Dates, countdowns, and session labels localize too, and reminders arrive in your language.
 * **Personalized Notifications**: Subscribe to automated race alerts (15, 30, 60, or 180 minutes before sessions).
+* **Also on LINE**: The same commands, buttons, settings, and reminders work in LINE — type a command with or without the slash (`/next` or `next`), and buttons arrive as LINE button cards. New LINE users start in 繁體中文. See [spec 006](docs/specs/006-line-adapter.md).
 
 ---
 

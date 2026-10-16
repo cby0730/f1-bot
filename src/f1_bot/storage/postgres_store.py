@@ -122,6 +122,15 @@ CREATE TABLE IF NOT EXISTS notification_subscriptions (
     UNIQUE(telegram_id, season, round, session_key, minutes_before)
 );
 
+-- LINE user ids are strings; handlers key on an integer user id. The identity runs
+-- downward from -1 so these ids can share user_preferences / notification_subscriptions
+-- with Telegram user ids, which are always positive.
+CREATE TABLE IF NOT EXISTS line_users (
+    internal_id BIGINT GENERATED ALWAYS AS IDENTITY (START WITH -1 INCREMENT BY -1) PRIMARY KEY,
+    line_user_id TEXT NOT NULL UNIQUE,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
 CREATE INDEX IF NOT EXISTS idx_results_type ON results(type);
 CREATE INDEX IF NOT EXISTS idx_notif_fire ON notification_subscriptions(notified, fire_at);
 CREATE INDEX IF NOT EXISTS idx_notif_user ON notification_subscriptions(telegram_id, season);
@@ -339,6 +348,34 @@ class PostgresStore:
                 telegram_id,
                 value,
                 now,
+            )
+
+    # --- LINE users ---
+
+    async def get_or_create_line_user(self, line_user_id: str) -> tuple[int, bool]:
+        """Return ``(internal_id, created)`` for a LINE user id.
+
+        SELECT first: ``INSERT … ON CONFLICT DO NOTHING`` consumes an identity value
+        even when it conflicts, and this runs on every LINE event.
+        """
+        select = "SELECT internal_id FROM line_users WHERE line_user_id=$1"
+        async with self._pool.acquire() as conn:
+            internal_id = await conn.fetchval(select, line_user_id)
+            if internal_id is not None:
+                return internal_id, False
+            internal_id = await conn.fetchval(
+                "INSERT INTO line_users (line_user_id) VALUES ($1) "
+                "ON CONFLICT (line_user_id) DO NOTHING RETURNING internal_id",
+                line_user_id,
+            )
+            if internal_id is not None:
+                return internal_id, True
+            return await conn.fetchval(select, line_user_id), False
+
+    async def get_line_user_id(self, internal_id: int) -> str | None:
+        async with self._pool.acquire() as conn:
+            return await conn.fetchval(
+                "SELECT line_user_id FROM line_users WHERE internal_id=$1", internal_id
             )
 
     # --- Lap Timings ---

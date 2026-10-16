@@ -54,3 +54,20 @@ def test_settings_telegram_network(monkeypatch):
     assert s2.telegram_proxy == "socks5://127.0.0.1:1080"
     assert s2.telegram_connect_timeout == 15.5
     assert s2.telegram_read_timeout == 30.0
+
+
+def test_line_disabled_unless_both_secrets_set(monkeypatch):
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "tok")
+    monkeypatch.delenv("LINE_CHANNEL_SECRET", raising=False)
+    monkeypatch.delenv("LINE_CHANNEL_ACCESS_TOKEN", raising=False)
+    assert not Settings(_env_file=None).line_enabled
+
+    monkeypatch.setenv("LINE_CHANNEL_SECRET", "secret")
+    assert not Settings(_env_file=None).line_enabled
+
+    monkeypatch.setenv("LINE_CHANNEL_ACCESS_TOKEN", "access")
+    monkeypatch.setenv("F1BOT_LINE_WEBHOOK_PORT", "9000")
+    s = Settings(_env_file=None)
+    assert s.line_enabled
+    assert (s.line_channel_secret, s.line_channel_access_token) == ("secret", "access")
+    assert s.line_webhook_port == 9000

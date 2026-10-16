@@ -1,6 +1,6 @@
 # Roadmap — LINE bot adapter
 
-**Status:** Blueprint / deferred — NOT approved for implementation
+**Status:** Superseded by [Spec 006](006-line-adapter.md) (transport bridge; the view-model step was not a prerequisite after all)
 **Type:** Architecture roadmap (future sub-project)
 **Date:** 2026-07-30
 **Depends on:** Spec 005 (i18n) + `roadmap-view-model-extraction.md`

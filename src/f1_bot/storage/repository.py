@@ -226,6 +226,14 @@ class Repository:
         pref = await self.get_user_preference(telegram_id)
         return pref.language if pref else DEFAULT_LANG
 
+    # --- LINE users ---
+
+    async def get_or_create_line_user(self, line_user_id: str) -> tuple[int, bool]:
+        return await self._store.get_or_create_line_user(line_user_id)
+
+    async def get_line_user_id(self, internal_id: int) -> str | None:
+        return await self._store.get_line_user_id(internal_id)
+
     # --- Drivers / Circuits ---
 
     async def save_drivers(self, season: int, drivers: list) -> None:
