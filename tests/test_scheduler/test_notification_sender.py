@@ -359,3 +359,44 @@ async def test_send_failure_past_max_lateness_gives_up():
 
     # Stale failure is dropped; the fresh failure still survives for retry.
     repo.mark_notifications_sent.assert_awaited_once_with([8])
+
+
+async def test_send_notifications_routes_negative_ids_to_line_push():
+    """LINE users (negative ids) get a plain-text LINE push, never a Telegram send."""
+    now = datetime.now(UTC)
+    sub = NotificationSubscription(
+        id=7,
+        telegram_id=-3,
+        season=2026,
+        round=10,
+        session_key="race",
+        minutes_before=30,
+        fire_at=now,
+    )
+
+    repo = AsyncMock()
+    repo.get_pending_notifications = AsyncMock(return_value=[sub])
+    repo.get_schedule = AsyncMock(return_value=[])
+    repo.get_user_language = AsyncMock(return_value="zh-Hant")
+    repo.get_line_user_id = AsyncMock(return_value="Uabc")
+    repo.get_next_fire_at = AsyncMock(return_value=None)
+
+    bot = AsyncMock()
+    line = AsyncMock()
+    jq = MagicMock()
+    jq.get_jobs_by_name = MagicMock(return_value=[])
+
+    context = MagicMock()
+    context.bot_data = {"repo": repo, "line": line}
+    context.bot = bot
+    context.job_queue = jq
+
+    await send_notifications(context)
+
+    bot.send_message.assert_not_awaited()
+    repo.get_line_user_id.assert_awaited_once_with(-3)
+    to, messages = line.push.await_args.args
+    assert to == "Uabc"
+    assert messages[0]["type"] == "text"
+    assert "*" not in messages[0]["text"]
+    repo.mark_notifications_sent.assert_awaited_once_with([7])

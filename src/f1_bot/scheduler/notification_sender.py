@@ -7,6 +7,7 @@ import structlog
 from telegram.constants import ParseMode
 from telegram.error import Forbidden, RetryAfter
 
+from f1_bot.line.render import markdown_to_plain, text_message
 from f1_bot.models.notification import NotificationSubscription
 
 log = structlog.get_logger(__name__)
@@ -31,6 +32,16 @@ async def schedule_next_notification(jq, repo) -> None:
         delay = max((next_fire - now).total_seconds(), 1)
         jq.run_once(send_notifications, when=delay, name="notification_send")
         log.info("notification_scheduled", fire_at=next_fire.isoformat(), delay_s=round(delay))
+
+
+async def _push_line(bot_data: dict, repo, user_id: int, msg: str) -> None:
+    """LINE users carry negative ids (see the line_users table).
+
+    A LINE user who blocks the bot is cleaned up by the webhook's unfollow event,
+    so there is no Forbidden-style branch here.
+    """
+    line_user_id = await repo.get_line_user_id(user_id)
+    await bot_data["line"].push(line_user_id, [text_message(markdown_to_plain(msg))])
 
 
 async def send_notifications(context) -> None:
@@ -64,7 +75,12 @@ async def send_notifications(context) -> None:
             # language directly. No tz lookup — the push message renders no clock time.
             lang = await repo.get_user_language(sub.telegram_id)
             msg = format_notification_message(race, sub.session_key, sub.minutes_before, lang)
-            await bot.send_message(chat_id=sub.telegram_id, text=msg, parse_mode=ParseMode.MARKDOWN)
+            if sub.telegram_id < 0:
+                await _push_line(context.bot_data, repo, sub.telegram_id, msg)
+            else:
+                await bot.send_message(
+                    chat_id=sub.telegram_id, text=msg, parse_mode=ParseMode.MARKDOWN
+                )
             sent_ids.append(sub.id)
         except Forbidden:
             log.warning("user_blocked_bot", telegram_id=sub.telegram_id)
