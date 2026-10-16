@@ -90,6 +90,8 @@ def e2e_settings(tmp_path, pg_url):
         jolpica_rate_per_hour=10000,
         openf1_rate_per_second=100.0,
         openf1_rate_per_minute=10000,
+        # A LINE secret in the developer's env/.env would bind the webhook port per test.
+        LINE_CHANNEL_SECRET=None,
     )
 
 

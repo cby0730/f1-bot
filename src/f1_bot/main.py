@@ -10,6 +10,7 @@ from f1_bot.api.jolpica import JolpicaClient
 from f1_bot.api.openf1 import OpenF1Client
 from f1_bot.config import Settings
 from f1_bot.handlers import register_all_handlers
+from f1_bot.line.client import LineClient
 from f1_bot.scheduler.jobs import startup_sync
 from f1_bot.scheduler.manager import register_jobs
 from f1_bot.storage.postgres_store import PostgresStore
@@ -55,8 +56,28 @@ async def _post_init(app: Application) -> None:
     except Exception as e:
         log.warning("failed_to_set_bot_commands", error=str(e))
 
+    if line := app.bot_data.get("line"):
+        from f1_bot.line.bridge import LineBridge
+        from f1_bot.line.webhook import start_webhook
+
+        app.bot_data["line_runner"] = await start_webhook(
+            LineBridge(app, line),
+            settings.line_channel_secret,
+            settings.line_webhook_host,
+            settings.line_webhook_port,
+        )
+
+
+async def _post_stop(app: Application) -> None:
+    # Stop LINE intake while the app is still initialized and the DB pool open, so
+    # in-flight events can finish.
+    if runner := app.bot_data.get("line_runner"):
+        await runner.cleanup()
+
 
 async def _post_shutdown(app: Application) -> None:
+    if line := app.bot_data.get("line"):
+        await line.close()
     await app.bot_data["jolpica"].close()
     await app.bot_data["openf1"].close()
     await app.bot_data["store"].close()
@@ -99,6 +120,7 @@ def build_app(settings: Settings) -> Application:
         .request(request)
         .get_updates_request(get_updates_request)
         .post_init(_post_init)
+        .post_stop(_post_stop)
         .post_shutdown(_post_shutdown)
         .build()
     )
@@ -112,6 +134,10 @@ def build_app(settings: Settings) -> Application:
             "notification_limiter": notification_limiter,
         }
     )
+    if settings.line_enabled:
+        app.bot_data["line"] = LineClient(
+            settings.line_channel_access_token, proxy=settings.telegram_proxy
+        )
 
     register_all_handlers(app)
     register_jobs(app)

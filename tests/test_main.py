@@ -95,3 +95,60 @@ async def test_post_shutdown_closes_resources():
     app.bot_data["jolpica"].close.assert_awaited_once()
     app.bot_data["openf1"].close.assert_awaited_once()
     app.bot_data["store"].close.assert_awaited_once()
+
+
+def _settings(monkeypatch, line: bool):
+    from f1_bot.config import Settings
+
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123:TEST")
+    for name, value in (("LINE_CHANNEL_SECRET", "s"), ("LINE_CHANNEL_ACCESS_TOKEN", "a")):
+        if line:
+            monkeypatch.setenv(name, value)
+        else:
+            monkeypatch.delenv(name, raising=False)
+    return Settings(_env_file=None)
+
+
+def test_build_app_wires_line_client_only_when_configured(monkeypatch):
+    from f1_bot.line.client import LineClient
+    from f1_bot.main import build_app
+
+    assert "line" not in build_app(_settings(monkeypatch, line=False)).bot_data
+
+    app = build_app(_settings(monkeypatch, line=True))
+    assert isinstance(app.bot_data["line"], LineClient)
+
+
+async def test_post_init_starts_line_webhook_and_post_stop_cleans_up(monkeypatch):
+    from f1_bot.main import _post_stop
+
+    runner = AsyncMock()
+    settings = _settings(monkeypatch, line=True)
+    app = MagicMock()
+    app.bot_data = {
+        "settings": settings,
+        "store": AsyncMock(),
+        "jolpica": AsyncMock(),
+        "openf1": AsyncMock(),
+        "repo": AsyncMock(),
+        "line": AsyncMock(),
+    }
+    app.bot = AsyncMock()
+
+    with (
+        patch("f1_bot.main.startup_sync", new_callable=AsyncMock),
+        patch(
+            "f1_bot.scheduler.notification_sender.schedule_next_notification",
+            new_callable=AsyncMock,
+        ),
+        patch("f1_bot.line.webhook.start_webhook", new_callable=AsyncMock) as start,
+    ):
+        start.return_value = runner
+        await _post_init(app)
+
+    _, secret, host, port = start.await_args.args
+    assert (secret, host, port) == ("s", settings.line_webhook_host, 8080)
+    assert app.bot_data["line_runner"] is runner
+
+    await _post_stop(app)
+    runner.cleanup.assert_awaited_once()

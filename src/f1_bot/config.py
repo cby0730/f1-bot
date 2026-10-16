@@ -19,6 +19,13 @@ class Settings(BaseSettings):
     telegram_connect_timeout: float = Field(default=20.0, alias="TELEGRAM_CONNECT_TIMEOUT")
     telegram_read_timeout: float = Field(default=20.0, alias="TELEGRAM_READ_TIMEOUT")
 
+    # Optional LINE adapter — no prefix; enabled only when both are set
+    line_channel_secret: str | None = Field(default=None, alias="LINE_CHANNEL_SECRET")
+    line_channel_access_token: str | None = Field(default=None, alias="LINE_CHANNEL_ACCESS_TOKEN")
+    # Prefix: F1BOT_LINE_WEBHOOK_HOST / F1BOT_LINE_WEBHOOK_PORT
+    line_webhook_host: str = "0.0.0.0"  # noqa: S104 - must be reachable from outside the container
+    line_webhook_port: int = 8080
+
     # Database — prefix: F1BOT_DATABASE_URL
     database_url: str = "postgresql://mango:mango@localhost:31055/mango"
 
@@ -38,3 +45,7 @@ class Settings(BaseSettings):
 
     # Notification rate limit
     notification_rate_per_second: float = 25.0
+
+    @property
+    def line_enabled(self) -> bool:
+        return bool(self.line_channel_secret and self.line_channel_access_token)
