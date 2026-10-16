@@ -41,6 +41,11 @@ PLATFORM (Telegram)              handlers/ resolve_context(update, repo) · set_
   `language_code` auto-detection** (see spec 005's rollout section — combined
   with the backfill migration it would have silently pinned existing users to
   English, unrecoverably).
+- **LINE (spec 006):** a transport bridge, not a second set of handlers. `line/bridge.py`
+ rewrites each LINE webhook event into the Telegram `Update` the same interaction would
+ produce, bound to a recording bot, and runs it through the **same** PTB `Application`;
+ `line/render.py` turns what was "sent" into one LINE reply. Runs in the same process,
+ started from `_post_init` when `LINE_CHANNEL_SECRET` + `LINE_CHANNEL_ACCESS_TOKEN` are set.
 - **Source repository:** Hosted at `https://github.com/cby0730/f1-bot` (the `/start` welcome message links here for stars).
 
 ## Directory-scoped guidance
@@ -75,6 +80,10 @@ detail that only matters there:
 | `src/f1_bot/utils/sessions.py` | `find_next_sessions()` / `normalize_session_key()` / `session_entries()` — session-level timeline logic |
 | `src/f1_bot/handlers/notifications.py` | `/remind` command + `notify:*` callback flow (pick session → pick timing → toggle subscription) |
 | `src/f1_bot/scheduler/notification_sender.py` | `schedule_next_notification()` + `send_notifications()` — background delivery via PTB JobQueue |
+| `src/f1_bot/line/bridge.py` | `LineBridge.handle_event` — LINE event → synthetic `Update` → `app.process_update`; `_RecordingBot`; `command_for_text`; `LINE_DEFAULT_LANG` (`zh-Hant`, written on first contact) |
+| `src/f1_bot/line/render.py` | `markdown_to_plain`, inline keyboard → Flex postback buttons, LINE size limits |
+| `src/f1_bot/line/webhook.py` | aiohttp app at `/line/webhook`: `X-Line-Signature` check, ack then process in background |
+| `src/f1_bot/line/client.py` | `LineClient.reply` / `.push` over httpx |
 | `tests/conftest.py` | `pg_url` (session-scoped Testcontainers PostgreSQL), `pg_store`, `repo` fixtures |
 | `video/` | Remotion launch film (Node). README hero `docs/demo.gif` is the 30 fps GIF export |
 
@@ -288,6 +297,18 @@ lookup would be dead weight on a hot job path.
 resolves the user's language centrally and renders it; `_safe_context()` falls
 back to English when there is no `Update`/user so the error handler itself can
 never raise.
+
+**LINE bridge relies on handlers replying only through their `Update`:** PTB binds
+`reply_text` / `edit_message_text` / `answer` to the bot the `Update` was built with,
+which is how the bridge captures output. A handler that calls `context.bot.*` directly
+would send to **Telegram** for a LINE user. Handlers must also not depend on editing in
+place — on LINE every edit arrives as a new message.
+
+**LINE users are negative ids:** `line_users.internal_id` is a descending identity from
+-1, stored in the same `telegram_id` columns as Telegram users (always positive). The
+notification sender routes `telegram_id < 0` to LINE push, which spends the channel's
+monthly push quota; replies are free. Blocking the bot arrives as an `unfollow` event
+and calls `remove_dead_user` — there is no `Forbidden` on LINE.
 
 ## Test conventions
 
